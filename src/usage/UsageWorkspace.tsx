@@ -43,6 +43,7 @@ import { AppGlyph } from "./AppGlyph";
 import { AppSelect } from "./AppSelect";
 import { formatRequestSpeed } from "./requestSpeed";
 import { customTimeRange } from "./timeRange";
+import { rankApps, type RankingMetric } from "./appRanking";
 
 type Props = {
   interval: string;
@@ -80,7 +81,11 @@ function loadView(): {
     return {};
   }
 }
-function bounds(range: Range, start: string, end: string): { startDate?: number; endDate?: number } {
+function bounds(
+  range: Range,
+  start: string,
+  end: string,
+): { startDate?: number; endDate?: number } {
   if (range === "all") return {};
   const day = new Date();
   day.setHours(0, 0, 0, 0);
@@ -187,8 +192,8 @@ export function UsageWorkspace({
   const [size, setSize] = useState(20);
   const [statusCode, setStatusCode] = useState("");
   const [tab, setTab] = useState("logs");
-  const [metric, setMetric] = useState("tokens");
-  const [chartType, setChartType] = useState<"bar" | "area">("bar");
+  const [metric, setMetric] = useState<RankingMetric>("tokens");
+  const [chartType, setChartType] = useState<"bar" | "area" | "blocks">("bar");
   const [modal, setModal] = useState<"pricing" | "sources" | "devices" | null>(
     null,
   );
@@ -659,12 +664,14 @@ export function UsageWorkspace({
             <h2>用量趋势</h2>
             <div className="panel-actions usage-chart-controls">
               <div className="segmented" aria-label="用量趋势指标">
-                {[
-                  ["tokens", "Token"],
-                  ["cost", "费用"],
-                  ["requests", "请求"],
-                  ["hitRate", "命中率"],
-                ].map(([key, label]) => (
+                {(
+                  [
+                    ["tokens", "Token"],
+                    ["cost", "费用"],
+                    ["requests", "请求"],
+                    ["hitRate", "命中率"],
+                  ] as [RankingMetric, string][]
+                ).map(([key, label]) => (
                   <button
                     key={key}
                     aria-pressed={metric === key}
@@ -687,6 +694,12 @@ export function UsageWorkspace({
                 >
                   折线
                 </button>
+                <button
+                  aria-pressed={chartType === "blocks"}
+                  onClick={() => setChartType("blocks")}
+                >
+                  方块
+                </button>
               </div>
             </div>
           </div>
@@ -698,45 +711,76 @@ export function UsageWorkspace({
         </section>
         <section className="panel">
           <div className="panel-head">
-            <h2>应用费用分布</h2>
-            <span className="muted">USD</span>
+            <h2>
+              {metric === "cost"
+                ? "应用费用排名"
+                : metric === "requests"
+                  ? "应用请求排名"
+                  : metric === "hitRate"
+                    ? "应用缓存命中率排名"
+                    : "应用 Token 排名"}
+            </h2>
+            <span className="muted">
+              {metric === "cost"
+                ? "USD"
+                : metric === "requests"
+                  ? "次"
+                  : metric === "hitRate"
+                    ? "%"
+                    : "Token"}
+            </span>
           </div>
           <div className="native-app-costs">
-            {dashboard.data?.byApp
-              .filter((a) => !app || a.appType === app)
-              .sort(
-                (a, b) =>
-                  Number(b.summary.totalCost) - Number(a.summary.totalCost),
-              )
-              .slice(0, 7)
-              .map((a) => (
-                <button
-                  key={a.appType}
-                  className="usage-app-cost"
-                  onClick={() => change(() => setApp(a.appType))}
-                >
-                  <span>
-                    <span className="usage-app-label">
-                      <AppGlyph app={a.appType} />
-                      {appName(a.appType)}
-                    </span>
-                    <b>{formatMoney(a.summary.totalCost)}</b>
+            {rankApps(dashboard.data?.byApp ?? [], metric, app).map((a) => (
+              <button
+                key={a.appType}
+                className="usage-app-cost"
+                onClick={() => change(() => setApp(a.appType))}
+              >
+                <span>
+                  <span className="usage-app-label">
+                    <AppGlyph app={a.appType} />
+                    {appName(a.appType)}
                   </span>
-                  <span className="meter">
-                    <span
-                      style={{
-                        width:
-                          Math.max(
-                            1,
-                            (Number(a.summary.totalCost) /
-                              Math.max(0.000001, Number(s?.totalCost))) *
-                              100,
-                          ) + "%",
-                      }}
-                    />
-                  </span>
-                </button>
-              ))}
+                  <b>
+                    {a.value === null
+                      ? "—"
+                      : metric === "cost"
+                        ? formatMoney(a.value)
+                        : metric === "requests"
+                          ? a.value.toLocaleString()
+                          : metric === "hitRate"
+                            ? (a.value * 100).toFixed(1) + "%"
+                            : formatTokens(a.value)}
+                  </b>
+                </span>
+                <span className="meter">
+                  <span
+                    style={{
+                      width:
+                        Math.max(
+                          0,
+                          Math.min(
+                            100,
+                            metric === "hitRate"
+                              ? (a.value ?? 0) * 100
+                              : ((a.value ?? 0) /
+                                  Math.max(
+                                    0.000001,
+                                    metric === "cost"
+                                      ? Number(s?.totalCost ?? 0)
+                                      : metric === "requests"
+                                        ? (s?.totalRequests ?? 0)
+                                        : (s?.realTotalTokens ?? 0),
+                                  )) *
+                                  100,
+                          ),
+                        ) + "%",
+                    }}
+                  />
+                </span>
+              </button>
+            ))}
           </div>
         </section>
       </div>
@@ -1015,7 +1059,7 @@ function UsageChart({
 }: {
   data: Dashboard["trends"];
   metric: string;
-  chartType: "bar" | "area";
+  chartType: "bar" | "area" | "blocks";
 }) {
   const [hover, setHover] = useState<number | null>(null);
   const values = data.map((d) =>
@@ -1048,6 +1092,145 @@ function UsageChart({
         : metric === "requests"
           ? Math.round(v).toLocaleString()
           : formatTokens(Math.round(v));
+  if (chartType === "blocks") {
+    const peak = metric === "hitRate" ? 100 : Math.max(0, ...values);
+    const firstDate = data[0]?.date.slice(0, 10);
+    const [year, month, day] = (firstDate ?? "").split("-").map(Number);
+    const padding =
+      !hourly && year && month && day
+        ? new Date(year, month - 1, day).getDay()
+        : 0;
+    const rows = hourly ? 4 : 7;
+    const columns = Math.max(1, Math.ceil((padding + data.length) / rows));
+    const monthLabels = hourly
+      ? []
+      : data
+          .flatMap((d, i) => {
+            const current = d.date.slice(0, 7);
+            if (
+              !/^\d{4}-\d{2}$/.test(current) ||
+              (i > 0 && data[i - 1].date.slice(0, 7) === current)
+            )
+              return [];
+            return [
+              {
+                label: `${Number(current.slice(5, 7))}月`,
+                column: Math.floor((padding + i) / rows) + 1,
+              },
+            ];
+          })
+          .filter(
+            (item, index, all) =>
+              index === 0 || item.column !== all[index - 1].column,
+          );
+    const name =
+      metric === "cost"
+        ? "估算费用"
+        : metric === "requests"
+          ? "请求次数"
+          : metric === "hitRate"
+            ? "缓存命中率"
+            : "总 Token";
+    return (
+      <div className="usage-block-chart">
+        <div className="legend">
+          <span>{name}</span>
+          <span>
+            {hourly ? "按小时" : "按日"} ·{" "}
+            {metric === "hitRate"
+              ? "颜色以 100% 为上限"
+              : "颜色按当前范围相对深浅显示"}
+          </span>
+        </div>
+        {data.length ? (
+          <div className="usage-block-scroll">
+            <div
+              className={`usage-block-calendar${columns >= 8 ? " centered" : ""}`}
+              style={
+                {
+                  "--block-columns": columns,
+                  "--block-rows": rows,
+                } as React.CSSProperties
+              }
+            >
+              {!hourly && (
+                <div className="usage-block-months" aria-hidden="true">
+                  {monthLabels.map((m) => (
+                    <span
+                      key={m.label + m.column}
+                      style={{ gridColumnStart: m.column }}
+                    >
+                      {m.label}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="usage-block-grid" aria-label={`${name}方块图`}>
+                {Array.from({ length: padding }, (_, i) => (
+                  <span
+                    className="usage-block-placeholder"
+                    aria-hidden="true"
+                    key={`pad-${i}`}
+                  />
+                ))}
+                {data.map((d, i) => {
+                  const unavailable =
+                    metric === "hitRate" && trendHitRate(d) === null;
+                  const level =
+                    unavailable || values[i] <= 0 || peak <= 0
+                      ? 0
+                      : Math.min(
+                          4,
+                          Math.max(1, Math.ceil((values[i] / peak) * 4)),
+                        );
+                  const description = `${d.date} · ${name}：${unavailable ? "无可缓存输入" : label(values[i])}`;
+                  return (
+                    <span
+                      key={`${d.date}-${i}`}
+                      role="img"
+                      aria-label={description}
+                      title={description}
+                      tabIndex={0}
+                      onMouseEnter={() => setHover(i)}
+                      onMouseLeave={() => setHover(null)}
+                      onFocus={() => setHover(i)}
+                      onBlur={() => setHover(null)}
+                      className={`usage-block level-${level}${unavailable ? " unavailable" : ""}`}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <p className="usage-block-empty">所选范围暂无趋势数据</p>
+        )}
+        <div className="usage-block-footer">
+          <span>
+            {hover !== null && data[hover] ? (
+              `${data[hover].date} · ${name}：${metric === "hitRate" && trendHitRate(data[hover]) === null ? "无可缓存输入" : label(values[hover])}`
+            ) : (
+              <>
+                {data[0] ? trendLabel(data[0].date, hourly) : ""}{" "}
+                {data.length > 1
+                  ? `— ${trendLabel(data[data.length - 1].date, hourly)}`
+                  : ""}
+              </>
+            )}
+          </span>
+          <span>
+            少{" "}
+            <i className="usage-block-legend">
+              {[0, 1, 2, 3, 4].map((n) => (
+                <b key={n} className={`level-${n}`} />
+              ))}
+            </i>{" "}
+            多
+          </span>
+        </div>
+      </div>
+    );
+  }
   const indexLabels = Array.from(
     new Set([
       0,

@@ -34,7 +34,7 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: '观测台 v__VERSION__'
-          releaseBody: '早期版本：AI 用量及局域网汇总已接入；Agent、性能和网络页面仍为预览。macOS 构建未公证。'
+          releaseBody: '新增灰蓝方块趋势图、指标联动的应用排名；更新检查移至关于窗口，移除重复刷新按钮。AI 用量及局域网汇总已接入；Agent、性能和网络页面仍为预览。macOS 构建未公证。'
           releaseDraft: true
           prerelease: false
           assetNamePattern: 'Observatory-[version]-[platform]-[arch][setup][ext]'

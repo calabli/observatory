@@ -502,6 +502,8 @@ function Dialog({
 
 function App() {
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [updateTarget, setUpdateTarget] = useState<HTMLDivElement | null>(null);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
   const [page, setPage] = useState<Page>(
     nav.some((n) => n.id === restored?.page) ? restored!.page! : "overview",
   );
@@ -1525,6 +1527,9 @@ function App() {
           onClick={() => setAboutOpen(true)}
         >
           <Info size={17} />
+          {updateAvailable && (
+            <span className="about-update-dot" aria-label="有新版本" />
+          )}
         </button>
         <button
           className="icon-button"
@@ -1560,9 +1565,11 @@ function App() {
               </div>
             </dl>
             <small>构建时间按当前设备的本地时区显示。</small>
+            <div className="about-update" ref={setUpdateTarget} />
           </div>
         </Dialog>
       )}
+      <UpdateControl target={updateTarget} onAvailable={setUpdateAvailable} />
       <main>
         <div className="page-heading">
           <div>
@@ -1588,7 +1595,6 @@ function App() {
             <p>{titles[page][1]}</p>
           </div>
           <div className="page-controls">
-            <UpdateControl />
             {page !== "usage" && page !== "devices" && (
               <label className="device-picker">
                 <Laptop size={14} />
@@ -1602,14 +1608,16 @@ function App() {
                 </select>
               </label>
             )}
-            <button
-              className="icon-button"
-              aria-label="刷新当前指标"
-              onClick={refresh}
-              disabled={busy}
-            >
-              <RefreshCw size={15} className={busy ? "refreshing" : ""} />
-            </button>
+            {page !== "usage" && (
+              <button
+                className="icon-button"
+                aria-label="刷新当前指标"
+                onClick={refresh}
+                disabled={busy}
+              >
+                <RefreshCw size={15} className={busy ? "refreshing" : ""} />
+              </button>
+            )}
           </div>
         </div>
         <div className="context-bar">

@@ -7,6 +7,22 @@
   color: var(--accent);
   font-size: 16px;
 }
+#observatory-root .app-nav .icon-button {
+  position: relative;
+}
+#observatory-root .about-update-dot {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--action);
+  top: 2px;
+  right: 2px;
+  box-shadow: 0 0 0 2px var(--nav);
+}
+#observatory-root .about-update {
+  margin-top: 18px;
+}
 #observatory-root .about-details p,
 #observatory-root .about-details small {
   color: var(--muted);
@@ -111,7 +127,9 @@
 
 /* Windows: softer separation and highlights, while preserving the native title bar. */
 #observatory-root .obs-shell.windows-polish {
-  font-family: "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  font-family:
+    "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei",
+    sans-serif;
   --bg: light-dark(#f6f6f8, #1c1c1f);
   --surface: light-dark(#ffffff, #29292e);
   --nav: light-dark(#f0f0f3, #202024);

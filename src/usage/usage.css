@@ -1,6 +1,116 @@
 #observatory-root .native-usage {
   min-width: 0;
 }
+#observatory-root .usage-block-chart {
+  --block-0: light-dark(#e6e8ec, #303033);
+  --block-1: light-dark(#c8dcfa, #17375e);
+  --block-2: light-dark(#8fbaf8, #205296);
+  --block-3: light-dark(#4c91f4, #3789f8);
+  --block-4: light-dark(#2169ce, #79b5fc);
+  min-height: 205px;
+}
+#observatory-root .usage-block-scroll {
+  overflow-x: auto;
+  padding: 8px 2px 12px;
+  container-type: inline-size;
+}
+#observatory-root .usage-block-calendar {
+  --block-size: clamp(
+    14px,
+    calc((100cqw - (var(--block-columns) - 1) * 4px) / var(--block-columns)),
+    34px
+  );
+  width: max-content;
+  max-width: none;
+}
+#observatory-root .usage-block-calendar.centered {
+  margin-inline: auto;
+}
+#observatory-root .usage-block-months {
+  display: grid;
+  grid-template-columns: repeat(var(--block-columns), var(--block-size));
+  gap: 4px;
+  height: 22px;
+  font-size: 11px;
+  color: var(--muted);
+}
+#observatory-root .usage-block-months span {
+  white-space: nowrap;
+}
+#observatory-root .usage-block-grid {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(var(--block-rows), var(--block-size));
+  grid-auto-columns: var(--block-size);
+  gap: 4px;
+  width: max-content;
+}
+#observatory-root .usage-block {
+  display: block;
+  width: var(--block-size);
+  height: var(--block-size);
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px light-dark(#1b1f230d, #ffffff0a);
+}
+#observatory-root .usage-block:focus-visible {
+  outline: 2px solid var(--action);
+  outline-offset: 2px;
+}
+#observatory-root .usage-block-legend b {
+  display: block;
+  border-radius: 3px;
+}
+#observatory-root .usage-block.level-0,
+#observatory-root .usage-block-legend .level-0 {
+  background: var(--block-0);
+}
+#observatory-root .usage-block.level-1,
+#observatory-root .usage-block-legend .level-1 {
+  background: var(--block-1);
+}
+#observatory-root .usage-block.level-2,
+#observatory-root .usage-block-legend .level-2 {
+  background: var(--block-2);
+}
+#observatory-root .usage-block.level-3,
+#observatory-root .usage-block-legend .level-3 {
+  background: var(--block-3);
+}
+#observatory-root .usage-block.level-4,
+#observatory-root .usage-block-legend .level-4 {
+  background: var(--block-4);
+}
+#observatory-root .usage-block.unavailable {
+  background: var(--block-0);
+  outline: 1px dashed var(--muted);
+  outline-offset: -2px;
+}
+#observatory-root .usage-block-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+#observatory-root .usage-block-footer > span:last-child {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+#observatory-root .usage-block-legend {
+  display: inline-flex;
+  gap: 3px;
+}
+#observatory-root .usage-block-legend b {
+  width: 11px;
+  height: 11px;
+}
+#observatory-root .usage-block-empty {
+  color: var(--muted);
+  padding: 38px 0;
+}
 #observatory-root .native-usage .xaxis > span {
   min-width: 0;
   white-space: nowrap;
