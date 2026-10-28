@@ -39,6 +39,19 @@ jobs:
           prerelease: false
           assetNamePattern: 'Observatory-[version]-[platform]-[arch][setup][ext]'
           args: ${{ matrix.args }}
+      - name: Verify macOS code signature and disk image
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle=src-tauri/target/aarch64-apple-darwin/release/bundle
+          app=$(find "$bundle/macos" -maxdepth 1 -name '*.app' -type d -print -quit)
+          test -n "$app"
+          codesign --verify --deep --strict --verbose=4 "$app"
+          codesign --display --verbose=4 "$app"
+          dmg=$(find "$bundle/dmg" -maxdepth 1 -name '*.dmg' -print -quit)
+          test -n "$dmg"
+          hdiutil verify "$dmg"
       - name: Upload portable Windows executable
         if: runner.os == 'Windows'
         shell: pwsh
@@ -63,7 +76,7 @@ jobs:
           $tag = "v$version"
           $release = gh release view $tag --json assets | ConvertFrom-Json
           $win = $release.assets | Where-Object { $_.name -like '*x64-setup.exe' } | Select-Object -First 1
-          $mac = $release.assets | Where-Object { $_.name -like '*aarch64.app.tar.gz' } | Select-Object -First 1
+          $mac = $release.assets | Where-Object { $_.name -like '*.app.tar.gz' } | Select-Object -First 1
           if (!$win -or !$mac) { throw 'Missing update packages' }
           gh release download $tag --pattern '*.sig' --dir signatures
           if ($LASTEXITCODE -ne 0) { throw 'Failed to download signatures' }
