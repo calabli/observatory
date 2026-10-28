@@ -1,0 +1,129 @@
+#observatory-root .network-toolbar,
+#observatory-root .network-interface-choice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 16px 0;
+  color: var(--muted);
+}
+#observatory-root .network-interface-choice label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+#observatory-root .network-interface-choice select {
+  max-width: min(500px, 70vw);
+}
+#observatory-root .network-public-ip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin: 16px 0;
+}
+#observatory-root .network-public-ip strong {
+  display: block;
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+}
+#observatory-root .network-public-ip p {
+  margin: 6px 0 0;
+}
+#observatory-root .network-public-action {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+#observatory-root .network-public-action small {
+  max-width: 380px;
+  color: var(--muted);
+  text-align: right;
+}
+#observatory-root .network-public-ip .usage-error {
+  width: 100%;
+}
+#observatory-root .network-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin: 16px 0;
+}
+#observatory-root .network-cards .panel {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+#observatory-root .network-cards span,
+#observatory-root .network-cards small {
+  color: var(--muted);
+}
+#observatory-root .network-cards strong {
+  font-size: 21px;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+#observatory-root .network-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(260px, 2fr);
+  gap: 16px;
+}
+#observatory-root .network-live h2 {
+  font-size: 14px;
+  margin: 0 0 12px;
+}
+#observatory-root .network-chart-legend,
+#observatory-root .network-chart-times {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+#observatory-root .network-chart-legend span:first-child {
+  color: var(--accent);
+}
+#observatory-root .network-chart-legend span:nth-child(2) {
+  color: var(--teal);
+}
+#observatory-root .network-chart svg {
+  width: 100%;
+  height: 170px;
+  margin: 12px 0;
+}
+#observatory-root .network-wait {
+  padding: 50px 0;
+  color: var(--muted);
+  text-align: center;
+}
+#observatory-root .network-connection dl {
+  margin: 0;
+}
+#observatory-root .network-connection dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  border-bottom: 1px solid var(--line);
+  padding: 9px 0;
+}
+#observatory-root .network-connection dt {
+  color: var(--muted);
+  white-space: nowrap;
+}
+#observatory-root .network-connection dd {
+  margin: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 900px) {
+  #observatory-root .network-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  #observatory-root .network-columns {
+    grid-template-columns: 1fr;
+  }
+}

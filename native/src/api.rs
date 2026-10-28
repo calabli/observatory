@@ -185,6 +185,13 @@ impl UsageBackend {
     }
     pub async fn call(&self, op: &str, args: Value) -> Result<Value, AppError> {
         match op {
+            "network_international_ipv4" => crate::network_overview::international_ipv4().await,
+            "network_snapshot" => {
+                let force = args.get("refreshMetadata").and_then(Value::as_bool).unwrap_or(false);
+                tokio::task::spawn_blocking(move || crate::network_overview::snapshot(force))
+                    .await
+                    .map_err(|e| AppError::Message(e.to_string()))
+            }
             "status" => self.status(),
             "preferences_save" => {
                 let interval = args

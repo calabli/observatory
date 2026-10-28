@@ -4,6 +4,37 @@ use serde_json::json;
 use chrono::{Local, TimeZone};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
+#[test]
+fn international_ip_response_requires_valid_ipv4() {
+    use observatory_usage_core::network_overview::parse_ipv4_response;
+    assert_eq!(parse_ipv4_response(&json!({"ip":"192.0.2.7"})).unwrap().to_string(), "192.0.2.7");
+    assert!(parse_ipv4_response(&json!({"ip":"2001:db8::1"})).is_err());
+    assert!(parse_ipv4_response(&json!({"ip":"not-an-ip"})).is_err());
+    assert!(parse_ipv4_response(&json!({"error":"rate limited"})).is_err());
+}
+
+#[tokio::test]
+#[ignore = "requires a real network request to ipify"]
+async fn international_ip_live_smoke() {
+    let result = observatory_usage_core::network_overview::international_ipv4().await.unwrap();
+    assert!(result["ip"].as_str().unwrap().parse::<std::net::Ipv4Addr>().is_ok());
+    assert!(result["checkedAt"].as_i64().unwrap() > 0);
+}
+
+#[test]
+fn network_snapshot_exposes_valid_local_interface_data() {
+    let snapshot = observatory_usage_core::network_overview::snapshot(true);
+    let interfaces = snapshot["interfaces"].as_array().expect("interface list");
+    eprintln!("Network snapshot: {} interfaces, {} default route, {} with counters", interfaces.len(), interfaces.iter().filter(|i| i["defaultRoute"] == true).count(), interfaces.iter().filter(|i| i["received"].is_u64() && i["transmitted"].is_u64()).count());
+    for interface in interfaces {
+        assert!(interface["id"].as_str().is_some_and(|s| !s.is_empty()));
+        assert!(interface["state"].is_string());
+        assert!(interface["defaultRoute"].is_boolean());
+        for key in ["ipv4", "ipv6", "gateways", "dns"] { assert!(interface[key].is_array()); }
+        for key in ["received", "transmitted"] { assert!(interface[key].is_null() || interface[key].is_u64()); }
+    }
+}
+
 fn isolate() -> MutexGuard<'static, ()> {
     static LOCK: Mutex<()> = Mutex::new(());
     static HOME: OnceLock<std::path::PathBuf> = OnceLock::new();

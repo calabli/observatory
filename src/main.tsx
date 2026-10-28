@@ -81,6 +81,7 @@ import {
 } from "@tanstack/react-query";
 import { UsageWorkspace } from "./usage/UsageWorkspace";
 import { DeviceManager } from "./usage/DeviceManager";
+import { NetworkOverview } from "./network/NetworkOverview";
 import { UpdateControl } from "./UpdateControl";
 import packageInfo from "../package.json";
 import { usageCall } from "./native/usageClient";
@@ -1163,332 +1164,6 @@ function App() {
       </Panel>
     </>
   );
-  const network = (
-    <>
-      <div className="tabs">
-        {[
-          { id: "connections", label: "连接概览", icon: Globe },
-          { id: "dns", label: "DNS 诊断", icon: Search },
-          { id: "interfaces", label: "网卡与路由", icon: EthernetPort },
-        ].map((t) => (
-          <button
-            key={t.id}
-            aria-pressed={netTab === t.id}
-            onClick={() => setNetTab(t.id)}
-          >
-            <t.icon size={14} />
-            {t.label}
-          </button>
-        ))}
-      </div>
-      {netTab === "connections" ? (
-        <>
-          <div className="stats-grid">
-            <Stat
-              label="本地 IPv4"
-              value={<span className="ip-value">{d.ip}</span>}
-              detail={d.adapter + " · IPv4 / IPv6"}
-              icon={Laptop}
-            />
-            <Stat
-              label="公网 IPv4"
-              value={<span className="ip-value">203.0.113.42</span>}
-              detail="演示地址"
-              icon={Globe}
-            />
-            <Stat
-              label="网关时延"
-              value="3"
-              unit="ms"
-              detail="丢包率 0% · 演示采样"
-              icon={Activity}
-              values={[4, 3, 4, 5, 3, 4, 2, 3, 4, 3]}
-            />
-            <Stat
-              label="下载 / 上传"
-              value={d.down}
-              unit="MB/s"
-              detail={d.up + " KB/s 上传"}
-              icon={ArrowDownLeft}
-              values={downSeries}
-            />
-          </div>
-          <div className="overview-grid">
-            <Panel title="网络吞吐量" actions={<Badge>{d.adapter}</Badge>}>
-              <Trend
-                series={[
-                  { name: "下载", values: downSeries, color: "var(--accent)" },
-                  { name: "上传", values: upSeries, color: "var(--teal)" },
-                ]}
-                max={4}
-                unit=" MB/s"
-              />
-            </Panel>
-            <Panel title="当前连接" actions={<Badge tone="good">在线</Badge>}>
-              <KeyValues rows={networkRows} />
-            </Panel>
-          </div>
-          <Panel
-            title="应用连接"
-            sub="按应用查看目标地址、协议与实时流量"
-            actions={
-              <Button icon={RefreshCw} onClick={refresh} disabled={busy}>
-                刷新
-              </Button>
-            }
-          >
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>进程 / 应用</th>
-                    <th>目标</th>
-                    <th>远端地址</th>
-                    <th>协议</th>
-                    <th className="numeric">流量</th>
-                    <th>状态</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {connections.map((c) => (
-                    <tr key={c.process}>
-                      <td>{c.process}</td>
-                      <td>{c.target}</td>
-                      <td className="mono muted">{c.address}</td>
-                      <td>
-                        <Badge>{c.protocol}</Badge>
-                      </td>
-                      <td className="numeric">{c.traffic}</td>
-                      <td>
-                        <span className="positive">{c.status}</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Panel>
-        </>
-      ) : netTab === "dns" ? (
-        <>
-          <Panel title="DNS 解析诊断" sub="比较系统 DNS 与指定服务器的解析结果">
-            <div className="dns-form">
-              <label>
-                查询域名
-                <div className="input-with-icon">
-                  <Globe size={15} />
-                  <input
-                    aria-label="查询域名"
-                    value={domain}
-                    onChange={(e) => {
-                      setDomain(e.target.value);
-                      setDnsResult(false);
-                    }}
-                    onKeyDown={(e) => e.key === "Enter" && runDns()}
-                  />
-                </div>
-              </label>
-              <label>
-                DNS 服务器
-                <select
-                  aria-label="DNS 服务器"
-                  value={dnsServer}
-                  onChange={(e) => {
-                    setDnsServer(e.target.value);
-                    setDnsResult(false);
-                  }}
-                >
-                  <option value="system">系统默认 · 223.5.5.5</option>
-                  <option value="1.1.1.1">1.1.1.1</option>
-                  <option value="223.5.5.5">223.5.5.5</option>
-                </select>
-              </label>
-              <Button primary icon={Search} onClick={runDns} disabled={dnsBusy}>
-                {dnsBusy ? "查询中…" : "查询解析"}
-              </Button>
-            </div>
-            {dnsError && (
-              <p role="alert" className="error-message">
-                {dnsError}
-              </p>
-            )}
-            {dnsBusy && (
-              <div className="loading-bars" aria-label="正在查询">
-                <span />
-                <span />
-                <span />
-              </div>
-            )}
-            {dnsResult ? (
-              <div className="dns-results">
-                <div className="panel-head">
-                  <h3 className="inline">
-                    <CheckCheck size={16} />
-                    {domain}
-                  </h3>
-                  <Badge tone="good">演示解析成功 · 32 ms</Badge>
-                </div>
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>记录类型</th>
-                        <th>解析结果</th>
-                        <th>TTL</th>
-                        <th>服务器</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>
-                          <Badge tone="blue">A</Badge>
-                        </td>
-                        <td className="mono">203.0.113.10</td>
-                        <td>300 秒</td>
-                        <td className="mono">
-                          {dnsServer === "system" ? "223.5.5.5" : dnsServer}
-                        </td>
-                      </tr>
-                      <tr>
-                        <td>
-                          <Badge tone="blue">AAAA</Badge>
-                        </td>
-                        <td className="mono">2001:db8::10</td>
-                        <td>300 秒</td>
-                        <td className="mono">
-                          {dnsServer === "system" ? "223.5.5.5" : dnsServer}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-                <p className="hint">
-                  此为设计稿的演示结果，未发起真实 DNS 查询。
-                </p>
-              </div>
-            ) : (
-              !dnsBusy && (
-                <div className="dns-empty">
-                  <Waypoints size={30} />
-                  <strong>从一次解析，检查网络路径</strong>
-                  <span>查看记录类型、返回地址、TTL 与 DNS 服务器。</span>
-                </div>
-              )
-            )}
-          </Panel>
-          <Panel title="DNS 配置" className="section-gap">
-            <KeyValues
-              rows={[
-                ["系统 DNS", "223.5.5.5"],
-                ["备用 DNS", "1.1.1.1"],
-                ["解析方式", "系统解析器"],
-                ["代理 DNS", "Mihomo · TUN 已启用"],
-                ["所属网卡", d.adapter],
-              ]}
-            />
-          </Panel>
-        </>
-      ) : (
-        <>
-          <Panel title="网络接口" sub="区分物理网卡、代理与虚拟网络">
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>接口</th>
-                    <th>类型</th>
-                    <th>IPv4</th>
-                    <th>子网前缀</th>
-                    <th>网关</th>
-                    <th>状态</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[
-                    [d.adapter, "物理网卡", d.ip, "/24", d.gateway, "已连接"],
-                    [
-                      "Mihomo",
-                      "TUN 虚拟网卡",
-                      "198.18.0.1",
-                      "/30",
-                      "198.18.0.2",
-                      "已启用",
-                    ],
-                    [
-                      "vEthernet (WSL)",
-                      "虚拟网卡",
-                      "198.18.192.1",
-                      "/20",
-                      "—",
-                      "已启用",
-                    ],
-                  ].map((r) => (
-                    <tr key={r[0]}>
-                      {r.map((v, i) => (
-                        <td key={i}>
-                          {i === 1 ? (
-                            <Badge>{v}</Badge>
-                          ) : i === 5 ? (
-                            <span className="positive">{v}</span>
-                          ) : (
-                            <span className={i >= 2 ? "mono" : ""}>{v}</span>
-                          )}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Panel>
-          <Panel
-            title="IPv4 路由"
-            className="section-gap"
-            sub="物理局域网与代理默认路由分开呈现"
-          >
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>目标网络</th>
-                    <th>下一跳</th>
-                    <th>接口</th>
-                    <th className="numeric">Metric</th>
-                    <th>用途</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[
-                    ["203.0.113.0/24", "直连", d.adapter, "25", "局域网"],
-                    ["0.0.0.0/0", "198.18.0.2", "Mihomo", "5", "代理默认路由"],
-                    ["0.0.0.0/0", d.gateway, d.adapter, "35", "物理网关"],
-                  ].map((r) => (
-                    <tr key={r[0] + r[3]}>
-                      {r.map((v, i) => (
-                        <td
-                          key={i}
-                          className={i === 3 ? "numeric" : i < 2 ? "mono" : ""}
-                        >
-                          {v}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Panel>
-          <div className="callout subtle">
-            <ShieldCheck size={15} />
-            <span>
-              网卡、DNS
-              和路由在此只读查看。真实监控接入后，配置修改会使用独立操作流程。
-            </span>
-          </div>
-        </>
-      )}
-    </>
-  );
   const devices = <DeviceManager />;
   return (
     <div
@@ -1588,14 +1263,12 @@ function App() {
               {titles[page][0]}
               {page === "agents" && <Badge tone="blue">规划预览</Badge>}
               {page === "overview" && <Badge>部分指标为演示</Badge>}
-              {(page === "performance" || page === "network") && (
-                <Badge>演示数据</Badge>
-              )}
+              {page === "performance" && <Badge>演示数据</Badge>}
             </h1>
             <p>{titles[page][1]}</p>
           </div>
           <div className="page-controls">
-            {page !== "usage" && page !== "devices" && (
+            {page !== "usage" && page !== "devices" && page !== "network" && (
               <label className="device-picker">
                 <Laptop size={14} />
                 <select
@@ -1608,7 +1281,7 @@ function App() {
                 </select>
               </label>
             )}
-            {page !== "usage" && (
+            {page !== "usage" && page !== "network" && (
               <button
                 className="icon-button"
                 aria-label="刷新当前指标"
@@ -1620,75 +1293,79 @@ function App() {
             )}
           </div>
         </div>
-        <div className="context-bar">
-          {page === "usage" || page === "devices" ? (
+        {page !== "network" && (
+          <div className="context-bar">
+            {page === "usage" || page === "devices" ? (
+              <div className="inline">
+                <span className="status-dot" />
+                <span>{nativeStatus?.device.deviceName ?? "本机真实用量"}</span>
+                <span className="separator" />
+                <span>本机日志 · 只读历史导入</span>
+              </div>
+            ) : (
+              <div className="inline">
+                <span className="status-dot" />
+                <span>{d.os}</span>
+                <span className="separator" />
+                <code>{d.ip}</code>
+                <span className="separator" />
+                <span>{d.adapter}</span>
+                {page === "overview" && <Badge>本机与局域网</Badge>}
+              </div>
+            )}
             <div className="inline">
-              <span className="status-dot" />
-              <span>{nativeStatus?.device.deviceName ?? "本机真实用量"}</span>
-              <span className="separator" />
-              <span>本机日志 · 只读历史导入</span>
-            </div>
-          ) : (
-            <div className="inline">
-              <span className="status-dot" />
-              <span>{d.os}</span>
-              <span className="separator" />
-              <code>{d.ip}</code>
-              <span className="separator" />
-              <span>{d.adapter}</span>
-              {page === "overview" && <Badge>本机与局域网</Badge>}
-            </div>
-          )}
-          <div className="inline">
-            <span>
-              {page === "usage" || page === "devices"
-                ? nativeStatus?.lastScanAt
-                  ? "最近扫描 " +
-                    new Date(nativeStatus.lastScanAt).toLocaleTimeString(
-                      "zh-CN",
-                      { hour12: false },
+              <span>
+                {page === "usage" || page === "devices"
+                  ? nativeStatus?.lastScanAt
+                    ? "最近扫描 " +
+                      new Date(nativeStatus.lastScanAt).toLocaleTimeString(
+                        "zh-CN",
+                        { hour12: false },
+                      )
+                    : "等待本机扫描"
+                  : updated
+                    ? "刚刚更新"
+                    : "最近更新 12:42:08"}
+              </span>
+              <select
+                value={refreshInterval}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setRefreshInterval(value);
+                  void usageCall("preferences_save", { refreshInterval: value })
+                    .then(() =>
+                      qc.invalidateQueries({ queryKey: ["usage", "status"] }),
                     )
-                  : "等待本机扫描"
-                : updated
-                  ? "刚刚更新"
-                  : "最近更新 12:42:08"}
-            </span>
-            <select
-              value={refreshInterval}
-              onChange={(e) => {
-                const value = e.target.value;
-                setRefreshInterval(value);
-                void usageCall("preferences_save", { refreshInterval: value })
-                  .then(() =>
-                    qc.invalidateQueries({ queryKey: ["usage", "status"] }),
-                  )
-                  .catch((error) => toast(String(error)));
-              }}
-              aria-label="自动刷新间隔"
-            >
-              <option value="30">每 30 秒</option>
-              <option value="60">每 60 秒</option>
-              <option value="manual">手动刷新</option>
-            </select>
+                    .catch((error) => toast(String(error)));
+                }}
+                aria-label="自动刷新间隔"
+              >
+                <option value="30">每 30 秒</option>
+                <option value="60">每 60 秒</option>
+                <option value="manual">手动刷新</option>
+              </select>
+            </div>
           </div>
-        </div>
-        {page === "overview"
-          ? overview
-          : page === "usage"
-            ? usage
-            : page === "agents"
-              ? agentPage
-              : page === "performance"
-                ? performance
-                : page === "network"
-                  ? network
-                  : devices}
+        )}
+        {page === "overview" ? (
+          overview
+        ) : page === "usage" ? (
+          usage
+        ) : page === "agents" ? (
+          agentPage
+        ) : page === "performance" ? (
+          performance
+        ) : page === "network" ? (
+          <NetworkOverview />
+        ) : (
+          devices
+        )}
         <footer className="app-footer">
           <span className="inline">
             <ShieldCheck size={13} />
             指标本地采集 · 自主选择共享
           </span>
-          <span>AI 用量已接入 · 设备、网络和 Agent 为预览</span>
+          <span>AI 用量与网络概况已接入 · 设备性能和 Agent 为预览</span>
         </footer>
       </main>
       {notice && (

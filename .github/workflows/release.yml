@@ -34,11 +34,14 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: '观测台 v__VERSION__'
-          releaseBody: '自定义时间新增时、分、秒选择器，支持 macOS 和 Windows。AI 用量及局域网汇总已接入；Agent、性能和网络页面仍为预览。macOS 构建未公证。'
+          releaseBody: '新增本机网卡、IP、网关、DNS、实时流量概况和手动国际出口 IPv4 查询。DNS 诊断、进程流量、设备性能和 Agent 追踪尚未接入。macOS 构建未公证。'
           releaseDraft: true
           prerelease: false
           assetNamePattern: 'Observatory-[version]-[platform]-[arch][setup][ext]'
           args: ${{ matrix.args }}
+      - name: Verify macOS network snapshot
+        if: runner.os == 'macOS'
+        run: cargo test --manifest-path native/Cargo.toml --test usage_integration network_snapshot_exposes_valid_local_interface_data
       - name: Verify macOS code signature and disk image
         if: runner.os == 'macOS'
         shell: bash
