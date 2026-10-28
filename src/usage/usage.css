@@ -1,6 +1,23 @@
 #observatory-root .native-usage {
   min-width: 0;
 }
+#observatory-root .usage-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 2px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+}
+#observatory-root .usage-sort:hover {
+  color: var(--text);
+}
+#observatory-root .usage-sort span {
+  color: var(--muted);
+  font-size: 12px;
+}
 #observatory-root .usage-block-chart {
   --block-0: light-dark(#e6e8ec, #303033);
   --block-1: light-dark(#c8dcfa, #17375e);

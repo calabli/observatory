@@ -44,6 +44,7 @@ import { AppSelect } from "./AppSelect";
 import { formatRequestSpeed } from "./requestSpeed";
 import { customTimeRange } from "./timeRange";
 import { rankApps, type RankingMetric } from "./appRanking";
+import { sortStats, type StatsSortKey } from "./statsSort";
 
 type Props = {
   interval: string;
@@ -1444,22 +1445,68 @@ function StatsTable({
   rows: (ModelStats | ProviderStats)[];
   model: boolean;
 }) {
+  const [sort, setSort] = useState<{
+    key: StatsSortKey;
+    direction: "asc" | "desc";
+  }>({ key: "totalCost", direction: "desc" });
+  const ordered = useMemo(
+    () => sortStats(rows, sort.key, sort.direction),
+    [rows, sort],
+  );
+  const columns: [StatsSortKey, string][] = [
+    ["requestCount", "请求"],
+    ["totalTokens", "Token"],
+    ["totalCost", "费用"],
+    ["avgCost", "平均费用"],
+    ["firstToken", "首字时间"],
+    ["successRate", "成功率"],
+  ];
   return (
     <div className="table-wrap">
       <table>
         <thead>
           <tr>
             <th>{model ? "模型" : "供应商 / 应用"}</th>
-            <th className="numeric">请求</th>
-            <th className="numeric">Token</th>
-            <th className="numeric">费用</th>
-            <th className="numeric">平均费用</th>
-            <th className="numeric">首字时间</th>
-            <th className="numeric">成功率</th>
+            {columns.map(([key, label]) => (
+              <th
+                key={key}
+                className="numeric"
+                aria-sort={
+                  sort.key === key
+                    ? sort.direction === "asc"
+                      ? "ascending"
+                      : "descending"
+                    : undefined
+                }
+              >
+                <button
+                  type="button"
+                  className="usage-sort"
+                  onClick={() =>
+                    setSort((previous) => ({
+                      key,
+                      direction:
+                        previous.key === key && previous.direction === "desc"
+                          ? "asc"
+                          : "desc",
+                    }))
+                  }
+                >
+                  {label}
+                  <span aria-hidden="true">
+                    {sort.key === key
+                      ? sort.direction === "asc"
+                        ? "↑"
+                        : "↓"
+                      : "↕"}
+                  </span>
+                </button>
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody>
-          {rows.map((r, i) => (
+          {ordered.map((r, i) => (
             <tr key={i}>
               <td>
                 {"model" in r ? r.model : r.providerName}

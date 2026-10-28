@@ -1,6 +1,6 @@
 [package]
 name = "observatory"
-version = "0.1.17"
+version = "0.1.19"
 edition = "2021"
 license = "MIT"
 description = "Local AI usage observatory"

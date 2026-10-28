@@ -53,6 +53,17 @@
   color: var(--muted);
   font-size: 12px;
 }
+#observatory-root .update-control [role="status"] {
+  overflow-wrap: anywhere;
+}
+#observatory-root .update-confirm {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+  margin-top: 6px;
+}
 #observatory-root .app-select-trigger {
   display: inline-flex;
   align-items: center;

@@ -1,0 +1,11 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import ts from 'typescript';
+const source=await readFile(new URL('../src/usage/statsSort.ts',import.meta.url),'utf8');
+const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
+const {sortStats}=await import('data:text/javascript;base64,'+Buffer.from(code).toString('base64'));
+const rows=[{model:'a',requestCount:9,totalTokens:20,totalCost:'0.004',avgCostPerRequest:'0.0004',firstTokenMedianMs:null,estFirstTokenMedianMs:80,successRate:99},{model:'b',requestCount:12,totalTokens:5,totalCost:'0.002',avgCostPerRequest:'0.0002',firstTokenMedianMs:40,successRate:100},{model:'c',requestCount:1,totalTokens:100,totalCost:'0.001',avgCostPerRequest:'0.001',successRate:80}];
+test('numeric values sort before rounding without mutating input',()=>{assert.deepEqual(sortStats(rows,'requestCount','desc').map(x=>x.model),['b','a','c']);assert.deepEqual(sortStats(rows,'avgCost','asc').map(x=>x.model),['b','a','c']);assert.deepEqual(rows.map(x=>x.model),['a','b','c']);});
+test('estimated first-token time sorts numerically and missing values stay last',()=>{assert.deepEqual(sortStats(rows,'firstToken','asc').map(x=>x.model),['b','a','c']);assert.deepEqual(sortStats(rows,'firstToken','desc').map(x=>x.model),['a','b','c']);});
+test('provider averages are calculated from cost and request count',()=>{let providers=[{...rows[0],model:undefined,providerName:'a',avgCostPerRequest:undefined},{...rows[1],model:undefined,providerName:'b',avgCostPerRequest:undefined}].map(({avgCostPerRequest,...r})=>r);assert.deepEqual(sortStats(providers,'avgCost','desc').map(x=>x.providerName),['a','b']);});
