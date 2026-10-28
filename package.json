@@ -1,9 +1,10 @@
 {
   "name": "observatory-desktop",
   "private": true,
-  "version": "0.1.3",
+  "version": "0.1.4",
   "type": "module",
   "scripts": {
+    "tauri": "tauri",
     "dev": "vite --host 127.0.0.1 --port 5188 --strictPort",
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit && vite build",
