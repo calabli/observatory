@@ -45,6 +45,7 @@ import { formatRequestSpeed } from "./requestSpeed";
 import { customTimeRange } from "./timeRange";
 import { rankApps, type RankingMetric } from "./appRanking";
 import { sortStats, type StatsSortKey } from "./statsSort";
+import { DateTimeFields } from "./DateTimeFields";
 
 type Props = {
   interval: string;
@@ -459,27 +460,17 @@ export function UsageWorkspace({
       </div>
       {range === "custom" && (
         <div className="usage-date-range">
-          <label>
-            开始时间
-            <input
-              type="datetime-local"
-              step="1"
-              aria-label="开始时间"
-              value={customStart}
-              onChange={(e) => change(() => setCustomStart(e.target.value))}
-            />
-          </label>
+          <DateTimeFields
+            label="开始时间"
+            value={customStart}
+            onChange={(value) => change(() => setCustomStart(value))}
+          />
           <span>至</span>
-          <label>
-            结束时间
-            <input
-              type="datetime-local"
-              step="1"
-              aria-label="结束时间"
-              value={customEnd}
-              onChange={(e) => change(() => setCustomEnd(e.target.value))}
-            />
-          </label>
+          <DateTimeFields
+            label="结束时间"
+            value={customEnd}
+            onChange={(value) => change(() => setCustomEnd(value))}
+          />
           {!validPeriod && (
             <span className="usage-error">
               请选择有效时间，开始时间不能晚于结束时间。

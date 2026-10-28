@@ -34,7 +34,7 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: '观测台 v__VERSION__'
-          releaseBody: '改进更新操作反馈：窗口内确认、下载进度及错误提示；模型和供应商表支持排序。AI 用量及局域网汇总已接入；Agent、性能和网络页面仍为预览。macOS 构建未公证。'
+          releaseBody: '自定义时间新增时、分、秒选择器，支持 macOS 和 Windows。AI 用量及局域网汇总已接入；Agent、性能和网络页面仍为预览。macOS 构建未公证。'
           releaseDraft: true
           prerelease: false
           assetNamePattern: 'Observatory-[version]-[platform]-[arch][setup][ext]'

@@ -206,6 +206,20 @@
   align-items: center;
   gap: 9px;
 }
+#observatory-root .usage-datetime {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+#observatory-root .usage-date-range .usage-time-unit {
+  gap: 3px;
+}
+#observatory-root .usage-date-range .usage-time-unit select {
+  min-width: 55px;
+  padding: 5px 19px 5px 7px;
+  font-variant-numeric: tabular-nums;
+}
 #observatory-root .usage-date-range input {
   border: 1px solid var(--line);
   border-radius: 5px;
