@@ -34,7 +34,7 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: '观测台 v__VERSION__'
-          releaseBody: '新增本机网卡、IP、网关、DNS、实时流量概况和手动国际出口 IPv4 查询。DNS 诊断、进程流量、设备性能和 Agent 追踪尚未接入。macOS 构建未公证。'
+          releaseBody: '新增本机网络概况和手动国际出口 IPv4 查询；Windows 新安装的默认目录改为 Observatory。DNS 诊断、进程流量、设备性能和 Agent 追踪尚未接入。macOS 构建未公证。'
           releaseDraft: true
           prerelease: false
           assetNamePattern: 'Observatory-[version]-[platform]-[arch][setup][ext]'

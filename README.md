@@ -78,3 +78,5 @@ npm run native:test
 迁移清单见 `native/migration-manifest.json`。保留 CC Switch 的 MIT 许可证和原始源码注释：`licenses/CC-Switch-MIT.txt`。迁移适配主要涉及数据目录、最小数据库、事件通知、Tokio 运行时和应用启动入口。
 
 ZCode 图标来自官方桌面安装包，来源说明位于 `src/assets/zcode.SOURCE.md`。
+
+Windows 安装器模板基于 Tauri CLI 2.10.1 的 NSIS 模板（MIT 或 Apache-2.0 许可）；调整默认安装目录为 `Observatory`，保留已有安装路径的升级识别。
