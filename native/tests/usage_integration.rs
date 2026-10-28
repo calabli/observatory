@@ -1,6 +1,7 @@
 use observatory_usage_core::{api::UsageBackend, database::Database, lan_usage, services};
 use rusqlite::Connection;
 use serde_json::json;
+use chrono::{Local, TimeZone};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 fn isolate() -> MutexGuard<'static, ()> {
@@ -11,6 +12,18 @@ fn isolate() -> MutexGuard<'static, ()> {
     std::env::set_var("OBSERVATORY_HOME", home);
     std::env::set_var("OBSERVATORY_TEST_HOME", home);
     guard
+}
+
+#[test]
+fn daily_rollups_require_the_entire_end_day_to_be_selected() {
+    let _guard = isolate();
+    let db = Database::memory().unwrap();
+    db.execute_batch("INSERT INTO usage_daily_rollups(date,app_type,provider_id,model,request_count,success_count,input_tokens,output_tokens,total_cost_usd) VALUES('2024-01-02','codex','provider','fixture-model',3,3,90,20,'2.50');").unwrap();
+    let start = Local.with_ymd_and_hms(2024, 1, 2, 0, 0, 0).single().unwrap().timestamp();
+    let partial = Local.with_ymd_and_hms(2024, 1, 2, 23, 59, 58).single().unwrap().timestamp();
+    let full = Local.with_ymd_and_hms(2024, 1, 2, 23, 59, 59).single().unwrap().timestamp();
+    assert_eq!(db.get_usage_summary(Some(start), Some(partial), None, None, None).unwrap().total_requests, 0);
+    assert_eq!(db.get_usage_summary(Some(start), Some(full), None, None, None).unwrap().total_requests, 3);
 }
 fn seed(
     db: &Database,

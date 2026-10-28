@@ -899,7 +899,7 @@ fn compute_rollup_date_bounds(
         Some(ts) => {
             let local = local_datetime_from_timestamp(ts)?;
             let day = local.date_naive();
-            if local.time().hour() == 23 && local.time().minute() == 59 {
+            if local.time().hour() == 23 && local.time().minute() == 59 && local.time().second() == 59 {
                 Some(day.format("%Y-%m-%d").to_string())
             } else {
                 day.pred_opt()
@@ -4479,7 +4479,7 @@ mod tests {
 
         // ⑧ 趋势（>24h 走天分桶 + rollup 分支）。
         let t_start = local_ts(2026, 6, 8, 0, 0, 0);
-        let t_end = local_ts(2026, 6, 10, 23, 59, 0);
+        let t_end = local_ts(2026, 6, 10, 23, 59, 59);
         let trends = db.get_daily_trends(Some(t_start), Some(t_end), None, Some("Packy"), None)?;
         let total_req: u64 = trends.iter().map(|d| d.request_count).sum();
         assert_eq!(total_req, 7, "明细 2 + rollup 5");
@@ -4515,11 +4515,11 @@ mod tests {
     }
 
     #[test]
-    fn test_get_usage_summary_includes_end_day_rollup_for_minute_precision_end_time(
+    fn test_get_usage_summary_includes_end_day_rollup_for_full_day_end_time(
     ) -> Result<(), AppError> {
         let db = Database::memory()?;
         let start = local_ts(2024, 1, 1, 0, 0, 0);
-        let end = local_ts(2024, 1, 2, 23, 59, 0);
+        let end = local_ts(2024, 1, 2, 23, 59, 59);
 
         {
             let conn = lock_conn!(db.conn);

@@ -6,6 +6,7 @@ import React, {
   type ReactNode,
 } from "react";
 import { createRoot } from "react-dom/client";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   Activity,
   ArrowDown,
@@ -523,7 +524,15 @@ function App() {
     return () => window.removeEventListener("openai:set_globals", apply);
   }, []);
   useEffect(() => {
-    document.documentElement.style.colorScheme = dark ? "dark" : "light";
+    const theme = dark ? "dark" : "light";
+    document.documentElement.style.colorScheme = theme;
+    if (window.__TAURI_INTERNALS__) {
+      void getCurrentWindow()
+        .setTheme(theme)
+        .catch((error) => {
+          console.error("系统标题栏主题同步失败", error);
+        });
+    }
   }, [dark]);
   const [busy, setBusy] = useState(false);
   const [updated, setUpdated] = useState(false);
@@ -1480,7 +1489,10 @@ function App() {
   );
   const devices = <DeviceManager />;
   return (
-    <div className="obs-shell" style={{ colorScheme: dark ? "dark" : "light" }}>
+    <div
+      className={`obs-shell${/Windows/i.test(navigator.userAgent) ? " windows-polish" : ""}`}
+      style={{ colorScheme: dark ? "dark" : "light" }}
+    >
       <header className="app-nav">
         <button
           className="brand"

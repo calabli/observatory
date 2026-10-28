@@ -42,6 +42,7 @@ import {
 import { AppGlyph } from "./AppGlyph";
 import { AppSelect } from "./AppSelect";
 import { formatRequestSpeed } from "./requestSpeed";
+import { customTimeRange } from "./timeRange";
 
 type Props = {
   interval: string;
@@ -79,7 +80,7 @@ function loadView(): {
     return {};
   }
 }
-function bounds(range: Range, start: string, end: string) {
+function bounds(range: Range, start: string, end: string): { startDate?: number; endDate?: number } {
   if (range === "all") return {};
   const day = new Date();
   day.setHours(0, 0, 0, 0);
@@ -88,12 +89,7 @@ function bounds(range: Range, start: string, end: string) {
   if (range === "week") day.setDate(day.getDate() - 6);
   if (range === "month") day.setDate(day.getDate() - 29);
   if (range === "custom") {
-    const first = new Date(start + "T00:00:00");
-    const final = new Date(end + "T23:59:59");
-    return {
-      startDate: Math.floor(first.getTime() / 1000),
-      endDate: Math.floor(final.getTime() / 1000),
-    };
+    return customTimeRange(start, end) ?? {};
   }
   return {
     startDate: Math.floor(day.getTime() / 1000),
@@ -185,8 +181,8 @@ export function UsageWorkspace({
   const [app, setApp] = useState(saved.app ?? "");
   const [model, setModel] = useState(saved.model ?? "");
   const [provider, setProvider] = useState(saved.provider ?? "");
-  const [customStart, setCustomStart] = useState(dateInput());
-  const [customEnd, setCustomEnd] = useState(dateInput());
+  const [customStart, setCustomStart] = useState(dateInput() + "T00:00:00");
+  const [customEnd, setCustomEnd] = useState(dateInput() + "T23:59:59");
   const [page, setPage] = useState(1);
   const [size, setSize] = useState(20);
   const [statusCode, setStatusCode] = useState("");
@@ -221,8 +217,7 @@ export function UsageWorkspace({
     [range, customStart, customEnd],
   );
   const validPeriod =
-    range !== "custom" ||
-    (customStart && customEnd && customStart <= customEnd);
+    range !== "custom" || customTimeRange(customStart, customEnd) !== null;
   const filters: UsageFilters = {
     ...period,
     appType: app || undefined,
@@ -399,7 +394,7 @@ export function UsageWorkspace({
             <option value="week">最近 7 天</option>
             <option value="month">最近 30 天</option>
             <option value="all">全部时间</option>
-            <option value="custom">自定义日期</option>
+            <option value="custom">自定义时间</option>
           </select>
           <AppSelect
             sources={sources}
@@ -459,27 +454,34 @@ export function UsageWorkspace({
       {range === "custom" && (
         <div className="usage-date-range">
           <label>
-            开始日期
+            开始时间
             <input
-              type="date"
-              aria-label="开始日期"
+              type="datetime-local"
+              step="1"
+              aria-label="开始时间"
               value={customStart}
               onChange={(e) => change(() => setCustomStart(e.target.value))}
             />
           </label>
           <span>至</span>
           <label>
-            结束日期
+            结束时间
             <input
-              type="date"
-              aria-label="结束日期"
+              type="datetime-local"
+              step="1"
+              aria-label="结束时间"
               value={customEnd}
               onChange={(e) => change(() => setCustomEnd(e.target.value))}
             />
           </label>
           {!validPeriod && (
-            <span className="usage-error">开始日期不能晚于结束日期。</span>
+            <span className="usage-error">
+              请选择有效时间，开始时间不能晚于结束时间。
+            </span>
           )}
+          <span className="hint">
+            按本机时区，包含结束秒；未完整覆盖的日期不计入日汇总。
+          </span>
         </div>
       )}
       <div className="usage-meta">
