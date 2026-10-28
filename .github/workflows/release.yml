@@ -47,3 +47,30 @@ jobs:
           Copy-Item src-tauri/target/x86_64-pc-windows-msvc/release/observatory.exe Observatory-Windows-x64-portable.exe
           $version = (Get-Content package.json | ConvertFrom-Json).version
           gh release upload "v$version" Observatory-Windows-x64-portable.exe --clobber
+  manifest:
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish update manifest and release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          $tag = "v$version"
+          $release = gh release view $tag --json assets | ConvertFrom-Json
+          $win = $release.assets | Where-Object { $_.name -like '*x64-setup.exe' } | Select-Object -First 1
+          $mac = $release.assets | Where-Object { $_.name -like '*aarch64.app.tar.gz' } | Select-Object -First 1
+          if (!$win -or !$mac) { throw 'Missing update packages' }
+          gh release download $tag --pattern '*.sig' --dir signatures
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to download signatures' }
+          $manifest = @{ version=$version; notes="观测台 $tag"; platforms=@{
+            'windows-x86_64'=@{ signature=(Get-Content -Raw (Join-Path signatures ($win.name + '.sig'))).Trim(); url="https://github.com/${{ github.repository }}/releases/download/$tag/$($win.name)" }
+            'darwin-aarch64'=@{ signature=(Get-Content -Raw (Join-Path signatures ($mac.name + '.sig'))).Trim(); url="https://github.com/${{ github.repository }}/releases/download/$tag/$($mac.name)" }
+          }}
+          $manifest | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8NoBOM latest.json
+          gh release upload $tag latest.json --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to upload update manifest' }
+          gh release edit $tag --draft=false
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to publish release' }
