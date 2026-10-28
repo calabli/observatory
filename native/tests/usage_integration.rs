@@ -5,6 +5,29 @@ use chrono::{Local, TimeZone};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 #[test]
+fn tray_summary_counts_only_local_today() {
+    let _guard = isolate();
+    let temp = tempfile::tempdir().unwrap();
+    let old_home = std::env::var_os("OBSERVATORY_HOME");
+    let old_cc = std::env::var_os("CC_SWITCH_DB");
+    std::env::set_var("OBSERVATORY_HOME", temp.path());
+    std::env::set_var("CC_SWITCH_DB", temp.path().join("no-source.db"));
+    let backend = UsageBackend::open().unwrap();
+    let now = chrono::Local::now();
+    let today = now.timestamp();
+    let prior = now.date_naive().pred_opt().unwrap().and_hms_opt(12, 0, 0).unwrap();
+    let yesterday = Local.from_local_datetime(&prior).earliest().unwrap().timestamp();
+    backend.db.execute_batch(&format!("INSERT INTO proxy_request_logs(request_id,provider_id,app_type,model,input_tokens,output_tokens,cache_read_tokens,input_token_semantics,total_cost_usd,latency_ms,status_code,created_at,data_source) VALUES ('today','p','codex','m',100,20,10,2,'1.25',1000,200,{today},'fixture'), ('yesterday','p','codex','m',500,50,0,2,'9.00',1000,200,{yesterday},'fixture');")).unwrap();
+    let result = backend.today_summary().unwrap();
+    assert_eq!(result.total_requests, 1);
+    assert_eq!(result.real_total_tokens, 130);
+    assert_eq!(result.total_cost, "1.250000");
+    drop(backend);
+    match old_home { Some(v) => std::env::set_var("OBSERVATORY_HOME", v), None => std::env::remove_var("OBSERVATORY_HOME") }
+    match old_cc { Some(v) => std::env::set_var("CC_SWITCH_DB", v), None => std::env::remove_var("CC_SWITCH_DB") }
+}
+
+#[test]
 fn international_ip_response_requires_valid_ipv4() {
     use observatory_usage_core::network_overview::parse_ipv4_response;
     assert_eq!(parse_ipv4_response(&json!({"ip":"192.0.2.7"})).unwrap().to_string(), "192.0.2.7");

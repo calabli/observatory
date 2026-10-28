@@ -2,7 +2,7 @@ use crate::{
     database::{lock_conn, Database},
     error::AppError,
     lan_usage::{self, identity, storage},
-    services::{model_pricing, session_usage, usage_stats::LogFilters},
+    services::{model_pricing, session_usage, usage_stats::{self, LogFilters}},
 };
 use chrono::TimeZone;
 use serde::{Deserialize, Serialize};
@@ -42,6 +42,16 @@ pub struct UsageBackend {
     _instance_lock: Option<std::fs::File>,
 }
 impl UsageBackend {
+    pub fn today_summary(&self) -> Result<usage_stats::UsageSummary, AppError> {
+        if self.db.get_setting("usage_initial_import_error")?.is_some() {
+            return Err(AppError::Message("历史用量导入未完成".into()));
+        }
+        let now = chrono::Local::now();
+        let midnight = now.date_naive().and_hms_opt(0, 0, 0)
+            .and_then(|time| chrono::Local.from_local_datetime(&time).earliest())
+            .ok_or_else(|| AppError::Message("无法确定今日开始时间".into()))?;
+        self.db.get_usage_summary(Some(midnight.timestamp()), Some(now.timestamp()), None, None, None)
+    }
     pub fn open() -> Result<Self, AppError> {
         let home = crate::config::get_app_config_dir();
         std::fs::create_dir_all(&home).map_err(|e| AppError::io(&home, e))?;

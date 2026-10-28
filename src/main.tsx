@@ -1240,6 +1240,9 @@ function App() {
               </div>
             </dl>
             <small>构建时间按当前设备的本地时区显示。</small>
+            <p className="hint">
+              关闭窗口后继续后台运行；可从系统托盘或菜单栏重新打开、查看本机今日用量或退出。
+            </p>
             <div className="about-update" ref={setUpdateTarget} />
           </div>
         </Dialog>
