@@ -37,6 +37,7 @@ jobs:
           releaseBody: '早期版本：AI 用量及局域网汇总已接入；Agent、性能和网络页面仍为预览。macOS 构建未公证。'
           releaseDraft: true
           prerelease: false
+          assetNamePattern: 'Observatory-[version]-[platform]-[arch][setup][ext]'
           args: ${{ matrix.args }}
       - name: Upload portable Windows executable
         if: runner.os == 'Windows'
@@ -44,9 +45,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          Copy-Item src-tauri/target/x86_64-pc-windows-msvc/release/observatory.exe Observatory-Windows-x64-portable.exe
           $version = (Get-Content package.json | ConvertFrom-Json).version
-          gh release upload "v$version" Observatory-Windows-x64-portable.exe --clobber
+          $portable = "Observatory-$version-Windows-x64-portable.exe"
+          Copy-Item src-tauri/target/x86_64-pc-windows-msvc/release/observatory.exe $portable
+          gh release upload "v$version" $portable --clobber
   manifest:
     needs: build
     runs-on: windows-latest
