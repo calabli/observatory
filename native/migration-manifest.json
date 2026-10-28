@@ -1,0 +1,258 @@
+{
+  "upstream": "https://github.com/calabli/cc-switch",
+  "baseCommit": "f29f73af4aba16dbd4d7f7308aba87a900830460",
+  "files": [
+    {
+      "path": "services/session_usage.rs",
+      "sha256": "6110f26c5be8ee1e543e101619d2f42f6b3a3e54082bf7486e7a44922f986596",
+      "upstreamPath": "src-tauri/src/services/session_usage.rs",
+      "currentSha256": "6110f26c5be8ee1e543e101619d2f42f6b3a3e54082bf7486e7a44922f986596"
+    },
+    {
+      "path": "services/session_usage_agy.rs",
+      "sha256": "9529a2d5f10f39225e6dd80df2f15c5a7b8bfc95aa198cbfe551b12df80d578b",
+      "upstreamPath": "src-tauri/src/services/session_usage_agy.rs",
+      "currentSha256": "9529a2d5f10f39225e6dd80df2f15c5a7b8bfc95aa198cbfe551b12df80d578b"
+    },
+    {
+      "path": "services/session_usage_codex.rs",
+      "sha256": "ff871d2973b99c14f5ae92747a383cb68167e41472021a5ad2411f37c98ab87c",
+      "upstreamPath": "src-tauri/src/services/session_usage_codex.rs",
+      "currentSha256": "ff871d2973b99c14f5ae92747a383cb68167e41472021a5ad2411f37c98ab87c"
+    },
+    {
+      "path": "services/session_usage_dsh.rs",
+      "sha256": "7f8ef800bfdf4c684c47eddaf78f98cf05a1b15ebeea4412da805724c3d8bbd4",
+      "upstreamPath": "src-tauri/src/services/session_usage_dsh.rs",
+      "currentSha256": "7f8ef800bfdf4c684c47eddaf78f98cf05a1b15ebeea4412da805724c3d8bbd4"
+    },
+    {
+      "path": "services/session_usage_gemini.rs",
+      "sha256": "9992b41fd74edcfc4f2c58891eaef3aabfee0fe478addef0bd6355f99177f1a1",
+      "upstreamPath": "src-tauri/src/services/session_usage_gemini.rs",
+      "currentSha256": "9992b41fd74edcfc4f2c58891eaef3aabfee0fe478addef0bd6355f99177f1a1"
+    },
+    {
+      "path": "services/session_usage_grokbuild.rs",
+      "sha256": "cde7db1b98032f559546e37f9c9b5f29777a20fee436b0eaee8a642e38837099",
+      "upstreamPath": "src-tauri/src/services/session_usage_grokbuild.rs",
+      "currentSha256": "cde7db1b98032f559546e37f9c9b5f29777a20fee436b0eaee8a642e38837099"
+    },
+    {
+      "path": "services/session_usage_kimi.rs",
+      "sha256": "43470f3c3f1de816d9da3bd6befb66f9ee207d6f8f1177481541a0da84e80fd2",
+      "upstreamPath": "src-tauri/src/services/session_usage_kimi.rs",
+      "currentSha256": "43470f3c3f1de816d9da3bd6befb66f9ee207d6f8f1177481541a0da84e80fd2"
+    },
+    {
+      "path": "services/session_usage_mcode.rs",
+      "sha256": "b3f3c1815f27a8c63b50c633294d0f2c79ad8965ef13fa27f2fa2d01403acbea",
+      "upstreamPath": "src-tauri/src/services/session_usage_mcode.rs",
+      "currentSha256": "b3f3c1815f27a8c63b50c633294d0f2c79ad8965ef13fa27f2fa2d01403acbea"
+    },
+    {
+      "path": "services/session_usage_opencode.rs",
+      "sha256": "4b493f9143620c4af4e046633106a107d53afc648a4cfad081c35327b6100e58",
+      "upstreamPath": "src-tauri/src/services/session_usage_opencode.rs",
+      "currentSha256": "4b493f9143620c4af4e046633106a107d53afc648a4cfad081c35327b6100e58"
+    },
+    {
+      "path": "services/session_usage_pi.rs",
+      "sha256": "3739565600784924f53bc8c375a0d0f35d5203308d0e590c7b26d69e4826dee4",
+      "upstreamPath": "src-tauri/src/services/session_usage_pi.rs",
+      "currentSha256": "3739565600784924f53bc8c375a0d0f35d5203308d0e590c7b26d69e4826dee4"
+    },
+    {
+      "path": "services/session_usage_zcode.rs",
+      "sha256": "6d3a144df2f1b1c817d7869cf655e058bf100f338853d05b6eb2ac3b418090d8",
+      "upstreamPath": "src-tauri/src/services/session_usage_zcode.rs",
+      "currentSha256": "6d3a144df2f1b1c817d7869cf655e058bf100f338853d05b6eb2ac3b418090d8"
+    },
+    {
+      "path": "services/usage_stats.rs",
+      "sha256": "f877bb94e3f6006bd8b7daf77a0a2bbc79cadb4fc25979a8e636adb6391da74b",
+      "upstreamPath": "src-tauri/src/services/usage_stats.rs",
+      "currentSha256": "f877bb94e3f6006bd8b7daf77a0a2bbc79cadb4fc25979a8e636adb6391da74b"
+    },
+    {
+      "path": "services/sql_helpers.rs",
+      "sha256": "45add500ac35a7136240d424265ef7a74800b6740478544ad09827d2ecc72519",
+      "upstreamPath": "src-tauri/src/services/sql_helpers.rs",
+      "currentSha256": "45add500ac35a7136240d424265ef7a74800b6740478544ad09827d2ecc72519"
+    },
+    {
+      "path": "services/model_pricing.rs",
+      "sha256": "28fa011bfd9905ee47e2a487e054e47bc219156a8b5bfa6bf3a48983ecc33584",
+      "upstreamPath": "src-tauri/src/services/model_pricing.rs",
+      "currentSha256": "28fa011bfd9905ee47e2a487e054e47bc219156a8b5bfa6bf3a48983ecc33584"
+    },
+    {
+      "path": "proxy/usage/calculator.rs",
+      "sha256": "4828753d4438b686cece2056b0855801128892f388b909aeb446cd24d0e67fde",
+      "upstreamPath": "src-tauri/src/proxy/usage/calculator.rs",
+      "currentSha256": "4828753d4438b686cece2056b0855801128892f388b909aeb446cd24d0e67fde"
+    },
+    {
+      "path": "proxy/usage/parser.rs",
+      "sha256": "8cee417bd88497a7e2424aa6a6753422274958792f87b8aa27af25d4697bdfca",
+      "upstreamPath": "src-tauri/src/proxy/usage/parser.rs",
+      "currentSha256": "8cee417bd88497a7e2424aa6a6753422274958792f87b8aa27af25d4697bdfca"
+    },
+    {
+      "path": "error.rs",
+      "sha256": "ee4e1aef629a9e8e89ab85b05a7b059a49d7afc12544e1248ced3ba530d1e849",
+      "upstreamPath": "src-tauri/src/error.rs",
+      "currentSha256": "ee4e1aef629a9e8e89ab85b05a7b059a49d7afc12544e1248ced3ba530d1e849"
+    },
+    {
+      "path": "codex_rollout_file.rs",
+      "sha256": "90ecf5e7ab4289578a67388c61fa2826f1f5d8fbbc6ff711132e40d82cc04771",
+      "upstreamPath": "src-tauri/src/codex_rollout_file.rs",
+      "currentSha256": "90ecf5e7ab4289578a67388c61fa2826f1f5d8fbbc6ff711132e40d82cc04771"
+    },
+    {
+      "path": "kimi_session.rs",
+      "sha256": "20e185cc1ea89161c601809512f0f273831856e0ce44d0f7152b98b9586e34c1",
+      "upstreamPath": "src-tauri/src/kimi_session.rs",
+      "currentSha256": "20e185cc1ea89161c601809512f0f273831856e0ce44d0f7152b98b9586e34c1"
+    },
+    {
+      "path": "session_manager/model.rs",
+      "sha256": "72729ea4c5822aa400f0c55606895d2f28c989ae1c373acad332ebbc3fef5fc2",
+      "upstreamPath": "src-tauri/src/session_manager/model.rs",
+      "currentSha256": "72729ea4c5822aa400f0c55606895d2f28c989ae1c373acad332ebbc3fef5fc2"
+    },
+    {
+      "path": "session_manager/providers/utils.rs",
+      "sha256": "66c0500f664afaec978a6c30278a4f439b4bce901971e117c9d2909716fcb8bc",
+      "upstreamPath": "src-tauri/src/session_manager/providers/utils.rs",
+      "currentSha256": "66c0500f664afaec978a6c30278a4f439b4bce901971e117c9d2909716fcb8bc"
+    },
+    {
+      "path": "session_manager/providers/blocks.rs",
+      "sha256": "f834cc6a7fb95fd255809775536eaeb48a99e65537e060b3a07bbd90e2d24f1b",
+      "upstreamPath": "src-tauri/src/session_manager/providers/blocks.rs",
+      "currentSha256": "f834cc6a7fb95fd255809775536eaeb48a99e65537e060b3a07bbd90e2d24f1b"
+    },
+    {
+      "path": "session_manager/providers/pi_blocks.rs",
+      "sha256": "068f706132a2cb62bbda8dbc0254c38485c3ab10be5af030276e632b04239813",
+      "upstreamPath": "src-tauri/src/session_manager/providers/pi_blocks.rs",
+      "currentSha256": "068f706132a2cb62bbda8dbc0254c38485c3ab10be5af030276e632b04239813"
+    },
+    {
+      "path": "session_manager/providers/pi.rs",
+      "sha256": "f750f48c32fcda0c92123f4f6ebac0ff98011267338cfb9cc1f0d30913a87a85",
+      "upstreamPath": "src-tauri/src/session_manager/providers/pi.rs",
+      "currentSha256": "f750f48c32fcda0c92123f4f6ebac0ff98011267338cfb9cc1f0d30913a87a85"
+    },
+    {
+      "path": "session_manager/providers/gemini.rs",
+      "sha256": "f48afb9cb1284af40c77d0c4ab4a92ea192bc087ec17ffb7b81039b9799b0e64",
+      "upstreamPath": "src-tauri/src/session_manager/providers/gemini.rs",
+      "currentSha256": "f48afb9cb1284af40c77d0c4ab4a92ea192bc087ec17ffb7b81039b9799b0e64"
+    },
+    {
+      "path": "session_manager/providers/grokbuild.rs",
+      "sha256": "5bd3633947ef9c0bad117eb9ce12f40a79bc657bff5c752b46f0f673e22cb1e7",
+      "upstreamPath": "src-tauri/src/session_manager/providers/grokbuild.rs",
+      "currentSha256": "5bd3633947ef9c0bad117eb9ce12f40a79bc657bff5c752b46f0f673e22cb1e7"
+    },
+    {
+      "path": "session_manager/providers/mcode.rs",
+      "sha256": "1df38d405470610533ee6ae9fd0c4a61ff9f7d756bd6a7e449bbe7497ee02fb1",
+      "upstreamPath": "src-tauri/src/session_manager/providers/mcode.rs",
+      "currentSha256": "1df38d405470610533ee6ae9fd0c4a61ff9f7d756bd6a7e449bbe7497ee02fb1"
+    },
+    {
+      "path": "session_manager/providers/agy.rs",
+      "sha256": "2d92273f2c1324a267dcfbc699da3f7d639797e15c035ce6844000f2800224f6",
+      "upstreamPath": "src-tauri/src/session_manager/providers/agy.rs",
+      "currentSha256": "2d92273f2c1324a267dcfbc699da3f7d639797e15c035ce6844000f2800224f6"
+    },
+    {
+      "path": "lan_usage/aggregate.rs",
+      "sha256": "c962ef50f5821949b85929f6cf3bcbf8e157fc7603e2e2665088223ad9c3ae8d",
+      "upstreamPath": "src-tauri/src/lan_usage/aggregate.rs",
+      "currentSha256": "c962ef50f5821949b85929f6cf3bcbf8e157fc7603e2e2665088223ad9c3ae8d"
+    },
+    {
+      "path": "lan_usage/client.rs",
+      "sha256": "e1447ae0182e3d44905beef1f6e04b082c54c782f3553a122d04f9231f4c85fb",
+      "upstreamPath": "src-tauri/src/lan_usage/client.rs",
+      "currentSha256": "e1447ae0182e3d44905beef1f6e04b082c54c782f3553a122d04f9231f4c85fb"
+    },
+    {
+      "path": "lan_usage/discovery.rs",
+      "sha256": "67bfb2a66e30b98c291e0ca4c65ae5028bef07aa8c31b4c03b13ddb2f17fd2e4",
+      "upstreamPath": "src-tauri/src/lan_usage/discovery.rs",
+      "currentSha256": "67bfb2a66e30b98c291e0ca4c65ae5028bef07aa8c31b4c03b13ddb2f17fd2e4"
+    },
+    {
+      "path": "lan_usage/identity.rs",
+      "sha256": "2d510cfc7ea04ad76bb33eaf5e9ff9ff6391376ffcf2c1aa7ccf566cf21cb531",
+      "upstreamPath": "src-tauri/src/lan_usage/identity.rs",
+      "currentSha256": "1866501645bc299ca0282fa92d982f157b17120886d580e8f62e84a219721ddc"
+    },
+    {
+      "path": "lan_usage/interfaces.rs",
+      "sha256": "c4eb50c4df1b32c90c5f49b0d0719ac8884494fe5a95e38bcd903859ac4ade37",
+      "upstreamPath": "src-tauri/src/lan_usage/interfaces.rs",
+      "currentSha256": "c4eb50c4df1b32c90c5f49b0d0719ac8884494fe5a95e38bcd903859ac4ade37"
+    },
+    {
+      "path": "lan_usage/mod.rs",
+      "sha256": "9bd8aaca9ada0dfc49193680b9121e5be273d306dd50b0677af758a58a00d9a2",
+      "upstreamPath": "src-tauri/src/lan_usage/mod.rs",
+      "currentSha256": "4967cec33f18088476c0f404af30e323c680e1f40bbbc94c2b54df62726ef23c"
+    },
+    {
+      "path": "lan_usage/projection.rs",
+      "sha256": "f5f2d6cc3a59c750d10db432abe5376675f7d829bfd38c81aaf9dd60d52038c9",
+      "upstreamPath": "src-tauri/src/lan_usage/projection.rs",
+      "currentSha256": "f5f2d6cc3a59c750d10db432abe5376675f7d829bfd38c81aaf9dd60d52038c9"
+    },
+    {
+      "path": "lan_usage/server.rs",
+      "sha256": "f6213afa8dbee3ebf20164f2dc268be0ebbd7f55b2953ebd0e060615f31916e1",
+      "upstreamPath": "src-tauri/src/lan_usage/server.rs",
+      "currentSha256": "f6213afa8dbee3ebf20164f2dc268be0ebbd7f55b2953ebd0e060615f31916e1"
+    },
+    {
+      "path": "lan_usage/storage.rs",
+      "sha256": "c407d27ee9c6349bffa852e057df67890e6be8db00a9b43e54fdf637c031b0a1",
+      "upstreamPath": "src-tauri/src/lan_usage/storage.rs",
+      "currentSha256": "c407d27ee9c6349bffa852e057df67890e6be8db00a9b43e54fdf637c031b0a1"
+    }
+  ],
+  "extractedSchemaFunctions": [
+    "seed_model_pricing",
+    "repair_current_model_pricing",
+    "ensure_model_pricing_seeded",
+    "ensure_model_pricing_seeded_on_conn",
+    "create_lan_usage_tables"
+  ],
+  "note": "sha256 records the upstream bytes at migration; currentSha256 records the adapted copy. Transport, path adapters and the metrics-only database are independent. LAN runtime scheduling uses Tokio; models.dev uses the local/native transport.",
+  "frontendFiles": [
+    {
+      "path": "types/usage.ts",
+      "upstreamPath": "src/types/usage.ts",
+      "currentSha256": "84e82905302db42e6c59a8df0ae4579d72a5493fac3eb3f3a819090c799744f7"
+    },
+    {
+      "path": "lib/modelsDev.ts",
+      "upstreamPath": "src/lib/modelsDev.ts",
+      "currentSha256": "6f6142f612cef908b5ad7d1581309a4130f5a3b79234280e6870985edda896c3"
+    },
+    {
+      "path": "lib/modelsDevPricing.ts",
+      "upstreamPath": "src/lib/modelsDevPricing.ts",
+      "currentSha256": "b8ede85ec514afe209d2f5d022e4fabbb7432d57e6d100b0ce12bf318fa649b2"
+    },
+    {
+      "path": "lib/modelsDevAutoSync.ts",
+      "upstreamPath": "src/lib/modelsDevAutoSync.ts",
+      "currentSha256": "92d591b40c856dee2f9f35ec361f2e0e6ac4304bdbaae9d94a4b9da42d434b88"
+    }
+  ]
+}

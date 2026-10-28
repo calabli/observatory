@@ -1,0 +1,1 @@
+{"main":{"identifier":"main","description":"Observatory main window","local":true,"windows":["main"],"permissions":["core:default","updater:default","process:allow-restart"]}}

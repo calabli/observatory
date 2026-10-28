@@ -1,0 +1,495 @@
+/* CC Switch UI alignment: values from its src/index.css and tailwind.config.cjs.
+   Source license is retained in licenses/CC-Switch-MIT.txt. */
+#observatory-root .update-control { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; color: var(--muted); font-size: 12px; }
+#observatory-root .app-select-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 32px;
+  width: 190px;
+  max-width: 100%;
+  padding: 4px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  text-align: start;
+}
+#observatory-root .app-select-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+#observatory-root .app-select-arrow {
+  margin-left: auto;
+  display: flex;
+}
+#observatory-root .app-select-trigger[data-state="open"] {
+  outline: 2px solid var(--action);
+  outline-offset: 2px;
+}
+#observatory-root .app-select-menu {
+  z-index: 100;
+  min-width: var(--radix-select-trigger-width);
+  max-width: calc(100vw - 20px);
+  max-height: min(440px, var(--radix-select-content-available-height));
+  overflow: hidden;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  box-shadow: 0 8px 24px #0003;
+  font-size: 13px;
+}
+#observatory-root .app-select-viewport {
+  padding: 4px;
+}
+#observatory-root .app-select-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+}
+#observatory-root .app-select-item[data-highlighted] {
+  background: var(--soft);
+}
+#observatory-root .app-select-item[data-state="checked"] {
+  background: var(--accent-soft);
+}
+#observatory-root .app-select-check {
+  margin-left: auto;
+  color: var(--accent);
+  display: flex;
+}
+#observatory-root .app-select-scroll {
+  display: flex;
+  justify-content: center;
+  padding: 3px;
+}
+html,
+body {
+  background: light-dark(#ffffff, #1c1c1e);
+}
+#observatory-root {
+  font-family:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
+}
+#observatory-root .obs-shell {
+  --bg: light-dark(#ffffff, #1c1c1e);
+  --surface: light-dark(#ffffff, #2e2e33);
+  --text: light-dark(#18181b, #e4e4e7);
+  --text-secondary: light-dark(#52525b, #ababb3);
+  --muted: light-dark(#65656e, #9a9aa2);
+  --line: light-dark(#e4e4e9, #3e3e45);
+  --border-strong: light-dark(#cfcfd6, #4a4a52);
+  --soft: light-dark(#efeff2, #26262a);
+  --nav: light-dark(#f5f5f7, #161618);
+  --selected: light-dark(#e4e4ea, #313136);
+  --action: light-dark(#f97316, #ea580c);
+  --action-hover: light-dark(#ea620a, #f06d1f);
+  --accent: light-dark(#c2410c, #fb923c);
+  --accent-soft: light-dark(#fff1e6, rgba(249, 115, 21, 0.12));
+  --primary: var(--action);
+  --primary-text: #ffffff;
+  --teal: light-dark(#0d9488, #2a9d8f);
+  --good: light-dark(#007634, #4ade80);
+  --good-soft: light-dark(#e8f7ee, #0f2b1a);
+  --warning: light-dark(#a64a00, #fcd34d);
+  --chart-usage: light-dark(#0891b2, #38bdf8);
+  --chart-output: light-dark(#db2777, #f472b6);
+  --chart-grid: light-dark(#ececf0, #2c2c31);
+  --agent-color: light-dark(#7c3aed, #b5a6e3);
+  --device-color: light-dark(#0063c7, #8fb8e6);
+  --heat-1: color-mix(in srgb, var(--chart-usage) 30%, transparent);
+  --heat-2: color-mix(in srgb, var(--chart-usage) 55%, transparent);
+  --heat-3: color-mix(in srgb, var(--chart-usage) 80%, transparent);
+  --heat-4: light-dark(#0e7490, #38bdf8);
+}
+#observatory-root .app-nav {
+  min-height: 60px;
+  padding: 10px 20px;
+  gap: 24px;
+}
+#observatory-root .brand {
+  font-size: 17px;
+  gap: 8px;
+}
+#observatory-root .brand-mark {
+  color: var(--action);
+}
+#observatory-root .brand small {
+  display: none;
+}
+#observatory-root .app-nav nav button {
+  color: var(--text-secondary);
+  font-size: 13px;
+  padding: 8px 12px;
+}
+#observatory-root .app-nav nav button[aria-current="page"] {
+  background: var(--selected);
+  box-shadow: none;
+  color: var(--text);
+}
+#observatory-root .app-nav nav button[aria-current="page"] svg {
+  color: var(--accent);
+}
+#observatory-root main {
+  padding: 24px 24px 16px;
+}
+#observatory-root .page-heading h1 {
+  font-size: 18px;
+  line-height: 26px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+#observatory-root .page-heading p {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+#observatory-root .page-heading .eyebrow {
+  display: none;
+}
+#observatory-root .panel,
+#observatory-root .device-card,
+#observatory-root .stat {
+  border-radius: 10px;
+}
+#observatory-root .panel-head h2 {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+}
+#observatory-root .panel-head p {
+  font-size: 12px;
+}
+#observatory-root .button,
+#observatory-root .icon-button,
+#observatory-root select,
+#observatory-root .device-picker {
+  border-color: var(--border-strong);
+  border-radius: 6px;
+}
+#observatory-root .button {
+  min-height: 32px;
+  padding: 5px 12px;
+  font-size: 13px;
+  line-height: 20px;
+  transition:
+    background-color 150ms,
+    border-color 150ms,
+    color 150ms;
+}
+#observatory-root .button.primary {
+  background: var(--action);
+  color: #ffffff;
+  border-color: transparent;
+  font-weight: 600;
+}
+#observatory-root .button.primary:hover {
+  opacity: 1;
+  background: var(--action-hover);
+}
+#observatory-root .icon-button:hover,
+#observatory-root .button:not(.primary):hover {
+  background: var(--soft);
+}
+#observatory-root select,
+#observatory-root .usage-input,
+#observatory-root .search input {
+  font-size: 13px;
+}
+#observatory-root .context-bar,
+#observatory-root .usage-meta,
+#observatory-root .text-button,
+#observatory-root .hint {
+  font-size: 12px;
+}
+#observatory-root .context-bar select {
+  font-size: 12px;
+}
+#observatory-root .tabs {
+  gap: 24px;
+}
+#observatory-root .tabs button {
+  font-size: 13px;
+  line-height: 20px;
+}
+#observatory-root .tabs button[aria-pressed="true"]:after {
+  height: 2px;
+  background: var(--text);
+}
+#observatory-root .tabs button[aria-pressed="true"] > svg {
+  color: var(--accent);
+}
+#observatory-root .stat-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+#observatory-root .stat-value {
+  font-family: inherit;
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+#observatory-root .stat-detail {
+  font-size: 11px;
+}
+#observatory-root
+  .stats-grid:not(.usage-metric-strip)
+  .stat:nth-child(1)
+  .stat-label
+  > svg {
+  color: var(--accent);
+}
+#observatory-root
+  .stats-grid:not(.usage-metric-strip)
+  .stat:nth-child(2)
+  .stat-label
+  > svg {
+  color: var(--device-color);
+}
+#observatory-root
+  .stats-grid:not(.usage-metric-strip)
+  .stat:nth-child(3)
+  .stat-label
+  > svg {
+  color: var(--teal);
+}
+#observatory-root
+  .stats-grid:not(.usage-metric-strip)
+  .stat:nth-child(4)
+  .stat-label
+  > svg {
+  color: var(--agent-color);
+}
+#observatory-root .usage-metric-strip {
+  gap: 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 0;
+}
+#observatory-root .usage-metric-strip > .stat {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  min-height: 104px;
+  padding: 14px 16px;
+  text-align: start;
+}
+#observatory-root .usage-metric-strip > .stat:hover {
+  background: var(--nav);
+}
+#observatory-root .usage-metric-strip > .stat[aria-pressed="true"] {
+  box-shadow: inset 0 -2px 0 var(--text);
+}
+#observatory-root .usage-metric-strip .stat-label > svg {
+  display: none;
+}
+#observatory-root .usage-metric-strip .stat-value {
+  color: var(--text-secondary);
+}
+#observatory-root .usage-metric-strip > .stat[aria-pressed="true"] .stat-value {
+  color: var(--text);
+}
+#observatory-root .usage-token-parts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 12px 16px;
+  gap: 16px;
+  margin-bottom: 20px;
+  color: var(--muted);
+  font-size: 12px;
+}
+#observatory-root .usage-token-parts > span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+#observatory-root .usage-token-parts i {
+  height: 6px;
+  width: 6px;
+  border-radius: 2px;
+  display: inline-block;
+}
+#observatory-root .usage-token-parts b {
+  color: var(--text-secondary);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+#observatory-root .legend,
+#observatory-root .yaxis,
+#observatory-root .xaxis {
+  font-size: 11px;
+}
+#observatory-root .chart-grid {
+  stroke: var(--chart-grid);
+}
+#observatory-root .segmented button {
+  font-size: 12px;
+  padding: 3px 8px;
+}
+#observatory-root .segmented button[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--text);
+}
+#observatory-root .usage-app-cost .meter > span,
+#observatory-root .app-costs .meter > span {
+  background: var(--chart-usage);
+}
+#observatory-root .usage-app-cost > span:first-child {
+  font-size: 13px;
+}
+#observatory-root .usage-app-label,
+#observatory-root .usage-log-identity {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+#observatory-root .usage-log-identity > span:last-child {
+  min-width: 0;
+}
+#observatory-root .app-glyph {
+  width: 22px;
+  height: 22px;
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  background: #f5f5f7;
+  border-radius: 5px;
+  color: #52525b;
+}
+#observatory-root .app-glyph img {
+  height: 17px;
+  width: 17px;
+  object-fit: contain;
+}
+#observatory-root .native-usage .table-wrap th,
+#observatory-root .native-usage .table-wrap td {
+  text-align: start;
+}
+#observatory-root th {
+  color: var(--text-secondary);
+  font-size: 12px;
+  height: 36px;
+}
+#observatory-root td,
+#observatory-root .usage-request-table td {
+  font-size: 13px;
+  line-height: 20px;
+  padding: 8px 12px;
+}
+#observatory-root .cell-sub {
+  font-size: 11px;
+  line-height: 16px;
+  margin-top: 1px;
+}
+#observatory-root .usage-pagination {
+  background: var(--soft);
+  padding: 12px 16px;
+  margin: 12px -18px -17px;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 10px 10px;
+  font-size: 12px;
+}
+#observatory-root .toggle:checked {
+  background: var(--action);
+}
+#observatory-root input[type="checkbox"] {
+  accent-color: var(--action);
+}
+#observatory-root .usage-switches input,
+#observatory-root .usage-share-grid input {
+  accent-color: var(--action);
+}
+#observatory-root .usage-heat-legend {
+  display: inline-flex;
+  gap: 3px;
+  width: auto;
+  height: auto;
+  background: transparent;
+  opacity: 1;
+}
+#observatory-root .usage-heat-legend b {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+}
+#observatory-root .badge.blue {
+  color: var(--device-color);
+  background: light-dark(#eaf3ff, rgba(74, 143, 217, 0.12));
+}
+#observatory-root .usage-error {
+  color: light-dark(#b91c1c, #fca5a5);
+  background: light-dark(#fee2e2, #3a1414);
+}
+#observatory-root .usage-chart-controls {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+@media (max-width: 1050px) {
+  #observatory-root .app-nav {
+    gap: 16px;
+  }
+  #observatory-root .app-nav nav button {
+    padding: 8px;
+    font-size: 12px;
+  }
+}
+@media (max-width: 820px) {
+  #observatory-root .app-nav nav button {
+    font-size: 12px;
+  }
+  #observatory-root .usage-token-parts {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+@media (min-width: 721px) and (max-width: 820px) {
+  #observatory-root .app-nav {
+    flex-wrap: nowrap;
+  }
+  #observatory-root .app-nav nav {
+    order: 0;
+    flex-basis: auto;
+    flex-wrap: nowrap;
+  }
+  #observatory-root .app-nav nav button {
+    flex: initial;
+  }
+  #observatory-root .app-nav > .icon-button {
+    margin-left: 0;
+  }
+}
+@media (max-width: 560px) {
+  #observatory-root main {
+    padding: 20px 14px 14px;
+  }
+  #observatory-root .app-nav {
+    padding: 12px 14px;
+  }
+  #observatory-root .usage-metric-strip > .stat {
+    padding: 13px 12px;
+  }
+  #observatory-root .usage-metric-strip .stat-value {
+    font-size: 22px;
+  }
+  #observatory-root .usage-token-parts {
+    font-size: 11px;
+    gap: 10px;
+    padding: 12px;
+  }
+  #observatory-root .usage-pagination {
+    margin: 12px -12px -15px;
+    padding: 12px;
+  }
+}

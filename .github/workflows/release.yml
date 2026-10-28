@@ -1,0 +1,49 @@
+name: Build release
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            args: --target x86_64-pc-windows-msvc --bundles nsis
+          - os: macos-14
+            args: --target aarch64-apple-darwin --bundles app,dmg
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+      - run: npm test
+      - run: npm run typecheck
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: v__VERSION__
+          releaseName: '观测台 v__VERSION__'
+          releaseBody: '早期版本：AI 用量及局域网汇总已接入；Agent、性能和网络页面仍为预览。macOS 构建未公证。'
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
+      - name: Upload portable Windows executable
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          Copy-Item src-tauri/target/x86_64-pc-windows-msvc/release/observatory.exe Observatory-Windows-x64-portable.exe
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          gh release upload "v$version" Observatory-Windows-x64-portable.exe --clobber
