@@ -28,6 +28,7 @@ import {
   EthernetPort,
   ExternalLink,
   Globe,
+  Info,
   HardDrive,
   Laptop,
   Layers3,
@@ -80,6 +81,7 @@ import {
 import { UsageWorkspace } from "./usage/UsageWorkspace";
 import { DeviceManager } from "./usage/DeviceManager";
 import { UpdateControl } from "./UpdateControl";
+import packageInfo from "../package.json";
 import { usageCall } from "./native/usageClient";
 import type { NativeStatus, Dashboard } from "./usage/types";
 const queryClient = new QueryClient({
@@ -498,6 +500,7 @@ function Dialog({
 }
 
 function App() {
+  const [aboutOpen, setAboutOpen] = useState(false);
   const [page, setPage] = useState<Page>(
     nav.some((n) => n.id === restored?.page) ? restored!.page! : "overview",
   );
@@ -1505,12 +1508,49 @@ function App() {
         </nav>
         <button
           className="icon-button"
+          aria-label="关于观测台"
+          title="关于观测台"
+          onClick={() => setAboutOpen(true)}
+        >
+          <Info size={17} />
+        </button>
+        <button
+          className="icon-button"
           aria-label="切换明暗外观"
           onClick={() => setDark(!dark)}
         >
           {dark ? <Sun size={17} /> : <Moon size={17} />}
         </button>
       </header>
+      {aboutOpen && (
+        <Dialog title="关于观测台" onClose={() => setAboutOpen(false)}>
+          <div className="about-details">
+            <div className="about-brand">
+              <Radar size={24} />
+              <strong>观测台 · Observatory</strong>
+            </div>
+            <p>AI 用量与设备观测工作台</p>
+            <dl>
+              <div>
+                <dt>软件版本</dt>
+                <dd>v{packageInfo.version}</dd>
+              </div>
+              <div>
+                <dt>构建时间</dt>
+                <dd>
+                  <time dateTime={__OBS_BUILD_TIME__}>
+                    {new Date(__OBS_BUILD_TIME__).toLocaleString("zh-CN", {
+                      dateStyle: "medium",
+                      timeStyle: "medium",
+                    })}
+                  </time>
+                </dd>
+              </div>
+            </dl>
+            <small>构建时间按当前设备的本地时区显示。</small>
+          </div>
+        </Dialog>
+      )}
       <main>
         <div className="page-heading">
           <div>

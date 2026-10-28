@@ -41,6 +41,7 @@ import {
 } from "./chartData";
 import { AppGlyph } from "./AppGlyph";
 import { AppSelect } from "./AppSelect";
+import { formatRequestSpeed } from "./requestSpeed";
 
 type Props = {
   interval: string;
@@ -805,6 +806,7 @@ export function UsageWorkspace({
                     <th className="numeric">缓存读取</th>
                     <th className="numeric">费用 USD</th>
                     <th>耗时</th>
+                    <th>输出速度</th>
                     <th>状态</th>
                     <th />
                   </tr>
@@ -850,6 +852,9 @@ export function UsageWorkspace({
                             (r.latencyMs / 1000).toFixed(2) +
                             "s"
                           : "—"}
+                      </td>
+                      <td title="精确速度为输出 Token 除以生成耗时；≈ 表示按日志耗时估算，包含首字等待。">
+                        {formatRequestSpeed(r)}
                       </td>
                       <td>
                         <span
@@ -1361,6 +1366,7 @@ function RequestDetail({
                   : "—",
               ],
               ["是否流式", r.isStreaming ? "是" : "否"],
+              ["输出速度", formatRequestSpeed(r)],
             ].map(([label, value]) => (
               <div key={label}>
                 <span>{label}</span>

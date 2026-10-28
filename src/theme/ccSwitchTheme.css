@@ -1,6 +1,42 @@
 /* CC Switch UI alignment: values from its src/index.css and tailwind.config.cjs.
    Source license is retained in licenses/CC-Switch-MIT.txt. */
-#observatory-root .update-control { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; color: var(--muted); font-size: 12px; }
+#observatory-root .about-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--accent);
+  font-size: 16px;
+}
+#observatory-root .about-details p,
+#observatory-root .about-details small {
+  color: var(--muted);
+}
+#observatory-root .about-details dl {
+  margin: 20px 0 12px;
+}
+#observatory-root .about-details dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+#observatory-root .about-details dt {
+  color: var(--muted);
+}
+#observatory-root .about-details dd {
+  margin: 0;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+#observatory-root .update-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 12px;
+}
 #observatory-root .app-select-trigger {
   display: inline-flex;
   align-items: center;
