@@ -45,6 +45,7 @@ import { formatRequestSpeed } from "./requestSpeed";
 import { customTimeRange } from "./timeRange";
 import { rankApps, type RankingMetric } from "./appRanking";
 import { sortStats, type StatsSortKey } from "./statsSort";
+import { modelDisplayName } from "./modelDisplay";
 import { DateTimeFields } from "./DateTimeFields";
 
 type Props = {
@@ -434,7 +435,9 @@ export function UsageWorkspace({
             <option value="">全部模型</option>
             {dashboard.data?.options.models.map((m) => (
               <option key={m} value={m}>
-                {m}
+                {modelDisplayName(m) === m
+                  ? m
+                  : `${modelDisplayName(m)} (${m})`}
               </option>
             ))}
           </select>
@@ -862,8 +865,12 @@ export function UsageWorkspace({
                           <span>
                             {appName(r.appType)}
                             <small className="cell-sub">
-                              {r.model || "unknown"}
+                              {modelDisplayName(r.model || "unknown")}
                             </small>
+                            {r.model &&
+                              modelDisplayName(r.model) !== r.model && (
+                                <small className="cell-sub">{r.model}</small>
+                              )}
                           </span>
                         </span>
                       </td>
@@ -1500,7 +1507,10 @@ function StatsTable({
           {ordered.map((r, i) => (
             <tr key={i}>
               <td>
-                {"model" in r ? r.model : r.providerName}
+                {"model" in r ? modelDisplayName(r.model) : r.providerName}
+                {"model" in r && modelDisplayName(r.model) !== r.model && (
+                  <small className="cell-sub">{r.model}</small>
+                )}
                 {"appType" in r && (
                   <small className="cell-sub">{r.appType}</small>
                 )}
@@ -1565,7 +1575,12 @@ function RequestDetail({
             {[
               ["应用", r.appType],
               ["供应商", r.providerName ?? r.providerId],
-              ["响应模型", r.model],
+              [
+                "响应模型",
+                modelDisplayName(r.model) === r.model
+                  ? r.model
+                  : `${modelDisplayName(r.model)} (${r.model})`,
+              ],
               ["请求模型", r.requestModel ?? "—"],
               ["计价模型", r.pricingModel ?? "未记录"],
               ["计费倍数", r.costMultiplier],

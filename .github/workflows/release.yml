@@ -34,7 +34,7 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: '观测台 v__VERSION__'
-          releaseBody: '新增托盘概览面板，可切换本机、远端设备与全部设备，查看今天或近 7 天用量。DNS 诊断、进程流量、设备性能和 Agent 追踪尚未接入。macOS 构建未公证。'
+          releaseBody: '优化 Claude 模型名称显示，同时保留原始模型 ID，筛选和计价不受影响。macOS 构建未公证。'
           releaseDraft: true
           prerelease: false
           assetNamePattern: 'Observatory-[version]-[platform]-[arch][setup][ext]'
