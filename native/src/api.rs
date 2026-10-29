@@ -195,6 +195,16 @@ impl UsageBackend {
     }
     pub async fn call(&self, op: &str, args: Value) -> Result<Value, AppError> {
         match op {
+            "tray_dashboard" => {
+                let q: Query = serde_json::from_value(args.clone()).map_err(|e| AppError::InvalidInput(e.to_string()))?;
+                let peer = args.get("deviceId").and_then(Value::as_str).filter(|v| !v.is_empty());
+                let db = if let Some(peer) = peer { lan_usage::projection::database_for_peer(&self.db, peer)? } else { self.query_database(q.multi_device)? };
+                let (start, end) = (q.filters.start_date, q.filters.end_date);
+                let summary = db.get_usage_summary(start, end, None, None, None)?;
+                let by_app = db.get_usage_summary_by_app(start, end, None, None)?;
+                let trends = db.get_daily_trends(start, end, None, None, None)?;
+                Ok(json!({"summary":summary,"byApp":by_app,"trends":trends}))
+            }
             "network_international_ipv4" => crate::network_overview::international_ipv4().await,
             "network_snapshot" => {
                 let force = args.get("refreshMetadata").and_then(Value::as_bool).unwrap_or(false);

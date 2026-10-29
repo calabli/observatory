@@ -1,6 +1,6 @@
 {
   "identifier": "main",
   "description": "Observatory main window",
-  "windows": ["main"],
+  "windows": ["main", "tray-panel"],
   "permissions": ["core:default", "core:window:allow-set-theme", "updater:default", "process:allow-restart"]
 }

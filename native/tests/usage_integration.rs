@@ -305,6 +305,25 @@ async fn peer_snapshots_support_filters_replace_and_disabled_devices() {
     lan_usage::client::sync_device(&local, &info.device_id)
         .await
         .unwrap();
+    let peer_only = lan_usage::projection::database_for_peer(&local, &info.device_id).unwrap();
+    let peer_summary = peer_only.get_usage_summary(None, None, None, None, None).unwrap();
+    assert_eq!(peer_summary.total_requests, 1);
+    assert_eq!(peer_summary.total_cost, "2.000000");
+    let local_summary = local.get_usage_summary(None, None, None, None, None).unwrap();
+    assert_eq!(local_summary.total_requests, 1);
+    assert_eq!(local_summary.total_cost, "1.000000");
+    let tray_backend = UsageBackend::with_database(local.clone());
+    let all = tray_backend.call("tray_dashboard", json!({"startDate":1792999900,"endDate":1793000100,"multiDevice":true})).await.unwrap();
+    let only_peer = tray_backend.call("tray_dashboard", json!({"startDate":1792999900,"endDate":1793000100,"deviceId":info.device_id})).await.unwrap();
+    assert_eq!(all["summary"]["totalRequests"], 2);
+    assert_eq!(only_peer["summary"]["totalRequests"], 1);
+    assert_eq!(only_peer["summary"]["totalCost"], "2.000000");
+    local.execute_batch(&format!("UPDATE lan_devices SET last_sync_at = NULL WHERE device_id = '{}';", info.device_id)).unwrap();
+    assert_eq!(lan_usage::projection::database_for_peer(&local, &info.device_id).unwrap().get_usage_summary(None, None, None, None, None).unwrap().total_requests, 1);
+    let cached_total = lan_usage::projection::database(&local).unwrap();
+    let cached_peer = lan_usage::projection::database_for_peer(&local, &info.device_id).unwrap();
+    assert!(Arc::ptr_eq(&cached_total, &lan_usage::projection::database(&local).unwrap()));
+    assert!(Arc::ptr_eq(&cached_peer, &lan_usage::projection::database_for_peer(&local, &info.device_id).unwrap()));
     assert_eq!(
         lan_usage::projection::database(&local)
             .unwrap()
@@ -325,6 +344,7 @@ async fn peer_snapshots_support_filters_replace_and_disabled_devices() {
         2
     );
     lan_usage::storage::set_device_enabled(&local, &info.device_id, false).unwrap();
+    assert!(lan_usage::projection::database_for_peer(&local, &info.device_id).is_err());
     assert_eq!(
         lan_usage::projection::database(&local)
             .unwrap()

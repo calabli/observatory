@@ -34,7 +34,7 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: '观测台 v__VERSION__'
-          releaseBody: '新增 Windows 系统托盘和 macOS 菜单栏，支持查看本机今日用量、后台运行、打开窗口与退出。DNS 诊断、进程流量、设备性能和 Agent 追踪尚未接入。macOS 构建未公证。'
+          releaseBody: '新增托盘概览面板，可切换本机、远端设备与全部设备，查看今天或近 7 天用量。DNS 诊断、进程流量、设备性能和 Agent 追踪尚未接入。macOS 构建未公证。'
           releaseDraft: true
           prerelease: false
           assetNamePattern: 'Observatory-[version]-[platform]-[arch][setup][ext]'
@@ -45,6 +45,9 @@ jobs:
       - name: Verify macOS tray usage totals
         if: runner.os == 'macOS'
         run: cargo test --manifest-path native/Cargo.toml --test usage_integration tray_summary_counts_only_local_today
+      - name: Verify macOS peer and aggregate projections
+        if: runner.os == 'macOS'
+        run: cargo test --manifest-path native/Cargo.toml --test usage_integration peer_snapshots_support_filters_replace_and_disabled_devices
       - name: Verify macOS code signature and disk image
         if: runner.os == 'macOS'
         shell: bash

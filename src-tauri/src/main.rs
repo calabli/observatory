@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::Manager;
+use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
 struct BackendState(Mutex<Option<Arc<UsageBackend>>>);
 struct TrayReady(AtomicBool);
@@ -17,7 +17,75 @@ fn show_window(app: &tauri::AppHandle) {
     }
 }
 
+fn toggle_tray_panel(app: &tauri::AppHandle, x: f64, y: f64) {
+    let Some(window) = app.get_webview_window("tray-panel") else {
+        show_window(app);
+        return;
+    };
+    if window.is_visible().unwrap_or(false) {
+        let _ = window.hide();
+        return;
+    }
+    if let Ok(Some(monitor)) = window.monitor_from_point(x, y) {
+        let area = monitor.work_area();
+        let factor = monitor.scale_factor();
+        let width = (420.0 * factor).min(area.size.width as f64);
+        let height = (720.0 * factor).min(area.size.height as f64);
+        let _ = window.set_size(tauri::PhysicalSize::new(width as u32, height as u32));
+        let left = area.position.x as f64;
+        let top = area.position.y as f64;
+        let right = left + area.size.width as f64;
+        let bottom = top + area.size.height as f64;
+        let px = (x - width / 2.0).clamp(left, (right - width).max(left));
+        let py = if y < top + area.size.height as f64 / 2.0 {
+            y + 12.0
+        } else {
+            y - height - 12.0
+        }
+        .clamp(top, (bottom - height).max(top));
+        let _ = window.set_position(tauri::PhysicalPosition::new(px as i32, py as i32));
+    }
+    let _ = window.show();
+    let _ = window.set_focus();
+}
+
+#[tauri::command]
+fn tray_action(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    action: &str,
+) -> Result<(), String> {
+    if window.label() != "tray-panel" {
+        return Err("不允许的窗口".into());
+    }
+    match action {
+        "open" => {
+            let _ = window.hide();
+            show_window(&app);
+        }
+        "close" => {
+            let _ = window.hide();
+        }
+        "quit" => app.exit(0),
+        _ => return Err("未知操作".into()),
+    }
+    Ok(())
+}
+
 fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
+    WebviewWindowBuilder::new(
+        app,
+        "tray-panel",
+        WebviewUrl::App("index.html?surface=tray".into()),
+    )
+    .title("观测台快捷面板")
+    .inner_size(420.0, 720.0)
+    .resizable(false)
+    .decorations(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .visible(false)
+    .build()?;
     let open = MenuItem::with_id(app, "open", "打开观测台", true, None::<&str>)?;
     let heading = MenuItem::with_id(app, "heading", "本机 · 今日用量", false, None::<&str>)?;
     let cost = MenuItem::with_id(app, "cost", "今日估算费用：读取中…", false, None::<&str>)?;
@@ -40,24 +108,21 @@ fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
         .icon(icon)
         .tooltip("观测台 · 本机今日用量")
         .menu(&menu)
-        .show_menu_on_left_click(cfg!(target_os = "macos"))
+        .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "open" => show_window(app),
             "quit" => app.exit(0),
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
-            if cfg!(target_os = "windows")
-                && matches!(
-                    event,
-                    TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        button_state: MouseButtonState::Up,
-                        ..
-                    }
-                )
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                position,
+                ..
+            } = event
             {
-                show_window(tray.app_handle());
+                toggle_tray_panel(tray.app_handle(), position.x, position.y);
             }
         })
         .build(app)?;
@@ -133,6 +198,9 @@ fn main() {
         .setup(|app| {
             if let Err(e) = setup_tray(app) {
                 eprintln!("Tray unavailable: {e}");
+                if let Some(panel) = app.get_webview_window("tray-panel") {
+                    let _ = panel.destroy();
+                }
             }
             Ok(())
         })
@@ -145,7 +213,7 @@ fn main() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![usage_call])
+        .invoke_handler(tauri::generate_handler![usage_call, tray_action])
         .run(tauri::generate_context!())
         .expect("Unable to start Observatory");
 }

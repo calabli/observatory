@@ -81,6 +81,7 @@ import {
 } from "@tanstack/react-query";
 import { UsageWorkspace } from "./usage/UsageWorkspace";
 import { DeviceManager } from "./usage/DeviceManager";
+import { TrayPanel } from "./tray/TrayPanel";
 import { NetworkOverview } from "./network/NetworkOverview";
 import { UpdateControl } from "./UpdateControl";
 import packageInfo from "../package.json";
@@ -529,6 +530,9 @@ function App() {
   useEffect(() => {
     const theme = dark ? "dark" : "light";
     document.documentElement.style.colorScheme = theme;
+    try {
+      localStorage.setItem("observatory.color-scheme", theme);
+    } catch {}
     if (window.__TAURI_INTERNALS__) {
       void getCurrentWindow()
         .setTheme(theme)
@@ -1380,8 +1384,14 @@ function App() {
     </div>
   );
 }
+const isTrayPanel =
+  new URLSearchParams(window.location.search).get("surface") === "tray";
+if (isTrayPanel) {
+  document.documentElement.classList.add("tray-window");
+  document.body.classList.add("tray-window");
+}
 createRoot(document.getElementById("observatory-root")!).render(
   <QueryClientProvider client={queryClient}>
-    <App />
+    {isTrayPanel ? <TrayPanel /> : <App />}
   </QueryClientProvider>,
 );

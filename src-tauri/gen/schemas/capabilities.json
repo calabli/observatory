@@ -1,1 +1,1 @@
-{"main":{"identifier":"main","description":"Observatory main window","local":true,"windows":["main"],"permissions":["core:default","core:window:allow-set-theme","updater:default","process:allow-restart"]}}
+{"main":{"identifier":"main","description":"Observatory main window","local":true,"windows":["main","tray-panel"],"permissions":["core:default","core:window:allow-set-theme","updater:default","process:allow-restart"]}}

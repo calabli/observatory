@@ -12,11 +12,12 @@ use crate::services::usage_stats::provider_name_coalesce;
 use super::{identity, DeviceInfo, UsageExport};
 
 struct CachedProjection {
-    key: (usize, String, i64, i64),
+    key: (usize, String, i64, i64, String),
     db: Arc<Database>,
 }
 
-static CACHE: LazyLock<Mutex<Option<CachedProjection>>> = LazyLock::new(|| Mutex::new(None));
+// Keep aggregate and one selected peer projection to avoid rebuilding each when both windows are open.
+static CACHE: LazyLock<Mutex<Vec<CachedProjection>>> = LazyLock::new(|| Mutex::new(Vec::new()));
 
 fn sql_error(error: rusqlite::Error) -> AppError {
     AppError::Database(error.to_string())
@@ -226,6 +227,14 @@ fn legacy_rows<T: DeserializeOwned>(
 }
 
 pub fn database(db: &Database) -> Result<Arc<Database>, AppError> {
+    database_selected(db, None)
+}
+
+pub fn database_for_peer(db: &Database, peer_id: &str) -> Result<Arc<Database>, AppError> {
+    database_selected(db, Some(peer_id))
+}
+
+fn database_selected(db: &Database, peer_id: Option<&str>) -> Result<Arc<Database>, AppError> {
     let device_id = identity::device_id(db)?;
     let conn = lock_conn!(db.conn);
     let read = conn.unchecked_transaction().map_err(sql_error)?;
@@ -240,9 +249,16 @@ pub fn database(db: &Database) -> Result<Arc<Database>, AppError> {
         device_id.clone(),
         changes,
         version,
+        peer_id.unwrap_or("").to_owned(),
     );
+    if let Some(peer) = peer_id {
+        let exists: bool = read.query_row("SELECT EXISTS(SELECT 1 FROM lan_devices WHERE device_id = ?1 AND enabled = 1)", [peer], |r| r.get(0)).map_err(sql_error)?;
+        if !exists {
+            return Err(AppError::Message("设备不存在或未启用".into()));
+        }
+    }
     let mut cache = CACHE.lock().map_err(|e| AppError::Message(e.to_string()))?;
-    if let Some(cached) = cache.as_ref().filter(|cached| cached.key == key) {
+    if let Some(cached) = cache.iter().find(|cached| cached.key == key) {
         return Ok(cached.db.clone());
     }
 
@@ -260,7 +276,10 @@ pub fn database(db: &Database) -> Result<Arc<Database>, AppError> {
         create_table(&read, &tx, table)?;
     }
     let origin = namespace(&device_id);
-    for table in ["proxy_request_logs", "usage_daily_rollups"] {
+    for table in ["proxy_request_logs", "usage_daily_rollups"]
+        .into_iter()
+        .filter(|_| peer_id.is_none())
+    {
         copy_usage_table(&read, &tx, table, &origin)?;
         let name = provider_name_coalesce("l", "p");
         let mut providers = read.prepare(&format!("SELECT DISTINCT l.provider_id, l.app_type, {name} FROM {table} l LEFT JOIN providers p ON p.id = l.provider_id AND p.app_type = l.app_type")).map_err(sql_error)?;
@@ -279,9 +298,9 @@ pub fn database(db: &Database) -> Result<Arc<Database>, AppError> {
         }
     }
     {
-        let mut peers = read.prepare("SELECT d.device_id, d.device_name, s.payload FROM lan_devices d LEFT JOIN lan_usage_snapshots s ON d.device_id = s.device_id WHERE d.enabled = 1 AND d.device_id <> ?1").map_err(sql_error)?;
+        let mut peers = read.prepare("SELECT d.device_id, d.device_name, s.payload FROM lan_devices d LEFT JOIN lan_usage_snapshots s ON d.device_id = s.device_id WHERE d.enabled = 1 AND d.device_id <> ?1 AND (?2 IS NULL OR d.device_id = ?2)").map_err(sql_error)?;
         let rows = peers
-            .query_map([&device_id], |row| {
+            .query_map(params![device_id, peer_id], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
@@ -353,7 +372,11 @@ pub fn database(db: &Database) -> Result<Arc<Database>, AppError> {
         conn: Mutex::new(target),
         log_count_cache: Mutex::new(None),
     });
-    *cache = Some(CachedProjection {
+    cache.retain(|cached| cached.key.0 != key.0 || cached.key.4 != key.4);
+    if cache.len() >= 2 {
+        cache.remove(0);
+    }
+    cache.push(CachedProjection {
         key,
         db: projection.clone(),
     });
