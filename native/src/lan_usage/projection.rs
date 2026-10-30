@@ -252,7 +252,7 @@ fn database_selected(db: &Database, peer_id: Option<&str>) -> Result<Arc<Databas
         peer_id.unwrap_or("").to_owned(),
     );
     if let Some(peer) = peer_id {
-        let exists: bool = read.query_row("SELECT EXISTS(SELECT 1 FROM lan_devices WHERE device_id = ?1 AND enabled = 1)", [peer], |r| r.get(0)).map_err(sql_error)?;
+        let exists: bool = read.query_row("SELECT EXISTS(SELECT 1 FROM lan_devices WHERE device_id = ?1 AND enabled = 1 AND EXISTS (SELECT 1 FROM settings WHERE key = 'lan_outgoing_token_v1:' || lan_devices.device_id))", [peer], |r| r.get(0)).map_err(sql_error)?;
         if !exists {
             return Err(AppError::Message("设备不存在或未启用".into()));
         }
@@ -298,7 +298,7 @@ fn database_selected(db: &Database, peer_id: Option<&str>) -> Result<Arc<Databas
         }
     }
     {
-        let mut peers = read.prepare("SELECT d.device_id, d.device_name, s.payload FROM lan_devices d LEFT JOIN lan_usage_snapshots s ON d.device_id = s.device_id WHERE d.enabled = 1 AND d.device_id <> ?1 AND (?2 IS NULL OR d.device_id = ?2)").map_err(sql_error)?;
+        let mut peers = read.prepare("SELECT d.device_id, d.device_name, s.payload FROM lan_devices d LEFT JOIN lan_usage_snapshots s ON d.device_id = s.device_id WHERE d.enabled = 1 AND EXISTS (SELECT 1 FROM settings WHERE key = 'lan_outgoing_token_v1:' || d.device_id) AND d.device_id <> ?1 AND (?2 IS NULL OR d.device_id = ?2)").map_err(sql_error)?;
         let rows = peers
             .query_map(params![device_id, peer_id], |row| {
                 Ok((

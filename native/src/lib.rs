@@ -9,6 +9,7 @@ pub mod kimi_session;
 pub mod lan_usage;
 pub mod mcode_config;
 pub mod network_overview;
+pub mod scan_jobs;
 pub mod opencode_config;
 pub mod proxy;
 pub mod services;

@@ -1,0 +1,75 @@
+.multi-scan-panel {
+  margin: 16px 0;
+  padding: 16px 18px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.multi-scan-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+}
+.multi-scan-head p,
+.multi-scan-hint {
+  margin: 5px 0 0;
+  font-size: 12px;
+  opacity: 0.7;
+}
+.multi-scan-batch-time {
+  font-size: 12px;
+  opacity: 0.7;
+  white-space: nowrap;
+}
+.multi-scan-panel ul {
+  padding: 0;
+  margin: 14px 0 0;
+  list-style: none;
+}
+.multi-scan-device {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border-strong);
+}
+.multi-scan-device-info {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.multi-scan-device-info strong {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+.multi-scan-device-info span {
+  font-size: 12px;
+  opacity: 0.7;
+  overflow-wrap: anywhere;
+}
+.multi-scan-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  font-size: 12px;
+}
+.multi-scan-state--completed {
+  color: #40a87c;
+}
+.multi-scan-state--failed,
+.multi-scan-state--partial_failure,
+.multi-scan-state--timed_out {
+  color: #e88b57;
+}
+@media (max-width: 520px) {
+  .multi-scan-head {
+    flex-direction: column;
+  }
+  .multi-scan-device {
+    align-items: flex-start;
+  }
+}

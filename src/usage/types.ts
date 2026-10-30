@@ -64,6 +64,7 @@ export interface Peer {
   host: string;
   port: number;
   enabled: boolean;
+  paired: boolean;
   lastSeenAt?: number;
   lastSyncAt?: number;
   lastError?: string;

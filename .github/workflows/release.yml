@@ -26,6 +26,8 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run typecheck
+      - name: Verify pairing and multi-device scans
+        run: cargo test --manifest-path native/Cargo.toml --test pairing_codes --test scan_jobs --test lan_pair_scan --locked
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -34,7 +36,7 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: '观测台 v__VERSION__'
-          releaseBody: '优化 Claude 模型名称显示，同时保留原始模型 ID，筛选和计价不受影响。macOS 构建未公证。'
+          releaseBody: '新增一次配对即可双向同步与远程扫描，并显示逐台更新状态。两台设备需升级本版本并开启局域网共享，旧连接需要重新配对。局域网使用明文通信，请在可信网络使用。macOS 构建未公证。'
           releaseDraft: true
           prerelease: false
           assetNamePattern: 'Observatory-[version]-[platform]-[arch][setup][ext]'

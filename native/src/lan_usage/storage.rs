@@ -51,6 +51,7 @@ pub fn list_devices(db: &Database) -> Result<Vec<LanDeviceStatus>, AppError> {
                 port: row.get::<_, i64>(3)? as u16,
                 registered: true,
                 enabled: row.get::<_, i64>(4)? != 0,
+                paired: false,
                 last_seen_at: row.get(5)?,
                 last_sync_at: row.get(6)?,
                 last_error: row.get(7)?,
@@ -61,6 +62,11 @@ pub fn list_devices(db: &Database) -> Result<Vec<LanDeviceStatus>, AppError> {
     let mut out = Vec::new();
     for row in rows {
         out.push(row.map_err(|e| AppError::Database(e.to_string()))?);
+    }
+    drop(stmt);
+    drop(conn);
+    for device in &mut out {
+        device.paired = db.get_setting(&format!("lan_outgoing_token_v1:{}", device.device_id))?.is_some();
     }
     Ok(out)
 }
@@ -131,7 +137,7 @@ pub fn record_sync_result(
     let conn = lock_conn!(db.conn);
     let now = chrono::Utc::now().timestamp();
     conn.execute(
-        "UPDATE lan_devices SET last_sync_at = ?2, last_error = ?3, last_seen_at = ?2 WHERE device_id = ?1",
+        "UPDATE lan_devices SET last_sync_at = CASE WHEN ?3 IS NULL THEN ?2 ELSE last_sync_at END, last_error = ?3, last_seen_at = CASE WHEN ?3 IS NULL THEN ?2 ELSE last_seen_at END WHERE device_id = ?1",
         params![device_id, now, error],
     )
     .map_err(|e| AppError::Database(e.to_string()))?;
@@ -148,6 +154,14 @@ pub fn record_sync_result(
 ///
 /// 这样同一台设备的同一天永远只有一种粒度，聚合时直接相加不会重复计数。
 pub fn store_export(db: &Database, export: &UsageExport) -> Result<usize, AppError> {
+    store_export_inner(db, export, None)
+}
+
+pub fn store_authorized_export(db: &Database, export: &UsageExport, token: &str) -> Result<usize, AppError> {
+    store_export_inner(db, export, Some(token))
+}
+
+fn store_export_inner(db: &Database, export: &UsageExport, expected_token: Option<&str>) -> Result<usize, AppError> {
     let mut sanitized = export.clone();
     if let Some(apps) = &export.shared_app_types {
         let apps = super::normalize_shared_app_types(apps);
@@ -198,6 +212,10 @@ pub fn store_export(db: &Database, export: &UsageExport) -> Result<usize, AppErr
     let tx = conn
         .transaction()
         .map_err(|e| AppError::Database(e.to_string()))?;
+    if let Some(token) = expected_token {
+        let valid: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM lan_devices d JOIN settings s ON s.key = 'lan_outgoing_token_v1:' || d.device_id WHERE d.device_id = ?1 AND d.enabled = 1 AND s.value = ?2)", params![device_id, token], |r| r.get(0))?;
+        if !valid { return Err(AppError::Message("设备已停用或配对已解除".into())); }
+    }
     tx.execute(
         "INSERT INTO lan_usage_snapshots (device_id, payload) VALUES (?1, ?2)
         ON CONFLICT(device_id) DO UPDATE SET payload = excluded.payload",

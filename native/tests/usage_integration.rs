@@ -299,7 +299,14 @@ async fn peer_snapshots_support_filters_replace_and_disabled_devices() {
     seed(&local, "same-request", "dsh", "1", 10, 2, 0, 2);
     seed(&peer, "same-request", "dsh", "2", 20, 4, 0, 2);
     let server = lan_usage::server::start(peer.clone(), 0).await.unwrap();
+    let local_server = lan_usage::server::start(local.clone(), 0).await.unwrap();
     let info = lan_usage::identity::device_info(&peer).unwrap();
+    let own_info = lan_usage::identity::device_info(&local).unwrap();
+    let (code, _) = lan_usage::pairing::generate(&peer).unwrap();
+    let reverse = lan_usage::pairing::new_token();
+    lan_usage::pairing::store_grant(&local, &info.device_id, &reverse).unwrap();
+    let token = lan_usage::client::pair("127.0.0.1", server.port, &own_info, local_server.port, &code, &reverse).await.unwrap();
+    local.set_setting(&format!("lan_outgoing_token_v1:{}", info.device_id), &token).unwrap();
     lan_usage::storage::register_device(&local, &info.device_id, "Peer", "127.0.0.1", server.port)
         .unwrap();
     lan_usage::client::sync_device(&local, &info.device_id)
@@ -368,6 +375,7 @@ async fn peer_snapshots_support_filters_replace_and_disabled_devices() {
         1
     );
     server.stop();
+    local_server.stop();
 }
 #[tokio::test]
 async fn zero_cost_backfill_and_source_preferences_persist() {

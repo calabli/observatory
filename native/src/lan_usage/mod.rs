@@ -6,6 +6,7 @@ pub mod aggregate;
 pub mod client;
 pub mod discovery;
 pub mod identity;
+pub mod pairing;
 mod interfaces;
 pub mod projection;
 pub mod server;
@@ -52,6 +53,7 @@ fn install_running(handle: server::LanServerHandle) -> Result<u16, crate::error:
 /// 开着就启动，没开就停掉。重复调用是安全的：端口或设置没变时不会重启服务。
 pub async fn ensure_server(
     db: Arc<crate::database::Database>,
+    scan_lock: Arc<tokio::sync::Mutex<()>>,
 ) -> Result<bool, crate::error::AppError> {
     let settings = identity::share_settings(&db);
 
@@ -71,7 +73,7 @@ pub async fn ensure_server(
     if let Some(handle) = take_running() {
         handle.stop();
     }
-    let handle = server::start(db.clone(), settings.port).await?;
+    let handle = server::start_with_lock(db.clone(), settings.port, scan_lock).await?;
     let port = install_running(handle)?;
     log::info!("局域网用量服务已启动，端口 {port}");
     Ok(true)
@@ -87,9 +89,9 @@ pub fn stop_server() {
 }
 
 /// 应用启动时调用：按设置启动共享服务，并拉起定时同步。
-pub fn start_background(db: Arc<crate::database::Database>) {
+pub fn start_background(db: Arc<crate::database::Database>, scan_lock: Arc<tokio::sync::Mutex<()>>) {
     tokio::spawn(async move {
-        match ensure_server(db.clone()).await {
+        match ensure_server(db.clone(), scan_lock).await {
             Ok(true) => log::info!("局域网用量共享已开启"),
             Ok(false) => {}
             Err(e) => log::warn!("启动局域网用量服务失败: {e}"),
@@ -349,6 +351,7 @@ pub struct LanDeviceStatus {
     /// 是否在本机数据库里登记过（登记过的才会被拉取）。
     pub registered: bool,
     pub enabled: bool,
+    pub paired: bool,
     pub last_seen_at: Option<i64>,
     pub last_sync_at: Option<i64>,
     pub last_error: Option<String>,

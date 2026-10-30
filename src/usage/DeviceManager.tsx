@@ -8,15 +8,26 @@ import { friendlyError, timeLabel } from "./ui";
 export function DeviceManager() {
   const qc = useQueryClient();
   const [host, setHost] = useState("");
+  const [code, setCode] = useState("");
+  const [pairCode, setPairCode] = useState<{
+    code: string;
+    expiresAt: number;
+  } | null>(null);
   const [found, setFound] = useState<Discovered[]>([]);
   const [message, setMessage] = useState("");
   const state = useQuery({
     queryKey: ["usage", "lan"],
     queryFn: () => usageCall<LanStatus>("lan_status"),
+    refetchInterval: 5000,
   });
   const status = useQuery({
     queryKey: ["usage", "status"],
     queryFn: () => usageCall<NativeStatus>("status"),
+  });
+  const incoming = useQuery({
+    queryKey: ["usage", "incoming"],
+    queryFn: () => usageCall<string[]>("lan_incoming_list"),
+    refetchInterval: 5000,
   });
   const invalidate = async () => {
     await qc.invalidateQueries({ queryKey: ["usage"] });
@@ -38,9 +49,13 @@ export function DeviceManager() {
   });
   const connect = useMutation({
     mutationFn: (address: { host: string; port?: number }) =>
-      usageCall<{ error?: string; imported: number }>("lan_connect", address),
+      usageCall<{ error?: string; imported: number }>("lan_connect", {
+        ...address,
+        code,
+      }),
     onSuccess: async (r) => {
       setHost("");
+      setCode("");
       setMessage(
         r.error
           ? "设备已登记，首次同步失败：" + r.error
@@ -49,19 +64,46 @@ export function DeviceManager() {
       await invalidate();
     },
   });
+  const generateCode = useMutation({
+    mutationFn: () =>
+      usageCall<{ code: string; expiresAt: number }>("lan_pair_code"),
+    onSuccess: setPairCode,
+  });
   const enable = useMutation({
     mutationFn: (args: { deviceId: string; enabled: boolean }) =>
       usageCall("lan_device_enabled", args),
     onSuccess: invalidate,
   });
   const disconnect = useMutation({
-    mutationFn: (deviceId: string) => usageCall("lan_disconnect", { deviceId }),
+    mutationFn: (deviceId: string) =>
+      usageCall<{ remoteRevoked: boolean }>("lan_disconnect", { deviceId }),
+    onSuccess: async (r) => {
+      setMessage(
+        r.remoteRevoked
+          ? "连接已断开。"
+          : "本机已断开；对端未确认撤销，请在对方设备的授权列表中移除本机。",
+      );
+      await invalidate();
+    },
+  });
+  const revokeIncoming = useMutation({
+    mutationFn: (deviceId: string) =>
+      usageCall("lan_incoming_revoke", { deviceId }),
     onSuccess: invalidate,
   });
   const sync = useMutation({
-    mutationFn: () => usageCall("sync"),
-    onSuccess: async () => {
-      setMessage("本机扫描和设备同步已完成。");
+    mutationFn: () =>
+      usageCall<{ scan: { errors: string[] }; peers: { error?: string }[] }>(
+        "sync",
+      ),
+    onSuccess: async (r) => {
+      const failures =
+        r.scan.errors.length + r.peers.filter((peer) => peer.error).length;
+      setMessage(
+        failures
+          ? `同步未全部完成：${failures} 项扫描或设备同步失败。`
+          : "本机扫描和设备同步已完成。",
+      );
       await invalidate();
     },
   });
@@ -71,6 +113,9 @@ export function DeviceManager() {
     settings.error ||
     discovery.error ||
     connect.error ||
+    incoming.error ||
+    revokeIncoming.error ||
+    generateCode.error ||
     enable.error ||
     disconnect.error ||
     sync.error;
@@ -221,9 +266,29 @@ export function DeviceManager() {
       )}
       <section className="panel section-gap">
         <div className="panel-head">
-          <h2>按地址连接</h2>
-          <p>连接为单向拉取，两台都需要合计时分别登记对方。</p>
+          <h2>设备配对</h2>
+          <p>
+            两台设备先开启局域网共享，一方生成配对码，另一方输入后即可双向同步和触发扫描。
+          </p>
         </div>
+        <div className="filters">
+          <button
+            className="button"
+            disabled={generateCode.isPending || !config?.enabled}
+            onClick={() => generateCode.mutate()}
+          >
+            生成本机配对码
+          </button>
+          {pairCode && (
+            <strong>
+              配对码：{pairCode.code} · 有效至 {timeLabel(pairCode.expiresAt)}
+            </strong>
+          )}
+        </div>
+        <p className="hint">
+          配对码一次有效，5
+          分钟后过期；连接通过局域网明文传输，请仅在可信网络使用。
+        </p>
         <div className="filters">
           <input
             className="usage-input"
@@ -232,13 +297,29 @@ export function DeviceManager() {
             value={host}
             onChange={(e) => setHost(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && host.trim())
+              if (e.key === "Enter" && host.trim() && code.trim())
                 connect.mutate({ host: host.trim() });
             }}
           />
+          <input
+            className="usage-input"
+            inputMode="numeric"
+            maxLength={6}
+            placeholder="对方的 6 位配对码"
+            aria-label="对方的配对码"
+            value={code}
+            onChange={(e) =>
+              setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+            }
+          />
           <button
             className="button primary"
-            disabled={connect.isPending || !host.trim()}
+            disabled={
+              connect.isPending ||
+              !config?.enabled ||
+              !host.trim() ||
+              code.length !== 6
+            }
             onClick={() => connect.mutate({ host: host.trim() })}
           >
             <Plus size={14} />
@@ -260,7 +341,9 @@ export function DeviceManager() {
                 </span>
                 <button
                   className="button"
-                  disabled={connect.isPending}
+                  disabled={
+                    connect.isPending || !config?.enabled || code.length !== 6
+                  }
                   onClick={() => connect.mutate({ host: d.host, port: d.port })}
                 >
                   连接
@@ -270,6 +353,29 @@ export function DeviceManager() {
           </div>
         )}
       </section>
+      {incoming.data && incoming.data.length > 0 && (
+        <section className="panel section-gap">
+          <div className="panel-head">
+            <h2>允许访问本机的设备</h2>
+            <p>移除后该设备不能再读取本机用量或触发本机扫描。</p>
+          </div>
+          {incoming.data.map((id) => (
+            <div className="device-address" key={id}>
+              <span>
+                {state.data?.devices.find((d) => d.deviceId === id)
+                  ?.deviceName ?? id}
+              </span>
+              <button
+                className="button"
+                disabled={revokeIncoming.isPending}
+                onClick={() => revokeIncoming.mutate(id)}
+              >
+                撤销授权
+              </button>
+            </div>
+          ))}
+        </section>
+      )}
       <div className="device-grid section-gap">
         {state.data?.devices.map((d) => (
           <section className="device-card" key={d.deviceId}>
@@ -303,7 +409,9 @@ export function DeviceManager() {
               <span className="muted">最近成功同步</span>
               <span>{timeLabel(d.lastSyncAt)}</span>
             </div>
-            {d.lastError ? (
+            {!d.paired ? (
+              <p className="usage-error">需要重新输入对方配对码</p>
+            ) : d.lastError ? (
               <p className="usage-error">{d.lastError}</p>
             ) : (
               <p className="positive inline">

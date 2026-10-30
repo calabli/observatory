@@ -111,7 +111,7 @@ impl UsageBackend {
         }
     }
     pub fn start_background(&self) {
-        lan_usage::start_background(self.db.clone());
+        lan_usage::start_background(self.db.clone(), self.scan_lock.clone());
         let db = self.db.clone();
         let lock = self.scan_lock.clone();
         tokio::spawn(async move {
@@ -167,6 +167,21 @@ impl UsageBackend {
     }
     fn enabled_sources(&self) -> Result<Vec<String>, AppError> {
         read_enabled_sources(&self.db)
+    }
+    /// Run one local scan under the same lock used by background scans.
+    /// This deliberately never contacts other devices.
+    pub async fn scan_local(&self, automatic: bool) -> Result<session_usage::SessionSyncResult, AppError> {
+        let _guard = self.scan_lock.lock().await;
+        let recent = session_usage::last_sync_completed_at()
+            .is_some_and(|at| chrono::Utc::now().timestamp_millis() - at < 5000);
+        if automatic && recent {
+            return Ok(session_usage::SessionSyncResult::default());
+        }
+        let enabled = self.enabled_sources()?;
+        let db = self.db.clone();
+        tokio::task::spawn_blocking(move || scan_database(&db, &enabled))
+            .await
+            .map_err(|e| AppError::Message(e.to_string()))
     }
     fn status(&self) -> Result<Value, AppError> {
         let source = Self::cc_switch_path();
@@ -287,25 +302,7 @@ impl UsageBackend {
                 self.status()
             }
             "sync" => {
-                let result = {
-                    let _guard = self.scan_lock.lock().await;
-                    let recent = session_usage::last_sync_completed_at()
-                        .is_some_and(|at| chrono::Utc::now().timestamp_millis() - at < 5000);
-                    if args
-                        .get("automatic")
-                        .and_then(Value::as_bool)
-                        .unwrap_or(false)
-                        && recent
-                    {
-                        session_usage::SessionSyncResult::default()
-                    } else {
-                        let enabled = self.enabled_sources()?;
-                        let db = self.db.clone();
-                        tokio::task::spawn_blocking(move || scan_database(&db, &enabled))
-                            .await
-                            .map_err(|e| AppError::Message(e.to_string()))?
-                    }
-                };
+                let result = self.scan_local(args.get("automatic").and_then(Value::as_bool).unwrap_or(false)).await?;
                 let mut peers = Vec::new();
                 for (id, result) in lan_usage::client::sync_all(&self.db).await {
                     peers.push(match result {
@@ -410,11 +407,32 @@ impl UsageBackend {
             "lan_status" => Ok(
                 json!({"settings":identity::share_settings(&self.db),"local":identity::device_info(&self.db)?,"devices":storage::list_devices(&self.db)?}),
             ),
+            "lan_pair_code" => {
+                if !identity::share_settings(&self.db).enabled { return Err(AppError::Message("请先开启局域网共享".into())); }
+                let (code, expires_at) = lan_usage::pairing::generate(&self.db)?;
+                Ok(json!({"code":code,"expiresAt":expires_at}))
+            }
+            "lan_incoming_list" => to_json(lan_usage::pairing::incoming(&self.db)?),
+            "lan_incoming_revoke" => {
+                lan_usage::pairing::revoke(&self.db, string_arg(&args, "deviceId")?)?;
+                Ok(json!(true))
+            }
+            "scan_local_only" => to_json(self.scan_local(false).await?),
+            "scan_remote_start" | "scan_remote_status" => {
+                let id = string_arg(&args, "deviceId")?;
+                let key = string_arg(&args, "key")?;
+                lan_usage::client::scan_request(&self.db, id, key, op == "scan_remote_start").await
+            }
+            "scan_remote_sync" => {
+                let id = string_arg(&args, "deviceId")?;
+                let count = lan_usage::client::sync_device(&self.db, id).await?;
+                Ok(json!({"imported":count}))
+            }
             "lan_settings_save" => {
                 let settings = serde_json::from_value(args)
                     .map_err(|e| AppError::InvalidInput(e.to_string()))?;
                 identity::save_share_settings(&self.db, &settings)?;
-                lan_usage::ensure_server(self.db.clone()).await?;
+                lan_usage::ensure_server(self.db.clone(), self.scan_lock.clone()).await?;
                 to_json(identity::share_settings(&self.db))
             }
             "lan_discover" => {
@@ -440,6 +458,9 @@ impl UsageBackend {
                 to_json(found)
             }
             "lan_connect" => {
+                let settings = identity::share_settings(&self.db);
+                if !settings.enabled { return Err(AppError::Message("双向配对需要先开启本机局域网共享".into())); }
+                lan_usage::ensure_server(self.db.clone(), self.scan_lock.clone()).await?;
                 let host = args
                     .get("host")
                     .and_then(Value::as_str)
@@ -473,7 +494,20 @@ impl UsageBackend {
                         "This device is already included as local usage".into(),
                     ));
                 }
+                let code = string_arg(&args, "code")?;
+                let reverse_token = lan_usage::pairing::new_token();
+                let grant_key = format!("lan_grant_v1:{}", info.device_id);
+                let previous_grant = self.db.get_setting(&grant_key)?;
+                lan_usage::pairing::store_grant(&self.db, &info.device_id, &reverse_token)?;
+                let token = match lan_usage::client::pair(host, port, &identity::device_info(&self.db)?, settings.port, code, &reverse_token).await {
+                    Ok(token) => token,
+                    Err(error) => {
+                        lan_usage::pairing::restore_grant(&self.db, &info.device_id, &reverse_token, previous_grant.as_deref())?;
+                        return Err(error);
+                    }
+                };
                 storage::register_device(&self.db, &info.device_id, &info.device_name, host, port)?;
+                self.db.set_setting(&format!("lan_outgoing_token_v1:{}", info.device_id), &token)?;
                 let result = lan_usage::client::sync_device(&self.db, &info.device_id).await;
                 Ok(
                     json!({"device":info,"imported":result.as_ref().ok(),"error":result.err().map(|e|e.to_string())}),
@@ -491,8 +525,12 @@ impl UsageBackend {
                 Ok(json!(true))
             }
             "lan_disconnect" => {
-                storage::remove_device(&self.db, string_arg(&args, "deviceId")?)?;
-                Ok(json!(true))
+                let id = string_arg(&args, "deviceId")?;
+                let remote_revoked = lan_usage::client::revoke_remote(&self.db, id).await.is_ok();
+                self.db.delete_setting(&format!("lan_outgoing_token_v1:{id}"))?;
+                lan_usage::pairing::revoke(&self.db, id)?;
+                storage::remove_device(&self.db, id)?;
+                Ok(json!({"remoteRevoked":remote_revoked}))
             }
             _ => Err(AppError::InvalidInput(format!(
                 "Unknown usage operation: {op}"
@@ -510,7 +548,7 @@ fn string_arg<'a>(args: &'a Value, key: &str) -> Result<&'a str, AppError> {
         .ok_or_else(|| AppError::InvalidInput(format!("Missing {key}")))
 }
 
-fn read_enabled_sources(db: &Database) -> Result<Vec<String>, AppError> {
+pub(crate) fn read_enabled_sources(db: &Database) -> Result<Vec<String>, AppError> {
     match db.get_setting("usage_enabled_sources")? {
         Some(value) => serde_json::from_str(&value)
             .map_err(|e| AppError::Config(format!("Invalid source selection: {e}"))),
@@ -518,7 +556,7 @@ fn read_enabled_sources(db: &Database) -> Result<Vec<String>, AppError> {
     }
 }
 
-fn scan_database(db: &Database, enabled: &[String]) -> session_usage::SessionSyncResult {
+pub(crate) fn scan_database(db: &Database, enabled: &[String]) -> session_usage::SessionSyncResult {
     let mut result = session_usage::SessionSyncResult::default();
     type Scanner = fn(&Database) -> Result<session_usage::SessionSyncResult, AppError>;
     let scanners: &[(&str, Scanner)] = &[

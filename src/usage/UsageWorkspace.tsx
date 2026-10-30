@@ -47,6 +47,8 @@ import { rankApps, type RankingMetric } from "./appRanking";
 import { sortStats, type StatsSortKey } from "./statsSort";
 import { modelDisplayName } from "./modelDisplay";
 import { DateTimeFields } from "./DateTimeFields";
+import { MultiDeviceScanCoordinator, type ScanBatch } from "./multiDeviceScan";
+import { MultiDeviceScanPanel } from "./MultiDeviceScanPanel";
 
 type Props = {
   interval: string;
@@ -55,6 +57,39 @@ type Props = {
   onStatus?: (status: NativeStatus) => void;
 };
 type Range = "today" | "week" | "month" | "all" | "custom";
+let activeMultiScan = false;
+let latestMultiScan: ScanBatch | null = null;
+const multiScanEvent = "observatory-multi-scan-change";
+function saveMultiScan(batch: ScanBatch) {
+  latestMultiScan = batch;
+  try {
+    localStorage.setItem(
+      "observatory.usage.lastMultiScan",
+      JSON.stringify(batch),
+    );
+  } catch {}
+  window.dispatchEvent(new Event(multiScanEvent));
+}
+function loadMultiScan(): ScanBatch | null {
+  if (latestMultiScan) return latestMultiScan;
+  try {
+    const batch = JSON.parse(
+      localStorage.getItem("observatory.usage.lastMultiScan") || "null",
+    ) as ScanBatch | null;
+    if (!batch || !Array.isArray(batch.devices)) return null;
+    if (batch.status === "running") {
+      batch.devices = batch.devices.map((d) =>
+        ["waiting", "scanning", "syncing"].includes(d.state)
+          ? { ...d, state: "unknown", error: "应用重启，无法确认任务状态" }
+          : d,
+      );
+      batch.status = "incomplete";
+    }
+    return batch;
+  } catch {
+    return null;
+  }
+}
 const blankSummary = {
   totalRequests: 0,
   totalCost: "0",
@@ -204,6 +239,7 @@ export function UsageWorkspace({
   const [notice, setNotice] = useState("");
   const [scanBusy, setScanBusy] = useState(false);
   const [scanErrors, setScanErrors] = useState<string[]>([]);
+  const [multiBatch, setMultiBatch] = useState<ScanBatch | null>(loadMultiScan);
   const [importPath, setImportPath] = useState("");
   const scanRef = useRef<Promise<void> | null>(null);
   const mounted = useRef(true);
@@ -219,6 +255,7 @@ export function UsageWorkspace({
     queryFn: () => usageCall<LanStatus>("lan_status"),
     enabled: !!status.data,
     staleTime: 10000,
+    refetchInterval: 10000,
   });
   const period = useMemo(
     () => bounds(range, customStart, customEnd),
@@ -244,9 +281,22 @@ export function UsageWorkspace({
     refetchOnWindowFocus: false,
     retry: false,
   });
+  const peerRevision = JSON.stringify(
+    lan.data?.devices.map((d) => [
+      d.deviceId,
+      d.enabled,
+      d.paired,
+      d.lastSyncAt,
+    ]) ?? [],
+  );
+  useEffect(() => {
+    if (scope === "multi")
+      void qc.invalidateQueries({ queryKey: ["usage", "dashboard"] });
+  }, [peerRevision, qc, scope]);
   const refresh = useCallback(
     async (automatic = false) => {
       if (scanRef.current) return scanRef.current;
+      if (activeMultiScan) return;
       const task = (async () => {
         setScanBusy(true);
         onBusy?.(true);
@@ -277,6 +327,93 @@ export function UsageWorkspace({
     },
     [qc, onBusy],
   );
+  const refreshMulti = async () => {
+    if (scanRef.current || activeMultiScan || !status.data || !lan.data) return;
+    activeMultiScan = true;
+    const local = status.data.device;
+    const key = crypto.randomUUID();
+    const task = (async () => {
+      setScanBusy(true);
+      onBusy?.(true);
+      setNotice("");
+      setScanErrors([]);
+      try {
+        const coordinator = new MultiDeviceScanCoordinator(
+          {
+            scanLocal: () => usageCall("scan_local_only"),
+            startRemote: async (deviceId, batchId) => {
+              const r = await usageCall<{ jobId: string }>(
+                "scan_remote_start",
+                { deviceId, key: batchId },
+              );
+              return { jobId: r.jobId };
+            },
+            waitRemote: async (deviceId) => {
+              const deadline = Date.now() + 300000;
+              while (Date.now() < deadline) {
+                const job = await usageCall<{
+                  state: string;
+                  imported?: number;
+                  errors: string[];
+                }>("scan_remote_status", { deviceId, key });
+                if (
+                  job.state === "completed" ||
+                  job.state === "partial_failure"
+                )
+                  return { imported: job.imported, errors: job.errors };
+                if (job.state === "failed")
+                  throw new Error(job.errors.join("；") || "远端扫描失败");
+                await new Promise((resolve) => setTimeout(resolve, 1500));
+              }
+              throw Object.assign(new Error("等待超时，远端扫描可能仍在进行"), {
+                code: "timeout",
+              });
+            },
+            syncRemote: (deviceId) =>
+              usageCall("scan_remote_sync", { deviceId }),
+          },
+          saveMultiScan,
+        );
+        await coordinator.start(key, [
+          {
+            deviceId: local.deviceId,
+            deviceName: local.deviceName,
+            local: true,
+            enabled: true,
+            paired: true,
+          },
+          ...lan.data!.devices.map((d) => ({
+            deviceId: d.deviceId,
+            deviceName: d.deviceName,
+            local: false,
+            enabled: d.enabled,
+            paired: d.paired === true,
+            lastSyncAt: d.lastSyncAt,
+          })),
+        ]);
+        await qc.invalidateQueries({ queryKey: ["usage"] });
+      } catch (e) {
+        if (mounted.current) setNotice("更新失败：" + friendlyError(e));
+      } finally {
+        scanRef.current = null;
+        activeMultiScan = false;
+        window.dispatchEvent(new Event(multiScanEvent));
+        if (mounted.current) setScanBusy(false);
+        onBusy?.(false);
+      }
+    })();
+    scanRef.current = task;
+    await task;
+  };
+  useEffect(() => {
+    const update = () => {
+      setMultiBatch(loadMultiScan());
+      setScanBusy(activeMultiScan);
+    };
+    window.addEventListener(multiScanEvent, update);
+    update();
+    return () => window.removeEventListener(multiScanEvent, update);
+  }, []);
   useEffect(() => {
     mounted.current = true;
     onRefreshReady?.(refresh);
@@ -453,8 +590,14 @@ export function UsageWorkspace({
           </button>
           <button
             className="button primary"
-            disabled={scanBusy || !status.data}
-            onClick={() => void refresh().catch(() => {})}
+            disabled={
+              scanBusy || !status.data || (scope === "multi" && !lan.data)
+            }
+            onClick={() =>
+              void (scope === "multi" ? refreshMulti() : refresh()).catch(
+                () => {},
+              )
+            }
           >
             <RefreshCw size={13} />
             {scanBusy ? "扫描中…" : "扫描更新"}
@@ -529,6 +672,9 @@ export function UsageWorkspace({
         <div className="usage-note" role="status">
           {notice}
         </div>
+      )}
+      {scope === "multi" && multiBatch && (
+        <MultiDeviceScanPanel batch={multiBatch} />
       )}
       {scanErrors.length > 0 && (
         <details className="usage-error">
