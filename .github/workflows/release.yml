@@ -36,7 +36,7 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: '观测台 v__VERSION__'
-          releaseBody: '新增一次配对即可双向同步与远程扫描，并显示逐台更新状态。两台设备需升级本版本并开启局域网共享，旧连接需要重新配对。局域网使用明文通信，请在可信网络使用。macOS 构建未公证。'
+          releaseBody: '修复远端触发本机扫描后，AI 用量页面未及时更新的问题；优化设备连接等待和失败提示。局域网使用明文通信，请在可信网络使用。macOS 构建未公证。'
           releaseDraft: true
           prerelease: false
           assetNamePattern: 'Observatory-[version]-[platform]-[arch][setup][ext]'

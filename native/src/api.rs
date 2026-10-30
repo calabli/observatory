@@ -210,6 +210,7 @@ impl UsageBackend {
     }
     pub async fn call(&self, op: &str, args: Value) -> Result<Value, AppError> {
         match op {
+            "scan_revision" => Ok(json!({"revision":session_usage::scan_revision()})),
             "tray_dashboard" => {
                 let q: Query = serde_json::from_value(args.clone()).map_err(|e| AppError::InvalidInput(e.to_string()))?;
                 let peer = args.get("deviceId").and_then(Value::as_str).filter(|v| !v.is_empty());
@@ -508,10 +509,14 @@ impl UsageBackend {
                 };
                 storage::register_device(&self.db, &info.device_id, &info.device_name, host, port)?;
                 self.db.set_setting(&format!("lan_outgoing_token_v1:{}", info.device_id), &token)?;
-                let result = lan_usage::client::sync_device(&self.db, &info.device_id).await;
-                Ok(
-                    json!({"device":info,"imported":result.as_ref().ok(),"error":result.err().map(|e|e.to_string())}),
-                )
+                let db = self.db.clone();
+                let device_id = info.device_id.clone();
+                tokio::spawn(async move {
+                    if let Err(error) = lan_usage::client::sync_device(&db, &device_id).await {
+                        log::warn!("首次设备同步失败: {error}");
+                    }
+                });
+                Ok(json!({"device":info,"syncPending":true}))
             }
             "lan_device_enabled" => {
                 let id = string_arg(&args, "deviceId")?;

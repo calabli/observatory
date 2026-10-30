@@ -141,9 +141,10 @@ async fn pair_handler(
     Json(req): Json<PairRequest>,
 ) -> Result<Json<serde_json::Value>, HandlerError> {
     let host = address.ip().to_string();
-    let info = super::client::fetch_info(&host, req.port)
+    let info = tokio::time::timeout(std::time::Duration::from_secs(4), super::client::fetch_info(&host, req.port))
         .await
-        .map_err(|_| {
+        .ok().and_then(Result::ok)
+        .ok_or_else(|| {
             (
                 StatusCode::BAD_GATEWAY,
                 "无法连接发起设备，请检查局域网共享和防火墙".into(),

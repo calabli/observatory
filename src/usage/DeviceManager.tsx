@@ -49,19 +49,15 @@ export function DeviceManager() {
   });
   const connect = useMutation({
     mutationFn: (address: { host: string; port?: number }) =>
-      usageCall<{ error?: string; imported: number }>("lan_connect", {
+      usageCall<{ syncPending?: boolean }>("lan_connect", {
         ...address,
         code,
       }),
     onSuccess: async (r) => {
       setHost("");
       setCode("");
-      setMessage(
-        r.error
-          ? "设备已登记，首次同步失败：" + r.error
-          : "设备已连接，用量已同步。",
-      );
-      await invalidate();
+      setMessage(r.syncPending ? "设备已连接，正在同步用量。" : "设备已连接。");
+      void invalidate();
     },
   });
   const generateCode = useMutation({

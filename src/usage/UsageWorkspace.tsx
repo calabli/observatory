@@ -250,6 +250,21 @@ export function UsageWorkspace({
     retry: false,
     staleTime: 10000,
   });
+  // Remote and background scans run in the backend, independently of this
+  // window. Watch their cheap in-memory revision even in manual refresh mode.
+  const scanRevision = useQuery({
+    queryKey: ["usage", "scan-revision"],
+    queryFn: () => usageCall<{ revision: number }>("scan_revision"),
+    enabled: !!status.data,
+    refetchInterval: 2000,
+    refetchIntervalInBackground: true,
+    retry: false,
+  });
+  useEffect(() => {
+    if (scanRevision.data?.revision === undefined) return;
+    void qc.invalidateQueries({ queryKey: ["usage", "status"] });
+    void qc.invalidateQueries({ queryKey: ["usage", "dashboard"] });
+  }, [scanRevision.data?.revision, qc]);
   const lan = useQuery({
     queryKey: ["usage", "lan"],
     queryFn: () => usageCall<LanStatus>("lan_status"),

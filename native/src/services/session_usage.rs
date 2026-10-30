@@ -24,7 +24,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::sync::OnceLock;
 use std::time::SystemTime;
 
@@ -61,10 +61,17 @@ pub fn session_sync_mutex() -> &'static tokio::sync::Mutex<()> {
 /// 最近一次完整扫描（[`sync_all_unlocked`]，后台定时和手动同步都走它）完成的时间，
 /// 毫秒时间戳；0 表示本次启动后还没扫过。只在内存里：启动时会立刻扫一轮。
 static LAST_SYNC_COMPLETED_AT_MS: AtomicI64 = AtomicI64::new(0);
+static SCAN_REVISION: AtomicU64 = AtomicU64::new(0);
 
 /// 记下一次扫描完成的时间；只会往后走（并发调用时不会被较早的时间覆盖）。
 pub(crate) fn record_sync_completed(at_ms: i64) {
     LAST_SYNC_COMPLETED_AT_MS.fetch_max(at_ms, Ordering::Relaxed);
+    SCAN_REVISION.fetch_add(1, Ordering::Release);
+}
+
+/// Changes on every completed scan, including scans that found no new records.
+pub fn scan_revision() -> u64 {
+    SCAN_REVISION.load(Ordering::Acquire)
 }
 
 /// 最近一次完整扫描完成的时间（毫秒时间戳）；本次启动后还没扫过时为 `None`。

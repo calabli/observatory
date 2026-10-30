@@ -25,6 +25,7 @@ async fn connect_api_pairs_both_devices_once() {
     let backend = UsageBackend::with_database(local.clone());
     let result = backend.call("lan_connect", serde_json::json!({"host":"127.0.0.1","port":remote_server.port,"code":code})).await.unwrap();
     assert!(result["error"].is_null(), "{result}");
+    assert_eq!(result["syncPending"], true);
     assert!(storage::list_devices(&local).unwrap().iter().any(|d| d.device_id == remote_id && d.paired));
     assert!(storage::list_devices(&remote).unwrap().iter().any(|d| d.device_id == local_id && d.paired));
     assert!(client::sync_device(&local, &remote_id).await.is_ok());
@@ -85,6 +86,8 @@ async fn pairing_controls_read_scan_and_revocation() {
         .unwrap();
     assert!(client::sync_device(&local, &peer.device_id).await.is_ok());
     assert!(client::sync_device(&remote, &own_id).await.is_ok());
+    let local_backend = observatory_usage_core::api::UsageBackend::with_database(local.clone());
+    let before = local_backend.call("scan_revision", serde_json::json!({})).await.unwrap()["revision"].as_u64().unwrap();
     assert!(client::scan_request(&remote, &own_id, "reverse-key", true)
         .await
         .is_ok());
@@ -101,6 +104,8 @@ async fn pairing_controls_read_scan_and_revocation() {
             .unwrap();
     }
     assert_eq!(reverse["state"], "completed");
+    let after = local_backend.call("scan_revision", serde_json::json!({})).await.unwrap()["revision"].as_u64().unwrap();
+    assert!(after > before, "remote scans must advance the local refresh signal");
     let first = client::scan_request(&local, &peer.device_id, "fixture-key", true)
         .await
         .unwrap();
