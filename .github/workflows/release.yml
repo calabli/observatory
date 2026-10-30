@@ -13,7 +13,7 @@ jobs:
         include:
           - os: windows-latest
             args: --target x86_64-pc-windows-msvc --bundles nsis
-          - os: macos-14
+          - os: macos-15
             args: --target aarch64-apple-darwin --bundles app,dmg
     runs-on: ${{ matrix.os }}
     steps:
