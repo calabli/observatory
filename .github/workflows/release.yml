@@ -36,7 +36,7 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: '观测台 v__VERSION__'
-          releaseBody: '修复远端触发本机扫描后，AI 用量页面未及时更新的问题；优化设备连接等待和失败提示。局域网使用明文通信，请在可信网络使用。macOS 构建未公证。'
+          releaseBody: '新增只读用量 HTTP 接口，支持查询 1–366 天的 Token、费用、请求数和每日趋势，并可精确筛选 Claude Code 等应用。在 AI 用量 → 管理设备中生成只读 API 密钥，接口文档见 docs/只读用量HTTP接口.md。清理旧汇总代码并保留存储回归测试。接口仅返回本机允许共享的统计，局域网使用明文通信，请在可信网络使用。macOS 构建未公证。'
           releaseDraft: true
           prerelease: false
           assetNamePattern: 'Observatory-[version]-[platform]-[arch][setup][ext]'
