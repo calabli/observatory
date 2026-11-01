@@ -68,4 +68,21 @@ impl Database {
         lock_conn!(self.conn).execute_batch(sql)?;
         Ok(())
     }
+
+    /// 在同一把连接锁下执行一组只读查询。
+    ///
+    /// 所有读写都走这把互斥锁，所以持锁期间不会有并发写入，闭包里的多次查询
+    /// 必然看到同一份数据。聚合层的连接级函数（如
+    /// [`crate::services::usage_stats::daily_usage_rows`]）必须用这个入口调用，
+    /// 否则后台扫描可能插在两次查询中间，让总量和分组互相矛盾。
+    ///
+    /// 闭包内**不要**再去调用 `Database` 上会自己加锁的方法：`std::sync::Mutex`
+    /// 不可重入，外层已持锁时再次 `lock_conn!` 会自死锁。
+    pub fn with_connection<T, E>(&self, f: impl FnOnce(&Connection) -> Result<T, E>) -> Result<T, E>
+    where
+        E: From<AppError>,
+    {
+        let conn = lock_conn!(self.conn);
+        f(&conn)
+    }
 }

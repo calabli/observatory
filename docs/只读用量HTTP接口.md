@@ -16,62 +16,106 @@
 }
 ```
 
-| 参数 | 默认值 | 说明 |
+### 参数
+
+| 参数 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `days` | 整数 | 7 | 1–366 的整数，含结束日在内的日历天数 |
+| `endDate` | 日期字符串 | 服务器今天 | `YYYY-MM-DD`，包含该日，不得晚于服务器今天 |
+| `startDate` | 日期字符串 | 无 | 包含该日，必须不晚于 `endDate`；不能与 `days` 同时使用 |
+| `startTime` | RFC 3339 | 无 | 秒级区间开始，包含；必须带 UTC 偏移或 `Z`，精确到整秒 |
+| `endTime` | RFC 3339 | 无 | 秒级区间结束，**不包含**；必须与 `startTime` 成对提供 |
+| `appType` | 字符串 | 无 | 精确应用标识；`claude` 仅 Claude Code，`claude-desktop` 单独查询 |
+| `model` | 字符串 | 无 | 按有效计价模型 ID 精确筛选，口径与页面模型筛选一致 |
+| `groupBy` | 枚举字符串 | `day` | `day`、`week`、`month` |
+
+不填 `appType` 时合计所有允许共享的应用。指定未共享应用返回 403；未支持的应用标识返回 400。未知参数、重复参数、空筛选值、非法日期、不支持的分组方式返回 400。
+
+### 三种时间选择方式
+
+**最近 N 天**：`days` + 可选 `endDate`。都不填时默认最近 7 天、结束于服务器今天。
+
+**指定日期区间**：`startDate` + 可选 `endDate`（省略时为服务器今天）。两端日期均包含，不能与 `days` 同时使用。
+
+**指定秒级区间**：`startTime` 与 `endTime` 必须成对提供，且不能与 `days`、`startDate`、`endDate` 混用。必须满足 `startTime < endTime`，结束时刻最多为服务器明天的本地午夜。
+
+三种模式统一归一化为 `[start, endExclusive)`：开始边界包含，结束边界不包含。所有日、周、月边界按**服务器本地时区**划分；请求携带的偏移只用于确定时刻，不改变分组时区。
+
+### 分组
+
+| `groupBy` | 自然周期 | `period` 格式 |
 |---|---|---|
-| days | 7 | 1–366 的整数，含结束日在内的日历天数 |
-| endDate | 服务器今天 | 可选 YYYY-MM-DD，不得晚于服务器今天 |
-| appType | 全部允许共享的应用 | 精确应用标识；`claude` 仅 Claude Code，`claude-desktop` 单独查询 |
+| `day` | 本地午夜至次日本地午夜 | `2026-11-01` |
+| `week` | 周一午夜至下一周周一午夜 | ISO 周编号，如 `2026-W44` |
+| `month` | 每月 1 日午夜至次月 1 日午夜 | `2026-11` |
 
-例如 `days=1&appType=claude` 查询今天 Claude Code；`days=7&endDate=2026-10-30&appType=claude` 查询服务器本地日期 10 月 24–30 日。
+ISO 周编号使用该周所属年份，跨年周不会拼错日历年。只返回与查询范围相交的周期；bucket 的 `start`、`endExclusive` 是自然周期与查询区间的交集。空周期补零，按开始时间升序。
 
-只统计本机保存的记录，不包含其他设备快照。应用必须在共享设置中勾选，指定未共享应用会返回 403；不指定应用时只合计允许共享的应用。未知参数会返回 400，不能用 `scope=multi` 获取多设备数据。
+## 返回
 
-已配对设备也可使用原 `x-observatory-device` 和 `x-observatory-token` 请求头调用本接口；TinyPane 建议使用只读密钥。
+`daily` 始终返回（每日粒度），`buckets` 按 `groupBy` 分组。两者是同一批数据的两种分组方式，与顶层合计加总一致。
 
-## 返回示例
+| 字段 | 类型 | 含义 |
+|---|---|---|
+| `scope` | string | 固定 `local`，只统计本机记录 |
+| `appType` | string/null | 指定应用，未指定为 null |
+| `apps` | string[] | 本次实际纳入的允许共享应用 |
+| `model` | string/null | 指定模型，未指定为 null |
+| `modelFilterBasis` | string | 固定 `effectivePricingModel`，即 `COALESCE(NULLIF(pricing_model,''), model)` |
+| `days` | integer | 查询触及的本地日期数量 |
+| `startDate` / `endDate` | string | 查询触及的首末本地日期 |
+| `range.start` / `range.endExclusive` | string | RFC 3339，实际起止边界（结束不含），各自带 UTC 偏移 |
+| `range.timezone` | string | `server-local` |
+| `groupBy` | string | `day`、`week`、`month` |
+| `requests` | integer | 区间请求总数 |
+| `inputTokens` | integer | 新增输入，不含缓存 |
+| `outputTokens` | integer | 输出 Token |
+| `cacheReadTokens` | integer | 缓存读取 Token |
+| `cacheWriteTokens` | integer | 缓存写入 Token |
+| `totalTokens` | integer | 四类 Token 之和 |
+| `costUsd` | number | 所选区间的已记录估算费用，USD |
+| `currency` | string | 固定 `USD` |
+| `inputTokenSemantics` | string | 固定 `fresh` |
+| `updatedAt` | string | 本次响应生成时间，RFC 3339 |
+| `lastScanAt` | integer/null | 最近扫描完成时间，Unix 毫秒；未扫描为 null |
+| `buckets` | object[] | 按 `groupBy` 聚合的结果 |
+| `daily` | object[] | 每日结果，兼容早期组件 |
 
-以下是模拟的单日数据，金额与 Token 均为 JSON number，不是实际账号用量。
+完整示例见 [`examples/usage-summary.example.json`](examples/usage-summary.example.json)。
 
-```json
-{
-  "days": 1,
-  "startDate": "2026-10-31",
-  "endDate": "2026-10-31",
-  "range": {
-    "start": "2026-10-31T00:00:00+08:00",
-    "endExclusive": "2026-11-01T00:00:00+08:00",
-    "timezone": "server-local"
-  },
-  "scope": "local",
-  "appType": "claude",
-  "apps": ["claude"],
-  "currency": "USD",
-  "inputTokenSemantics": "fresh",
-  "requests": 1,
-  "inputTokens": 100,
-  "outputTokens": 20,
-  "cacheReadTokens": 300,
-  "cacheWriteTokens": 10,
-  "totalTokens": 430,
-  "costUsd": 1.25,
-  "updatedAt": "2026-10-31T12:00:00Z",
-  "lastScanAt": null,
-  "daily": [
-    {"date":"2026-10-31","requests":1,"inputTokens":100,"outputTokens":20,"cacheReadTokens":300,"cacheWriteTokens":10,"totalTokens":430,"costUsd":1.25}
-  ]
-}
-```
+- 金额和用量均为 JSON number；无数据返回有效的 0，不用 null 或字符串替代零。
+- 费用复用已保存的估算费用，不在 GET 中重新按当前价格计价；它不是订阅余额或账单结算金额。
+- `updatedAt` 是本次查询生成时间，不代表进行了新扫描；`lastScanAt` 才是最近数据时间。GET 只读，不主动扫描日志。
+- 同一响应中的总量、`daily` 和 `buckets` 来自同一份数据库读快照，后台扫描写入时不会互相矛盾。
 
-- `inputTokens` 是已归一化的不含缓存新增输入；总 Token 包含输入、输出、缓存读取和缓存写入。
-- 费用复用已保存的估算费用，币种 USD，不是余额或订阅额度。内部保留六位小数统计精度；JSON 输出为数值，展示端自行格式化。
-- `daily` 按日期升序，空日期补零，长度等于 `days`。单日查询仍返回日统计，不会返回小时桶。
-- 使用服务器本地日历边界，`range` 两端携带各自 UTC 偏移；夏令时日期不固定为 24 小时。结束日包含整日的现有记录，包括已归档日汇总。
-- `updatedAt` 是本次查询生成时间，不代表进行了新扫描；`lastScanAt` 是最近扫描完成的毫秒时间戳，未扫描为 null。GET 只读，不主动扫描日志。
-- 汇总与每日数值在调用期间从现有数据库查询；发生并发写入时不是跨所有应用的事务快照。
+## 精度限制
+
+历史只剩每日汇总时，只能整日计入或整日排除，无法按小时比例分摊。
+
+如果秒级区间把某一天切成两半，而该天只剩日汇总，接口返回 **422 `RANGE_PRECISION_UNAVAILABLE`**，并在 `details.dates` 里列出受影响的日期，请改用完整日期。区间内的其他日期不受影响。
+
+归档的日汇总只有日期标签、没有原始时区，默认按服务器本地日期标签解释，不做跨时区重映射。
 
 ## 错误
 
-错误响应为 JSON，例如 `{"error":"days 必须为 1–366"}`。401 表示缺少/错误/过期的凭证；403 表示应用未允许共享；400 表示参数无效；500 表示统计查询失败。成功响应带 `Cache-Control: no-store`。
+错误响应为 JSON，`error` 是可读说明，`code` 是稳定错误码，必要时带 `details`。
+
+| HTTP 状态 | `code` | 场景 |
+|---|---|---|
+| 400 | `INVALID_PARAMETERS` | 未知、重复或格式错误的参数 |
+| 400 | `CONFLICTING_TIME_PARAMETERS` | 同时提供冲突的时间模式，或 `startTime`/`endTime` 未成对 |
+| 400 | `INVALID_DATE_RANGE` | 开始不早于结束、超过 366 天或超出允许的未来边界 |
+| 400 | `UNSUPPORTED_GROUP_BY` | `groupBy` 不是 `day`/`week`/`month` |
+| 400 | `UNSUPPORTED_APP_TYPE` | 应用标识不受支持 |
+| 400 | `INVALID_LOCAL_BOUNDARY` | 本地日历午夜边界不存在 |
+| 401 | `INVALID_API_KEY` | 缺少有效只读密钥或配对凭证 |
+| 403 | `APP_NOT_SHARED` | 应用未允许共享 |
+| 422 | `RANGE_PRECISION_UNAVAILABLE` | 历史汇总无法支持所要求的秒级范围 |
+| 500 | `USAGE_QUERY_FAILED` | 统计查询失败 |
+
+错误不会返回真实密钥、内部 SQL、对话内容或文件系统路径。成功响应带 `Cache-Control: no-store`。
+
+已配对设备也可使用原 `x-observatory-device` 和 `x-observatory-token` 请求头调用本接口。
 
 ## TinyPane 大号
 
@@ -86,4 +130,6 @@
 ]
 ```
 
-图表标题对应 URL 中的 `appType=claude`；修改应用筛选时也应修改标题。TinyPane 最多显示最后 30 个序列点，本接口可以返回多于 30 天；需要更长趋势请在其他客户端查看。
+趋势图也可以改用 `/buckets`，相对标签路径 `/period`、数值路径 `/totalTokens` 或 `/costUsd`。TinyPane 最多显示最后 30 个序列点，本接口可以返回多于 30 天；需要更长趋势请在其他客户端查看。
+
+图表标题对应 URL 中的 `appType=claude`；修改应用筛选时也应修改标题。

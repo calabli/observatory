@@ -1,0 +1,610 @@
+{
+  "info": {
+    "_postman_id": "b7f3c1a2-9d64-4e58-8c21-5a0f3d6e8c17",
+    "name": "观测台 · 只读用量 HTTP 接口",
+    "description": "观测台（Observatory）只读用量查询接口。\n\n## 使用方法\n\n1. 先在应用里开启「局域网共享」，并在「AI 用量 → 管理设备 → 只读用量 HTTP 接口」生成只读 API 密钥。\n2. 导入同目录的环境文件 `postman-observatory-usage.environment.json`，把 `apiKey` 换成你的密钥。\n3. 如从其他设备访问，把 `baseUrl` 改成服务器局域网 IP（例如 `http://192.168.1.20:17891`）。\n\n## 约定\n\n- 区间一律左闭右开 `[start, endExclusive)`。\n- 顶层是所选区间的合计；`daily` 与 `buckets` 是同一批数据的两种分组，三者加总一致。\n- `model` 按有效计价模型匹配，口径与页面一致（`modelFilterBasis=effectivePricingModel`）。\n- 历史只剩日汇总时，秒级区间切天会返回 422，而不是给出被截断的数字。\n\n接口说明见仓库 `docs/只读用量HTTP接口.md`，设计稿见 `docs/AI用量查询接口设计.md`。",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "概览",
+      "item": [
+        {
+          "name": "今天 · Claude Code",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-API-Key", "value": "{{apiKey}}", "type": "text" },
+              { "key": "Accept", "value": "application/json", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=1&appType=claude",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
+              "query": [
+                { "key": "days", "value": "1" },
+                { "key": "appType", "value": "claude" }
+              ]
+            },
+            "description": "最近一个日历日的 Claude Code 用量。`appType=claude` 只含 Claude Code，不混入 Claude Desktop。"
+          },
+          "response": [
+            {
+              "name": "200 · 单日汇总",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Cache-Control", "value": "no-store" }],
+              "cookie": [],
+              "body": {
+                "mode": "raw",
+                "raw": "{\n  \"requests\": 1,\n  \"inputTokens\": 100,\n  \"outputTokens\": 20,\n  \"cacheReadTokens\": 300,\n  \"cacheWriteTokens\": 10,\n  \"totalTokens\": 430,\n  \"costUsd\": 1.25,\n  \"scope\": \"local\",\n  \"appType\": \"claude\",\n  \"apps\": [\"claude\"],\n  \"model\": null,\n  \"modelFilterBasis\": \"effectivePricingModel\",\n  \"days\": 1,\n  \"startDate\": \"2026-11-01\",\n  \"endDate\": \"2026-11-01\",\n  \"range\": {\n    \"start\": \"2026-11-01T00:00:00+08:00\",\n    \"endExclusive\": \"2026-11-02T00:00:00+08:00\",\n    \"timezone\": \"server-local\"\n  },\n  \"groupBy\": \"day\",\n  \"currency\": \"USD\",\n  \"inputTokenSemantics\": \"fresh\",\n  \"updatedAt\": \"2026-11-01T13:42:11Z\",\n  \"lastScanAt\": null,\n  \"buckets\": [\n    {\n      \"requests\": 1,\n      \"inputTokens\": 100,\n      \"outputTokens\": 20,\n      \"cacheReadTokens\": 300,\n      \"cacheWriteTokens\": 10,\n      \"totalTokens\": 430,\n      \"costUsd\": 1.25,\n      \"period\": \"2026-11-01\",\n      \"start\": \"2026-11-01T00:00:00+08:00\",\n      \"endExclusive\": \"2026-11-02T00:00:00+08:00\"\n    }\n  ],\n  \"daily\": [\n    {\n      \"requests\": 1,\n      \"inputTokens\": 100,\n      \"outputTokens\": 20,\n      \"cacheReadTokens\": 300,\n      \"cacheWriteTokens\": 10,\n      \"totalTokens\": 430,\n      \"costUsd\": 1.25,\n      \"date\": \"2026-11-01\"\n    }\n  ]\n}"
+              },
+              "options": { "raw": { "language": "json" } }
+            }
+          ]
+        },
+        {
+          "name": "最近 7 天 · 全部应用",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-API-Key", "value": "{{apiKey}}", "type": "text" },
+              { "key": "Accept", "value": "application/json", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=7",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
+              "query": [{ "key": "days", "value": "7" }]
+            },
+            "description": "不填 `appType` 时合计所有**允许共享**的应用；未勾选共享的应用不会出现在结果里。"
+          }
+        },
+        {
+          "name": "最近 30 天 · 按天分组",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-API-Key", "value": "{{apiKey}}", "type": "text" },
+              { "key": "Accept", "value": "application/json", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=30&groupBy=day",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
+              "query": [
+                { "key": "days", "value": "30" },
+                { "key": "groupBy", "value": "day", "description": "day | week | month" }
+              ]
+            },
+            "description": "`groupBy` 只改变 `buckets`，不改变顶层合计和 `daily`。"
+          }
+        }
+      ]
+    },
+    {
+      "name": "时间区间",
+      "item": [
+        {
+          "name": "指定日期区间 · 按周分组",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-API-Key", "value": "{{apiKey}}", "type": "text" },
+              { "key": "Accept", "value": "application/json", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?startDate={{startDate}}&endDate={{endDate}}&appType=claude&groupBy=week",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
+              "query": [
+                { "key": "startDate", "value": "{{startDate}}", "description": "YYYY-MM-DD，包含该日" },
+                { "key": "endDate", "value": "{{endDate}}", "description": "YYYY-MM-DD，包含该日，不得晚于服务器今天" },
+                { "key": "appType", "value": "claude" },
+                { "key": "groupBy", "value": "week" }
+              ]
+            },
+            "description": "两端日期都包含。ISO 周编号用该周所属年份，跨年周不会拼错日历年（例如 `2026-W01` 可能起始于 2025-12-29）。"
+          }
+        },
+        {
+          "name": "指定日期区间 · 按月分组",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-API-Key", "value": "{{apiKey}}", "type": "text" },
+              { "key": "Accept", "value": "application/json", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?startDate={{startDate}}&endDate={{endDate}}&groupBy=month",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
+              "query": [
+                { "key": "startDate", "value": "{{startDate}}" },
+                { "key": "endDate", "value": "{{endDate}}" },
+                { "key": "groupBy", "value": "month" }
+              ]
+            },
+            "description": "月分组的 `period` 形如 `2026-11`；首尾 bucket 是自然周期与查询区间的交集，空周期补零。"
+          }
+        },
+        {
+          "name": "秒级区间",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-API-Key", "value": "{{apiKey}}", "type": "text" },
+              { "key": "Accept", "value": "application/json", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?startTime={{startTime}}&endTime={{endTime}}&appType=claude&groupBy=day",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
+              "query": [
+                { "key": "startTime", "value": "{{startTime}}", "description": "RFC 3339，必须带 UTC 偏移，精确到整秒，包含" },
+                { "key": "endTime", "value": "{{endTime}}", "description": "RFC 3339，不包含" },
+                { "key": "appType", "value": "claude" },
+                { "key": "groupBy", "value": "day" }
+              ]
+            },
+            "description": "`startTime` 与 `endTime` 必须成对提供，且不能与 `days`/`startDate`/`endDate` 混用。\n\n注意：URL 里的 `+` 必须编码为 `%2B`。Postman 会自动编码，但复制到别处时要注意。\n\n若该区间把某一天切成两半，而那天只剩日汇总（日粒度），接口返回 422 而不是给出被截断的数字。"
+          }
+        },
+        {
+          "name": "秒级区间 · 完整一天",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-API-Key", "value": "{{apiKey}}", "type": "text" },
+              { "key": "Accept", "value": "application/json", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?startTime={{dayStart}}&endTime={{dayEnd}}&appType=claude",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
+              "query": [
+                { "key": "startTime", "value": "{{dayStart}}" },
+                { "key": "endTime", "value": "{{dayEnd}}" },
+                { "key": "appType", "value": "claude" }
+              ]
+            },
+            "description": "完整覆盖一个自然日时，日汇总可以整日计入，不会触发 422。"
+          }
+        }
+      ]
+    },
+    {
+      "name": "筛选",
+      "item": [
+        {
+          "name": "按模型筛选",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-API-Key", "value": "{{apiKey}}", "type": "text" },
+              { "key": "Accept", "value": "application/json", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=7&appType=claude&model={{model}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
+              "query": [
+                { "key": "days", "value": "7" },
+                { "key": "appType", "value": "claude" },
+                { "key": "model", "value": "{{model}}", "description": "有效计价模型 ID，精确匹配" }
+              ]
+            },
+            "description": "匹配口径 `COALESCE(NULLIF(pricing_model,''), model)`，与页面模型筛选一致。\n\n格式合法但没有匹配记录时返回 200 和零值，不是错误。"
+          }
+        },
+        {
+          "name": "区间 + 模型 + 周分组",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-API-Key", "value": "{{apiKey}}", "type": "text" },
+              { "key": "Accept", "value": "application/json", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?startDate={{startDate}}&endDate={{endDate}}&appType=claude&model={{model}}&groupBy=week",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
+              "query": [
+                { "key": "startDate", "value": "{{startDate}}" },
+                { "key": "endDate", "value": "{{endDate}}" },
+                { "key": "appType", "value": "claude" },
+                { "key": "model", "value": "{{model}}" },
+                { "key": "groupBy", "value": "week" }
+              ]
+            },
+            "description": "筛选先作用于基础记录，再在所有层级聚合；顶层、`daily`、`buckets` 三者加总一致。"
+          }
+        },
+        {
+          "name": "Claude Desktop（与 Claude Code 分开）",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-API-Key", "value": "{{apiKey}}", "type": "text" },
+              { "key": "Accept", "value": "application/json", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=7&appType=claude-desktop",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
+              "query": [
+                { "key": "days", "value": "7" },
+                { "key": "appType", "value": "claude-desktop" }
+              ]
+            },
+            "description": "`appType=claude` 仅指 Claude Code，`claude-desktop` 单独查询。"
+          }
+        }
+      ]
+    },
+    {
+      "name": "错误场景",
+      "item": [
+        {
+          "name": "400 · days 越界",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-API-Key", "value": "{{apiKey}}", "type": "text" },
+              { "key": "Accept", "value": "application/json", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=999",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
+              "query": [{ "key": "days", "value": "999" }]
+            },
+            "description": "`days` 合法范围是 1–366。"
+          },
+          "response": [
+            {
+              "name": "400 · INVALID_PARAMETERS",
+              "status": "Bad Request",
+              "code": 400,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "cookie": [],
+              "body": { "mode": "raw", "raw": "{\n  \"error\": \"days 必须为 1–366\",\n  \"code\": \"INVALID_PARAMETERS\"\n}" },
+              "options": { "raw": { "language": "json" } }
+            }
+          ]
+        },
+        {
+          "name": "400 · 未知参数",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-API-Key", "value": "{{apiKey}}", "type": "text" },
+              { "key": "Accept", "value": "application/json", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=7&unknown=1",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
+              "query": [
+                { "key": "days", "value": "7" },
+                { "key": "unknown", "value": "1" }
+              ]
+            },
+            "description": "未知参数直接被拒绝。"
+          },
+          "response": [
+            {
+              "name": "400 · INVALID_PARAMETERS",
+              "status": "Bad Request",
+              "code": 400,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "cookie": [],
+              "body": { "mode": "raw", "raw": "{\n  \"error\": \"查询参数无效\",\n  \"code\": \"INVALID_PARAMETERS\"\n}" },
+              "options": { "raw": { "language": "json" } }
+            }
+          ]
+        },
+        {
+          "name": "400 · 重复参数",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-API-Key", "value": "{{apiKey}}", "type": "text" },
+              { "key": "Accept", "value": "application/json", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=7&days=8",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
+              "query": [
+                { "key": "days", "value": "7" },
+                { "key": "days", "value": "8" }
+              ]
+            },
+            "description": "重复参数在解析前就被拒绝（JSON 反序列化只会保留最后一个值）。"
+          },
+          "response": [
+            {
+              "name": "400 · INVALID_PARAMETERS",
+              "status": "Bad Request",
+              "code": 400,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "cookie": [],
+              "body": { "mode": "raw", "raw": "{\n  \"error\": \"参数重复: days\",\n  \"code\": \"INVALID_PARAMETERS\"\n}" },
+              "options": { "raw": { "language": "json" } }
+            }
+          ]
+        },
+        {
+          "name": "400 · 不支持的 groupBy",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-API-Key", "value": "{{apiKey}}", "type": "text" },
+              { "key": "Accept", "value": "application/json", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=7&groupBy=year",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
+              "query": [
+                { "key": "days", "value": "7" },
+                { "key": "groupBy", "value": "year" }
+              ]
+            },
+            "description": "只支持 `day`、`week`、`month`。"
+          },
+          "response": [
+            {
+              "name": "400 · UNSUPPORTED_GROUP_BY",
+              "status": "Bad Request",
+              "code": 400,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "cookie": [],
+              "body": { "mode": "raw", "raw": "{\n  \"error\": \"不支持的 groupBy: year\",\n  \"code\": \"UNSUPPORTED_GROUP_BY\"\n}" },
+              "options": { "raw": { "language": "json" } }
+            }
+          ]
+        },
+        {
+          "name": "400 · 时间模式冲突",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-API-Key", "value": "{{apiKey}}", "type": "text" },
+              { "key": "Accept", "value": "application/json", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=7&startDate={{startDate}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
+              "query": [
+                { "key": "days", "value": "7" },
+                { "key": "startDate", "value": "{{startDate}}" }
+              ]
+            },
+            "description": "`days` 与 `startDate` 不能同时使用；秒级区间也不能与它们混用。"
+          },
+          "response": [
+            {
+              "name": "400 · CONFLICTING_TIME_PARAMETERS",
+              "status": "Bad Request",
+              "code": 400,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "cookie": [],
+              "body": { "mode": "raw", "raw": "{\n  \"error\": \"startDate 不能与 days 同时使用\",\n  \"code\": \"CONFLICTING_TIME_PARAMETERS\"\n}" },
+              "options": { "raw": { "language": "json" } }
+            }
+          ]
+        },
+        {
+          "name": "400 · 时间缺少时区",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-API-Key", "value": "{{apiKey}}", "type": "text" },
+              { "key": "Accept", "value": "application/json", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?startTime={{startTimeNaive}}&endTime={{endTimeNaive}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
+              "query": [
+                { "key": "startTime", "value": "{{startTimeNaive}}", "description": "没有 UTC 偏移" },
+                { "key": "endTime", "value": "{{endTimeNaive}}" }
+              ]
+            },
+            "description": "秒级区间必须带 UTC 偏移或 `Z`，且精确到整秒（不接受小数秒）。"
+          },
+          "response": [
+            {
+              "name": "400 · INVALID_PARAMETERS",
+              "status": "Bad Request",
+              "code": 400,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "cookie": [],
+              "body": { "mode": "raw", "raw": "{\n  \"error\": \"时间必须为带 UTC 偏移的 RFC 3339: 2026-10-31T09:00:00\",\n  \"code\": \"INVALID_PARAMETERS\"\n}" },
+              "options": { "raw": { "language": "json" } }
+            }
+          ]
+        },
+        {
+          "name": "400 · 未支持的应用标识",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-API-Key", "value": "{{apiKey}}", "type": "text" },
+              { "key": "Accept", "value": "application/json", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=7&appType=not-an-app",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
+              "query": [
+                { "key": "days", "value": "7" },
+                { "key": "appType", "value": "not-an-app" }
+              ]
+            },
+            "description": "应用标识不在受支持列表内。"
+          },
+          "response": [
+            {
+              "name": "400 · UNSUPPORTED_APP_TYPE",
+              "status": "Bad Request",
+              "code": 400,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "cookie": [],
+              "body": { "mode": "raw", "raw": "{\n  \"error\": \"不支持的应用标识: not-an-app\",\n  \"code\": \"UNSUPPORTED_APP_TYPE\"\n}" },
+              "options": { "raw": { "language": "json" } }
+            }
+          ]
+        },
+        {
+          "name": "403 · 应用未允许共享",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-API-Key", "value": "{{apiKey}}", "type": "text" },
+              { "key": "Accept", "value": "application/json", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=7&appType=hermes",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
+              "query": [
+                { "key": "days", "value": "7" },
+                { "key": "appType", "value": "hermes" }
+              ]
+            },
+            "description": "应用标识受支持，但没在「允许共享的应用」里勾选。"
+          },
+          "response": [
+            {
+              "name": "403 · APP_NOT_SHARED",
+              "status": "Forbidden",
+              "code": 403,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "cookie": [],
+              "body": { "mode": "raw", "raw": "{\n  \"error\": \"该应用未允许共享\",\n  \"code\": \"APP_NOT_SHARED\"\n}" },
+              "options": { "raw": { "language": "json" } }
+            }
+          ]
+        },
+        {
+          "name": "422 · 秒级区间截断了日汇总",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-API-Key", "value": "{{apiKey}}", "type": "text" },
+              { "key": "Accept", "value": "application/json", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?startTime={{startTime}}&endTime={{endTime}}&appType=claude",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
+              "query": [
+                { "key": "startTime", "value": "{{startTime}}" },
+                { "key": "endTime", "value": "{{endTime}}" },
+                { "key": "appType", "value": "claude" }
+              ]
+            },
+            "description": "历史只剩每日汇总时，只能整日计入或整日排除。区间把某一天切成两半就会返回 422，并列出受影响的日期。\n\n用「秒级区间 · 完整一天」那条请求可以正常返回。"
+          },
+          "response": [
+            {
+              "name": "422 · RANGE_PRECISION_UNAVAILABLE",
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "cookie": [],
+              "body": { "mode": "raw", "raw": "{\n  \"error\": \"查询区间截断了仅有日汇总的历史日期，请改用完整日期\",\n  \"code\": \"RANGE_PRECISION_UNAVAILABLE\",\n  \"details\": {\n    \"dates\": [\"2026-10-01\"]\n  }\n}" },
+              "options": { "raw": { "language": "json" } }
+            }
+          ]
+        },
+        {
+          "name": "401 · 缺少或已撤销的密钥",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json", "type": "text" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=7",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
+              "query": [{ "key": "days", "value": "7" }]
+            },
+            "description": "不带 `X-API-Key`。已配对设备也可以用 `x-observatory-device` + `x-observatory-token` 代替。"
+          },
+          "response": [
+            {
+              "name": "401 · INVALID_API_KEY",
+              "status": "Unauthorized",
+              "code": 401,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "cookie": [],
+              "body": { "mode": "raw", "raw": "{\n  \"error\": \"缺少有效的只读 API 密钥或配对凭证\",\n  \"code\": \"INVALID_API_KEY\"\n}" },
+              "options": { "raw": { "language": "json" } }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:17891",
+      "type": "string"
+    },
+    {
+      "key": "apiKey",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "startDate",
+      "value": "2026-10-01",
+      "type": "string"
+    },
+    {
+      "key": "endDate",
+      "value": "2026-10-31",
+      "type": "string"
+    },
+    {
+      "key": "startTime",
+      "value": "2026-10-31T09:00:00+08:00",
+      "type": "string"
+    },
+    {
+      "key": "endTime",
+      "value": "2026-10-31T18:00:00+08:00",
+      "type": "string"
+    },
+    {
+      "key": "startTimeNaive",
+      "value": "2026-10-31T09:00:00",
+      "type": "string"
+    },
+    {
+      "key": "endTimeNaive",
+      "value": "2026-10-31T18:00:00",
+      "type": "string"
+    },
+    {
+      "key": "dayStart",
+      "value": "2026-10-31T00:00:00+08:00",
+      "type": "string"
+    },
+    {
+      "key": "dayEnd",
+      "value": "2026-11-01T00:00:00+08:00",
+      "type": "string"
+    },
+    {
+      "key": "model",
+      "value": "claude-opus-5-5",
+      "type": "string"
+    }
+  ]
+}

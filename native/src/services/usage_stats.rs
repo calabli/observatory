@@ -1645,6 +1645,8 @@ impl Database {
 
     /// 最早有用量记录的那一天（本地日期 `YYYY-MM-DD`），明细和日聚合一起看；没有记录时为 `None`。
     ///
+
+    ///
     /// 给「全部」的按年热力图定起始年份用，所以不套跨源去重：被去重掉的会话行
     /// 和对应的代理行只差几分钟，不会改变最早的日期。
     pub fn get_first_usage_date(
@@ -2632,6 +2634,247 @@ impl Database {
 
         Self::get_model_pricing_cached(conn, cache, request_model)
     }
+}
+
+/// 只读用量查询用的按本地日期聚合行。
+///
+/// 与 [`DailyStats`] 同一口径。`total_cost` 保留 6 位小数字符串而不是 f64，
+/// 让上层可以用十进制定点数累加，不必再引入一次浮点误差。
+#[derive(Debug, Clone)]
+pub struct DailyUsageRow {
+    pub date: NaiveDate,
+    pub request_count: u64,
+    pub total_cost: String,
+    pub total_tokens: u64,
+    pub total_input_tokens: u64,
+    pub total_output_tokens: u64,
+    pub total_cache_creation_tokens: u64,
+    pub total_cache_read_tokens: u64,
+}
+
+/// 把应用标识列表拼成 `IN (...)` 片段。
+///
+/// 调用方必须先确认列表非空：`IN ()` 不是合法 SQL。
+fn app_type_in_list(apps: &[&str]) -> String {
+    apps.iter()
+        .map(|value| format!("'{}'", value.replace('\'', "''")))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// 只读用量查询：一次取回区间内「明细 + 日汇总」的按本地日期聚合结果。
+///
+/// 与 [`Database::get_daily_trends`] 同一口径：同一条跨源去重过滤、同一套缓存
+/// 输入语义归一化、同一套日汇总边界规则。区别是：
+///
+/// - 支持多个应用（`app_type IN (...)`），不必按应用循环查询；
+/// - 区间是左闭右开 `[start_ts, end_ts_exclusive)`；
+/// - 不分小时桶、不补零，由调用方按自己的分组方式组装；
+/// - 连接级函数：调用方必须通过 [`crate::database::Database::with_connection`]
+///   在同一把锁下调用，保证多次查询看到同一份数据。
+pub(crate) fn daily_usage_rows(
+    conn: &Connection,
+    start_ts: i64,
+    end_ts_exclusive: i64,
+    apps: &[&str],
+    model: Option<&str>,
+) -> Result<Vec<DailyUsageRow>, AppError> {
+    if apps.is_empty() || end_ts_exclusive <= start_ts {
+        return Ok(Vec::new());
+    }
+    let app_list = app_type_in_list(apps);
+
+    let mut detail_conditions = vec![effective_usage_log_filter_for_range(
+        conn,
+        "l",
+        Some(start_ts),
+        Some(end_ts_exclusive - 1),
+    )?];
+    detail_conditions.push(format!("l.app_type IN ({app_list})"));
+    let mut detail_params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    if let Some(model) = model {
+        detail_conditions.push(format!("{} = ?3", effective_model_sql("l")));
+        detail_params.push(Box::new(model.to_string()));
+    }
+
+    let fresh_input = fresh_input_sql("l");
+    let detail_sql = format!(
+        "SELECT
+            date(l.created_at, 'unixepoch', 'localtime') as bucket_date,
+            COUNT(*) as request_count,
+            COALESCE(SUM(CAST(l.total_cost_usd AS REAL)), 0) as total_cost,
+            COALESCE(SUM({fresh_input} + l.output_tokens), 0) as total_tokens,
+            COALESCE(SUM({fresh_input}), 0) as total_input_tokens,
+            COALESCE(SUM(l.output_tokens), 0) as total_output_tokens,
+            COALESCE(SUM(l.cache_creation_tokens), 0) as total_cache_creation_tokens,
+            COALESCE(SUM(l.cache_read_tokens), 0) as total_cache_read_tokens
+         FROM proxy_request_logs l
+         WHERE l.created_at >= ?1 AND l.created_at < ?2 AND {conditions}
+         GROUP BY bucket_date
+         ORDER BY bucket_date ASC",
+        conditions = detail_conditions.join(" AND ")
+    );
+
+    let mut rows: Vec<DailyUsageRow> = Vec::new();
+    {
+        let mut statement = conn.prepare(&detail_sql)?;
+        let mut detail_params = detail_params;
+        detail_params.insert(0, Box::new(start_ts));
+        detail_params.insert(1, Box::new(end_ts_exclusive));
+        let param_refs: Vec<&dyn rusqlite::ToSql> =
+            detail_params.iter().map(|param| param.as_ref()).collect();
+        let mapped = statement.query_map(param_refs.as_slice(), |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                DailyUsageRow {
+                    date: NaiveDate::from_ymd_opt(1970, 1, 1).unwrap(),
+                    request_count: row.get::<_, i64>(1)? as u64,
+                    total_cost: format!("{:.6}", row.get::<_, f64>(2)?),
+                    total_tokens: row.get::<_, i64>(3)? as u64,
+                    total_input_tokens: row.get::<_, i64>(4)? as u64,
+                    total_output_tokens: row.get::<_, i64>(5)? as u64,
+                    total_cache_creation_tokens: row.get::<_, i64>(6)? as u64,
+                    total_cache_read_tokens: row.get::<_, i64>(7)? as u64,
+                },
+            ))
+        })?;
+        for row in mapped {
+            let (bucket_date, mut usage) = row?;
+            usage.date = NaiveDate::parse_from_str(&bucket_date, "%Y-%m-%d")
+                .map_err(|error| AppError::Database(format!("解析用量日期失败: {error}")))?;
+            rows.push(usage);
+        }
+    }
+
+    // 日汇总：只计入被区间完整覆盖的自然日，与页面口径一致。
+    let rollup_bounds = compute_rollup_date_bounds(Some(start_ts), Some(end_ts_exclusive - 1))?;
+    let mut rollup_conditions: Vec<String> = Vec::new();
+    let mut rollup_params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    let mut rollup_index = 1;
+    if rollup_bounds.is_empty {
+        rollup_conditions.push("1 = 0".to_string());
+    } else {
+        if let Some(start) = &rollup_bounds.start {
+            rollup_conditions.push(format!("r.date >= ?{rollup_index}"));
+            rollup_params.push(Box::new(start.clone()));
+            rollup_index += 1;
+        }
+        if let Some(end) = &rollup_bounds.end {
+            rollup_conditions.push(format!("r.date <= ?{rollup_index}"));
+            rollup_params.push(Box::new(end.clone()));
+            rollup_index += 1;
+        }
+    }
+    rollup_conditions.push(format!("r.app_type IN ({app_list})"));
+    if let Some(model) = model {
+        rollup_conditions.push(format!("{} = ?{rollup_index}", effective_model_sql("r")));
+        rollup_params.push(Box::new(model.to_string()));
+    }
+    let rollup_where = format!("WHERE {}", rollup_conditions.join(" AND "));
+
+    let fresh_input_rollup = fresh_input_sql("r");
+    let rollup_sql = format!(
+        "SELECT
+            r.date,
+            COALESCE(SUM(r.request_count), 0),
+            COALESCE(SUM(CAST(r.total_cost_usd AS REAL)), 0),
+            COALESCE(SUM({fresh_input_rollup} + r.output_tokens), 0),
+            COALESCE(SUM({fresh_input_rollup}), 0),
+            COALESCE(SUM(r.output_tokens), 0),
+            COALESCE(SUM(r.cache_creation_tokens), 0),
+            COALESCE(SUM(r.cache_read_tokens), 0)
+         FROM usage_daily_rollups r
+         {rollup_where}
+         GROUP BY r.date
+         ORDER BY r.date ASC"
+    );
+    {
+        let mut statement = conn.prepare(&rollup_sql)?;
+        let param_refs: Vec<&dyn rusqlite::ToSql> =
+            rollup_params.iter().map(|param| param.as_ref()).collect();
+        let mapped = statement.query_map(param_refs.as_slice(), |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                (
+                    row.get::<_, i64>(1)? as u64,
+                    row.get::<_, f64>(2)?,
+                    row.get::<_, i64>(3)? as u64,
+                    row.get::<_, i64>(4)? as u64,
+                    row.get::<_, i64>(5)? as u64,
+                    row.get::<_, i64>(6)? as u64,
+                    row.get::<_, i64>(7)? as u64,
+                ),
+            ))
+        })?;
+        for row in mapped {
+            let (bucket_date, (requests, cost, tokens, input, output, creation, read)) = row?;
+            let date = NaiveDate::parse_from_str(&bucket_date, "%Y-%m-%d")
+                .map_err(|error| AppError::Database(format!("解析日汇总日期失败: {error}")))?;
+            rows.push(DailyUsageRow {
+                date,
+                request_count: requests,
+                total_cost: format!("{cost:.6}"),
+                total_tokens: tokens,
+                total_input_tokens: input,
+                total_output_tokens: output,
+                total_cache_creation_tokens: creation,
+                total_cache_read_tokens: read,
+            });
+        }
+    }
+
+    // 同一日期可能同时出现明细与日汇总（历史基线与本机采集重叠），
+    // 与页面口径一致地相加，而不是二选一。
+    rows.sort_by_key(|row| row.date);
+    Ok(rows)
+}
+
+/// 找出这些本地日期里，哪些存在匹配的日汇总行。
+///
+/// 用于秒级区间的精度检测：区间把某一天切成两半时，该天的日汇总（日粒度）
+/// 无法按比例拆分，只能整日计入或整日排除。调用方据此返回 422，而不是给出
+/// 一个被静默截断的偏低数字。
+///
+/// 过滤条件必须与实际取数一致（相同的应用与模型口径），否则不匹配的历史归档
+/// 会错误地阻止查询。
+pub(crate) fn rollup_dates(
+    conn: &Connection,
+    dates: &[NaiveDate],
+    apps: &[&str],
+    model: Option<&str>,
+) -> Result<Vec<String>, AppError> {
+    if dates.is_empty() || apps.is_empty() {
+        return Ok(Vec::new());
+    }
+    let date_list = dates
+        .iter()
+        .map(|date| format!("'{}'", date.format("%Y-%m-%d")))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let app_list = app_type_in_list(apps);
+
+    let mut conditions = vec![
+        format!("r.date IN ({date_list})"),
+        format!("r.app_type IN ({app_list})"),
+    ];
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    if let Some(model) = model {
+        conditions.push(format!("{} = ?", effective_model_sql("r")));
+        params.push(Box::new(model.to_string()));
+    }
+    let where_clause = format!("WHERE {}", conditions.join(" AND "));
+    let sql = format!(
+        "SELECT DISTINCT r.date FROM usage_daily_rollups r {where_clause} ORDER BY r.date ASC"
+    );
+    let mut statement = conn.prepare(&sql)?;
+    let param_refs: Vec<&dyn rusqlite::ToSql> =
+        params.iter().map(|param| param.as_ref()).collect();
+    let mapped = statement.query_map(param_refs.as_slice(), |row| row.get::<_, String>(0))?;
+    let mut dates = Vec::new();
+    for row in mapped {
+        dates.push(row?);
+    }
+    Ok(dates)
 }
 
 pub(crate) fn find_model_pricing(conn: &Connection, model_id: &str) -> Option<ModelPricing> {

@@ -286,12 +286,14 @@ export function DeviceManager() {
         <div className="panel-head">
           <h2>只读用量 HTTP 接口</h2>
           <p>
-            查询最近 1–366 天的 Token、费用和每日趋势，适用于 TinyPane
+            查询最近 1–366 天、指定日期区间或秒级区间的 Token、费用和请求数，
+            支持按应用、模型筛选，并按天 / 周 / 月分组，适用于 TinyPane
             等组件。使用本机时地址为 127.0.0.1，其他设备请换成本机局域网 IP。
           </p>
         </div>
         <p className="hint">
           先开启局域网共享；接口仅返回允许共享的应用。本机统计，不含其他设备的缓存。
+          完整参数与错误码见仓库 docs/只读用量HTTP接口.md。
         </p>
         <div className="filters">
           <button
@@ -339,8 +341,12 @@ export function DeviceManager() {
         <p className="hint">请求头：X-API-Key: 你的密钥</p>
         <code style={{ overflowWrap: "anywhere" }}>
           http://127.0.0.1:{config?.port ?? 17891}
-          /api/v1/usage/summary?days=7&amp;appType=claude
+          /api/v1/usage/summary?days=7&amp;appType=claude&amp;groupBy=day
         </code>
+        <p className="hint">
+          可选参数：startDate / endDate（日期区间）、startTime / endTime
+          （秒级区间）、model（按计价模型筛选）、groupBy=day|week|month。
+        </p>
       </section>
       <section className="panel section-gap">
         <div className="panel-head">

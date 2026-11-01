@@ -9,7 +9,7 @@ use crate::database::Database;
 use crate::error::AppError;
 use axum::http::{HeaderMap, StatusCode};
 use axum::{
-    extract::{ConnectInfo, State, Query, rejection::QueryRejection},
+    extract::{ConnectInfo, RawQuery, State, Query, rejection::QueryRejection},
     routing::{get, post},
     Json, Router,
 };
@@ -111,25 +111,73 @@ type HandlerError = (StatusCode, String);
 async fn summary_handler(
     State(state): State<Arc<ServerState>>,
     headers: HeaderMap,
+    raw: Option<RawQuery>,
     query: Result<Query<super::public_api::SummaryQuery>, QueryRejection>,
 ) -> Result<impl axum::response::IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let key = headers.get("x-api-key").and_then(|v| v.to_str().ok()).unwrap_or("");
     if !super::public_api::key_matches(&state.db, key) && authorized(&state, &headers).is_err() {
-        return Err((StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"缺少有效的只读 API 密钥或配对凭证"}))));
+        return Err((StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"缺少有效的只读 API 密钥或配对凭证","code":"INVALID_API_KEY"}))));
     }
-    let Query(query) = query.map_err(|_| (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"查询参数无效"}))))?;
+    // serde 只会保留重复参数的最后一个值，这里按契约直接拒绝。
+    if let Some(RawQuery(Some(raw))) = &raw {
+        if let Some(duplicate) = duplicate_query_keys(raw) {
+            return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":format!("参数重复: {duplicate}"),"code":"INVALID_PARAMETERS"}))));
+        }
+    }
+    let Query(query) = query.map_err(|_| (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"查询参数无效","code":"INVALID_PARAMETERS"}))))?;
     let db = state.db.clone();
     let result = tokio::task::spawn_blocking(move || super::public_api::summary(&db, query)).await
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"用量查询失败"}))))?;
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"用量查询失败","code":"USAGE_QUERY_FAILED"}))))?;
     let result = result.map_err(|error| {
-        let (status, message) = match error {
-            AppError::InvalidInput(message) => (StatusCode::BAD_REQUEST, message),
-            AppError::HttpStatus {status:403,body} => (StatusCode::FORBIDDEN, body),
-            _ => (StatusCode::INTERNAL_SERVER_ERROR, "用量查询失败".into()),
-        };
-        (status, Json(serde_json::json!({"error":message})))
+        let status = StatusCode::from_u16(error.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        (status, Json(error.to_json()))
     })?;
     Ok(([("Cache-Control", "no-store")], Json(result)))
+}
+
+/// 找出重复出现的查询参数名。
+fn duplicate_query_keys(raw: &str) -> Option<String> {
+    let mut seen = std::collections::HashSet::new();
+    for pair in raw.split('&').filter(|part| !part.is_empty()) {
+        let key = percent_decode(pair.split('=').next().unwrap_or(""));
+        if !seen.insert(key.clone()) {
+            return Some(key);
+        }
+    }
+    None
+}
+
+/// 查询串百分号解码。键名只用于比较，解码失败时按原样比较。
+fn percent_decode(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'+' => {
+                out.push(b' ');
+                index += 1;
+            }
+            b'%' if index + 2 < bytes.len() => {
+                let hex = std::str::from_utf8(&bytes[index + 1..index + 3]).unwrap_or("");
+                match u8::from_str_radix(hex, 16) {
+                    Ok(byte) => {
+                        out.push(byte);
+                        index += 3;
+                    }
+                    Err(_) => {
+                        out.push(bytes[index]);
+                        index += 1;
+                    }
+                }
+            }
+            other => {
+                out.push(other);
+                index += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).to_string()
 }
 
 /// `GET /api/lan/info`：自我介绍。
