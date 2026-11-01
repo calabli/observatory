@@ -28,12 +28,24 @@
     },
     {
       "key": "startTime",
-      "value": "2026-10-31T09:00:00+08:00",
+      "value": "2026-11-01T09:00:00+08:00",
       "type": "default",
       "enabled": true
     },
     {
       "key": "endTime",
+      "value": "2026-11-01T18:00:00+08:00",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "archivedStartTime",
+      "value": "2026-10-31T09:00:00+08:00",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "archivedEndTime",
       "value": "2026-10-31T18:00:00+08:00",
       "type": "default",
       "enabled": true

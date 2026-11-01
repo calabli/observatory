@@ -1103,3 +1103,115 @@ fn postman_collection_is_importable_and_consistent() {
         );
     }
 }
+
+/// 集合里的每条请求都要能对着真实服务跑通，并得到预期状态码。
+///
+/// 这条用例把「文档」和「实现」绑在一起：集合改了路径、参数或错误码，
+/// 这里就会失败。
+#[tokio::test]
+async fn postman_collection_requests_match_the_live_endpoint() {
+    let db = Arc::new(Database::memory().unwrap());
+    seed(&db);
+    // 只共享部分应用，好让「未允许共享」那条真的返回 403。
+    let mut settings = identity::share_settings(&db);
+    settings.shared_app_types = vec!["claude".into(), "claude-desktop".into(), "codex".into()];
+    identity::save_share_settings(&db, &settings).unwrap();
+
+    let handle = server::start(db.clone(), 0).await.unwrap();
+    let base = format!("http://127.0.0.1:{}", handle.port);
+    let key = public_api::rotate_key(&db).unwrap();
+
+    // 变量取值对齐种子数据：日汇总落在昨天。
+    let yesterday = today().pred_opt().unwrap();
+    let day_before = yesterday.pred_opt().unwrap();
+    let at = |date: NaiveDate, hour| Local.timestamp_opt(local_ts(date, hour, 0), 0).single().unwrap().to_rfc3339();
+    let variables = vec![
+        ("baseUrl", base.clone()),
+        ("apiKey", key.clone()),
+        ("startDate", day_before.to_string()),
+        ("endDate", yesterday.to_string()),
+        (
+            "startTime",
+            at(today(), 9),
+        ),
+        (
+            "endTime",
+            at(today(), 18),
+        ),
+        ("startTimeNaive", format!("{yesterday}T09:00:00")),
+        ("endTimeNaive", format!("{yesterday}T18:00:00")),
+        (
+            "dayStart",
+            at(yesterday, 0),
+        ),
+        (
+            "dayEnd",
+            at(yesterday.succ_opt().unwrap(), 0),
+        ),
+        ("archivedStartTime", at(yesterday, 9)),
+        ("archivedEndTime", at(yesterday, 18)),
+        ("model", "m".to_string()),
+    ];
+
+    let collection: Value =
+        serde_json::from_str(&read_example("postman-observatory-usage.collection.json")).unwrap();
+    let mut requests = Vec::new();
+    fn collect(items: &Value, out: &mut Vec<Value>) {
+        for item in items.as_array().cloned().unwrap_or_default() {
+            if item.get("item").is_some() {
+                collect(&item["item"], out);
+            } else {
+                out.push(item);
+            }
+        }
+    }
+    collect(&collection["item"], &mut requests);
+
+    let http = reqwest::Client::builder().no_proxy().build().unwrap();
+    for request in &requests {
+        let name = request["name"].as_str().unwrap();
+        let mut url = reqwest::Url::parse(&format!("{base}/api/v1/usage/summary")).unwrap();
+        {
+            let mut pairs = url.query_pairs_mut();
+            for parameter in request["request"]["url"]["query"].as_array().unwrap() {
+                if parameter["disabled"] == true { continue; }
+                let mut value = parameter["value"].as_str().unwrap().to_owned();
+                for (key, replacement) in &variables { value = value.replace(&format!("{{{{{key}}}}}"), replacement); }
+                assert!(!value.contains("{{"), "{name} 还有未替换的变量");
+                pairs.append_pair(parameter["key"].as_str().unwrap(), &value);
+            }
+        }
+
+        // 期望状态码由请求名里的前缀决定。
+        let expected = if name.starts_with("400") {
+            400
+        } else if name.starts_with("401") {
+            401
+        } else if name.starts_with("403") {
+            403
+        } else if name.starts_with("422") {
+            422
+        } else {
+            200
+        };
+
+        let mut builder = http.get(url.clone());
+        // 只有「缺少密钥」那条不带 X-API-Key。
+        if !name.contains("缺少或已撤销") {
+            builder = builder.header("X-API-Key", &key);
+        }
+        let response = builder.send().await.unwrap();
+        assert_eq!(
+            response.status().as_u16(),
+            expected,
+            "{name} 的状态码不对: {url}"
+        );
+        if expected >= 400 {
+            let body: Value = response.json().await.unwrap();
+            assert!(body["error"].is_string(), "{name} 缺少 error 字段");
+            assert!(body["code"].is_string(), "{name} 缺少 code 字段");
+        }
+    }
+
+    handle.stop();
+}
