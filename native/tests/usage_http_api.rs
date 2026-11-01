@@ -81,6 +81,10 @@ fn today() -> NaiveDate {
     Local::now().date_naive()
 }
 
+fn local_instant(date: NaiveDate, hour: u32) -> String {
+    Local.timestamp_opt(local_ts(date, hour, 0), 0).single().unwrap().to_rfc3339()
+}
+
 #[test]
 fn calendar_days_numeric_totals_and_exact_app_filter() {
     let db = Database::memory().unwrap();
@@ -235,8 +239,8 @@ fn instant_range_is_left_closed_right_open() {
     );
 
     let base = |start_hour: u32, end_hour: u32| public_api::SummaryQuery {
-        start_time: Some(format!("{}T{start_hour:02}:00:00+08:00", day)),
-        end_time: Some(format!("{}T{end_hour:02}:00:00+08:00", day)),
+        start_time: Some(local_instant(day, start_hour)),
+        end_time: Some(local_instant(day, end_hour)),
         app_type: Some("claude".into()),
         ..Default::default()
     };
@@ -257,8 +261,8 @@ fn partial_day_with_only_rollups_returns_422() {
     insert_rollup(&db, yesterday, "claude", "m", 4, 100, 10, "1.00");
 
     let partial = public_api::SummaryQuery {
-        start_time: Some(format!("{yesterday}T09:00:00+08:00")),
-        end_time: Some(format!("{yesterday}T18:00:00+08:00")),
+        start_time: Some(local_instant(yesterday, 9)),
+        end_time: Some(local_instant(yesterday, 18)),
         app_type: Some("claude".into()),
         ..Default::default()
     };
@@ -269,11 +273,8 @@ fn partial_day_with_only_rollups_returns_422() {
 
     // 完整覆盖该日时可以整日计入，不报错。
     let whole = public_api::SummaryQuery {
-        start_time: Some(format!("{yesterday}T00:00:00+08:00")),
-        end_time: Some(format!(
-            "{}T00:00:00+08:00",
-            yesterday.succ_opt().unwrap()
-        )),
+        start_time: Some(local_instant(yesterday, 0)),
+        end_time: Some(local_instant(yesterday.succ_opt().unwrap(), 0)),
         app_type: Some("claude".into()),
         ..Default::default()
     };
@@ -303,8 +304,8 @@ fn partial_day_with_details_is_not_blocked() {
     let result = public_api::summary(
         &db,
         public_api::SummaryQuery {
-            start_time: Some(format!("{day}T09:00:00+08:00")),
-            end_time: Some(format!("{day}T11:00:00+08:00")),
+            start_time: Some(local_instant(day, 9)),
+            end_time: Some(local_instant(day, 11)),
             app_type: Some("claude".into()),
             ..Default::default()
         },
