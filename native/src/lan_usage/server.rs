@@ -9,7 +9,7 @@ use crate::database::Database;
 use crate::error::AppError;
 use axum::http::{HeaderMap, StatusCode};
 use axum::{
-    extract::{ConnectInfo, State},
+    extract::{ConnectInfo, State, Query, rejection::QueryRejection},
     routing::{get, post},
     Json, Router,
 };
@@ -57,6 +57,7 @@ pub async fn start_with_lock(
     let app = Router::new()
         .route("/api/lan/info", get(info_handler))
         .route("/api/lan/usage", get(usage_handler))
+        .route("/api/v1/usage/summary", get(summary_handler))
         .route("/api/lan/pair", post(pair_handler))
         .route("/api/lan/revoke", post(revoke_handler))
         .route("/api/lan/scan", post(scan_handler))
@@ -106,6 +107,30 @@ pub async fn start_with_lock(
 /// handler 的错误类型。`AppError` 没实现 axum 的 `IntoResponse`，
 /// 这里用 (状态码, 说明) 这种直接可响应的形式。
 type HandlerError = (StatusCode, String);
+
+async fn summary_handler(
+    State(state): State<Arc<ServerState>>,
+    headers: HeaderMap,
+    query: Result<Query<super::public_api::SummaryQuery>, QueryRejection>,
+) -> Result<impl axum::response::IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let key = headers.get("x-api-key").and_then(|v| v.to_str().ok()).unwrap_or("");
+    if !super::public_api::key_matches(&state.db, key) && authorized(&state, &headers).is_err() {
+        return Err((StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"缺少有效的只读 API 密钥或配对凭证"}))));
+    }
+    let Query(query) = query.map_err(|_| (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"查询参数无效"}))))?;
+    let db = state.db.clone();
+    let result = tokio::task::spawn_blocking(move || super::public_api::summary(&db, query)).await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"用量查询失败"}))))?;
+    let result = result.map_err(|error| {
+        let (status, message) = match error {
+            AppError::InvalidInput(message) => (StatusCode::BAD_REQUEST, message),
+            AppError::HttpStatus {status:403,body} => (StatusCode::FORBIDDEN, body),
+            _ => (StatusCode::INTERNAL_SERVER_ERROR, "用量查询失败".into()),
+        };
+        (status, Json(serde_json::json!({"error":message})))
+    })?;
+    Ok(([("Cache-Control", "no-store")], Json(result)))
+}
 
 /// `GET /api/lan/info`：自我介绍。
 async fn info_handler(

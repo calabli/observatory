@@ -2,13 +2,13 @@
 //! 只传用量指标和模型/会话标识，不传对话正文、请求内容或密钥。
 //! UDP 发现设备，HTTP 拉取本机记录；远端副本不再转发。
 
-pub mod aggregate;
 pub mod client;
 pub mod discovery;
 pub mod identity;
 pub mod pairing;
 mod interfaces;
 pub mod projection;
+pub mod public_api;
 pub mod server;
 pub mod storage;
 
@@ -256,90 +256,6 @@ pub struct UsageExport {
     pub daily: Vec<DailyRollupRow>,
 }
 
-/// 一个用量汇总块。字段和本机 Dashboard 的 `UsageSummary` 保持一致，前端可以直接
-/// 复用同一套格式化逻辑。
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LanUsageSummary {
-    pub total_requests: u64,
-    pub total_cost: String,
-    pub total_input_tokens: u64,
-    pub total_output_tokens: u64,
-    pub total_cache_creation_tokens: u64,
-    pub total_cache_read_tokens: u64,
-    /// 成功（2xx）的请求数。
-    pub success_count: u64,
-    pub success_rate: f32,
-    /// input + output + cache_creation + cache_read：模型真正处理的 token 总量。
-    pub real_total_tokens: u64,
-    /// cache_read / (input + cache_creation + cache_read)，0~1。
-    pub cache_hit_rate: f64,
-}
-
-impl LanUsageSummary {
-    /// 把两个汇总相加（用于「本机 + 远端 = 合计」）。
-    pub fn add(&self, other: &LanUsageSummary) -> LanUsageSummary {
-        let total_cost = self.total_cost.parse::<f64>().unwrap_or(0.0)
-            + other.total_cost.parse::<f64>().unwrap_or(0.0);
-        let mut merged = LanUsageSummary {
-            total_requests: self.total_requests.saturating_add(other.total_requests),
-            total_cost: format!("{total_cost}"),
-            total_input_tokens: self
-                .total_input_tokens
-                .saturating_add(other.total_input_tokens),
-            total_output_tokens: self
-                .total_output_tokens
-                .saturating_add(other.total_output_tokens),
-            total_cache_creation_tokens: self
-                .total_cache_creation_tokens
-                .saturating_add(other.total_cache_creation_tokens),
-            total_cache_read_tokens: self
-                .total_cache_read_tokens
-                .saturating_add(other.total_cache_read_tokens),
-            success_count: self.success_count.saturating_add(other.success_count),
-            success_rate: 0.0,
-            real_total_tokens: 0,
-            cache_hit_rate: 0.0,
-        };
-        merged.recompute_rates();
-        merged
-    }
-
-    /// 按 token 总量重算「真实消耗」「缓存命中率」「成功率」。
-    pub fn recompute_rates(&mut self) {
-        self.real_total_tokens = self
-            .total_input_tokens
-            .saturating_add(self.total_output_tokens)
-            .saturating_add(self.total_cache_creation_tokens)
-            .saturating_add(self.total_cache_read_tokens);
-        self.success_rate = if self.total_requests == 0 {
-            0.0
-        } else {
-            self.success_count as f32 / self.total_requests as f32
-        };
-        let cache_base = self
-            .total_input_tokens
-            .saturating_add(self.total_cache_creation_tokens)
-            .saturating_add(self.total_cache_read_tokens);
-        self.cache_hit_rate = if cache_base == 0 {
-            0.0
-        } else {
-            self.total_cache_read_tokens as f64 / cache_base as f64
-        };
-    }
-}
-
-/// 单台设备在局域网汇总里的一行。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LanDeviceUsage {
-    pub device_id: String,
-    pub device_name: String,
-    /// 该设备是本机还是远端。
-    pub is_local: bool,
-    pub summary: LanUsageSummary,
-}
-
 /// 一台设备的连接状态。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -357,24 +273,6 @@ pub struct LanDeviceStatus {
     pub last_error: Option<String>,
     /// 最近一次同步拉回多少行。
     pub last_imported: i64,
-}
-
-/// 局域网用量总览：本机 + 各远端 + 合计。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LanUsageOverview {
-    pub local: LanUsageSummary,
-    pub remote: LanUsageSummary,
-    pub combined: LanUsageSummary,
-    pub devices: Vec<LanDeviceUsage>,
-}
-
-/// 按天的合计（跨设备）。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LanDailyTotal {
-    pub date: String,
-    pub summary: LanUsageSummary,
 }
 
 /// 局域网共享设置。

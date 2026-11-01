@@ -1,0 +1,6 @@
+[
+  {"type":"metrics","title":"Claude Code 总 Token","valuePath":"/totalTokens","format":"compact","color":"#D97757"},
+  {"type":"metrics","title":"估算费用","valuePath":"/costUsd","decimals":4,"unit":" USD","color":"#34B399"},
+  {"type":"metrics","title":"请求次数","valuePath":"/requests","format":"compact","color":"#60A5FA"},
+  {"type":"area","title":"每日 Token","itemsPath":"/daily","xPath":"/date","yPath":"/totalTokens","format":"compact","limit":7,"color":"#D97757"}
+]

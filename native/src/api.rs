@@ -210,6 +210,9 @@ impl UsageBackend {
     }
     pub async fn call(&self, op: &str, args: Value) -> Result<Value, AppError> {
         match op {
+            "usage_api_key_status" => Ok(json!({"configured":lan_usage::public_api::key_configured(&self.db)?})),
+            "usage_api_key_rotate" => Ok(json!({"key":lan_usage::public_api::rotate_key(&self.db)?})),
+            "usage_api_key_revoke" => { lan_usage::public_api::revoke_key(&self.db)?; Ok(json!(true)) },
             "scan_revision" => Ok(json!({"revision":session_usage::scan_revision()})),
             "tray_dashboard" => {
                 let q: Query = serde_json::from_value(args.clone()).map_err(|e| AppError::InvalidInput(e.to_string()))?;

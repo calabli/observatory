@@ -2758,7 +2758,7 @@ dependencies = [
 
 [[package]]
 name = "observatory"
-version = "0.1.29"
+version = "0.1.30"
 dependencies = [
  "observatory-usage-core",
  "serde_json",
@@ -2771,7 +2771,7 @@ dependencies = [
 
 [[package]]
 name = "observatory-usage-core"
-version = "0.1.29"
+version = "0.1.30"
 dependencies = [
  "axum",
  "chrono",

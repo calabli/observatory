@@ -15,6 +15,25 @@ export function DeviceManager() {
   } | null>(null);
   const [found, setFound] = useState<Discovered[]>([]);
   const [message, setMessage] = useState("");
+  const [apiKey, setApiKey] = useState<string | null>(null);
+  const apiKeyStatus = useQuery({
+    queryKey: ["usage", "api-key-status"],
+    queryFn: () => usageCall<{ configured: boolean }>("usage_api_key_status"),
+  });
+  const generateApiKey = useMutation({
+    mutationFn: () => usageCall<{ key: string }>("usage_api_key_rotate"),
+    onSuccess: (r) => {
+      setApiKey(r.key);
+      void qc.invalidateQueries({ queryKey: ["usage", "api-key-status"] });
+    },
+  });
+  const revokeApiKey = useMutation({
+    mutationFn: () => usageCall("usage_api_key_revoke"),
+    onSuccess: () => {
+      setApiKey(null);
+      void qc.invalidateQueries({ queryKey: ["usage", "api-key-status"] });
+    },
+  });
   const state = useQuery({
     queryKey: ["usage", "lan"],
     queryFn: () => usageCall<LanStatus>("lan_status"),
@@ -104,6 +123,9 @@ export function DeviceManager() {
     },
   });
   const error =
+    generateApiKey.error ||
+    revokeApiKey.error ||
+    apiKeyStatus.error ||
     state.error ||
     status.error ||
     settings.error ||
@@ -260,6 +282,66 @@ export function DeviceManager() {
           </p>
         </section>
       )}
+      <section className="panel section-gap">
+        <div className="panel-head">
+          <h2>只读用量 HTTP 接口</h2>
+          <p>
+            查询最近 1–366 天的 Token、费用和每日趋势，适用于 TinyPane
+            等组件。使用本机时地址为 127.0.0.1，其他设备请换成本机局域网 IP。
+          </p>
+        </div>
+        <p className="hint">
+          先开启局域网共享；接口仅返回允许共享的应用。本机统计，不含其他设备的缓存。
+        </p>
+        <div className="filters">
+          <button
+            className="button"
+            disabled={generateApiKey.isPending}
+            onClick={() => {
+              if (
+                !apiKeyStatus.data?.configured ||
+                window.confirm("重置后，原来的 API 密钥将立即失效。继续？")
+              )
+                generateApiKey.mutate();
+            }}
+          >
+            {apiKeyStatus.data?.configured
+              ? "重置只读 API 密钥"
+              : "生成只读 API 密钥"}
+          </button>
+          {apiKeyStatus.data?.configured && (
+            <button
+              className="button"
+              disabled={revokeApiKey.isPending}
+              onClick={() => revokeApiKey.mutate()}
+            >
+              停用 API 密钥
+            </button>
+          )}
+        </div>
+        <p className="hint">
+          {apiKeyStatus.data?.configured
+            ? "密钥已启用；新密钥仅在生成时显示，请保存。"
+            : "尚未生成 API 密钥。"}
+        </p>
+        {apiKey && (
+          <label>
+            新 API 密钥
+            <input
+              className="usage-input"
+              aria-label="新 API 密钥"
+              readOnly
+              value={apiKey}
+              onFocus={(e) => e.target.select()}
+            />
+          </label>
+        )}
+        <p className="hint">请求头：X-API-Key: 你的密钥</p>
+        <code style={{ overflowWrap: "anywhere" }}>
+          http://127.0.0.1:{config?.port ?? 17891}
+          /api/v1/usage/summary?days=7&amp;appType=claude
+        </code>
+      </section>
       <section className="panel section-gap">
         <div className="panel-head">
           <h2>设备配对</h2>

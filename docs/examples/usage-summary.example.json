@@ -1,0 +1,21 @@
+{
+  "days":1,
+  "startDate":"2026-10-31",
+  "endDate":"2026-10-31",
+  "range":{"start":"2026-10-31T00:00:00+08:00","endExclusive":"2026-11-01T00:00:00+08:00","timezone":"server-local"},
+  "scope":"local",
+  "appType":"claude",
+  "apps":["claude"],
+  "currency":"USD",
+  "inputTokenSemantics":"fresh",
+  "requests":1,
+  "inputTokens":100,
+  "outputTokens":20,
+  "cacheReadTokens":300,
+  "cacheWriteTokens":10,
+  "totalTokens":430,
+  "costUsd":1.25,
+  "updatedAt":"2026-10-31T12:00:00Z",
+  "lastScanAt":null,
+  "daily":[{"date":"2026-10-31","requests":1,"inputTokens":100,"outputTokens":20,"cacheReadTokens":300,"cacheWriteTokens":10,"totalTokens":430,"costUsd":1.25}]
+}

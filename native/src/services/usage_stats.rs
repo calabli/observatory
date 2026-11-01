@@ -432,6 +432,10 @@ fn folded_app_type_sql(column: &str) -> String {
     format!("CASE WHEN {column} = 'claude-desktop' THEN 'claude' ELSE {column} END")
 }
 
+fn app_type_filter_sql(column: &str, exact: bool) -> String {
+    if exact { column.to_owned() } else { folded_app_type_sql(column) }
+}
+
 /// SQL 片段：把日志/汇总行 LEFT JOIN 到 providers 表以取得供应商名称。
 /// `proxy_request_logs` 与 `usage_daily_rollups` 的 (provider_id, app_type)
 /// 形状相同，两者皆可作为 `log_alias`。providers 主键即 (id, app_type)，
@@ -963,6 +967,12 @@ impl Database {
         provider_name: Option<&str>,
         model: Option<&str>,
     ) -> Result<UsageSummary, AppError> {
+        self.usage_summary_impl(start_date, end_date, app_type, provider_name, model, false)
+    }
+    pub fn get_usage_summary_exact_app(&self, start: Option<i64>, end: Option<i64>, app: &str) -> Result<UsageSummary, AppError> {
+        self.usage_summary_impl(start, end, Some(app), None, None, true)
+    }
+    fn usage_summary_impl(&self, start_date: Option<i64>, end_date: Option<i64>, app_type: Option<&str>, provider_name: Option<&str>, model: Option<&str>, exact_app: bool) -> Result<UsageSummary, AppError> {
         let conn = lock_conn!(self.conn);
 
         // Build detail WHERE clause
@@ -980,7 +990,7 @@ impl Database {
             params_vec.push(Box::new(end));
         }
         if let Some(at) = app_type {
-            conditions.push(format!("{} = ?", folded_app_type_sql("l.app_type")));
+            conditions.push(format!("{} = ?", app_type_filter_sql("l.app_type", exact_app)));
             params_vec.push(Box::new(at.to_string()));
         }
         push_provider_model_filters(
@@ -1015,7 +1025,7 @@ impl Database {
             &rollup_bounds,
         );
         if let Some(at) = app_type {
-            rollup_conditions.push(format!("{} = ?", folded_app_type_sql("r.app_type")));
+            rollup_conditions.push(format!("{} = ?", app_type_filter_sql("r.app_type", exact_app)));
             rollup_params.push(Box::new(at.to_string()));
         }
         push_provider_model_filters(
@@ -1294,6 +1304,12 @@ impl Database {
         provider_name: Option<&str>,
         model: Option<&str>,
     ) -> Result<Vec<DailyStats>, AppError> {
+        self.daily_trends_impl(start_date, end_date, app_type, provider_name, model, false)
+    }
+    pub fn get_daily_trends_exact_app(&self, start: Option<i64>, end: Option<i64>, app: &str) -> Result<Vec<DailyStats>, AppError> {
+        self.daily_trends_impl(start, end, Some(app), None, None, true)
+    }
+    fn daily_trends_impl(&self, start_date: Option<i64>, end_date: Option<i64>, app_type: Option<&str>, provider_name: Option<&str>, model: Option<&str>, exact_app: bool) -> Result<Vec<DailyStats>, AppError> {
         let conn = lock_conn!(self.conn);
 
         let end_ts = end_date.unwrap_or_else(|| Local::now().timestamp());
@@ -1319,7 +1335,7 @@ impl Database {
             let mut extra_conditions: Vec<String> = Vec::new();
             let mut extra_params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
             if let Some(at) = app_type {
-                extra_conditions.push(format!("{} = ?", folded_app_type_sql("l.app_type")));
+                extra_conditions.push(format!("{} = ?", app_type_filter_sql("l.app_type", exact_app)));
                 extra_params.push(Box::new(at.to_string()));
             }
             push_provider_model_filters(
@@ -1433,7 +1449,7 @@ impl Database {
         let mut extra_conditions: Vec<String> = Vec::new();
         let mut extra_params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
         if let Some(at) = app_type {
-            extra_conditions.push(format!("{} = ?", folded_app_type_sql("l.app_type")));
+            extra_conditions.push(format!("{} = ?", app_type_filter_sql("l.app_type", exact_app)));
             extra_params.push(Box::new(at.to_string()));
         }
         push_provider_model_filters(
@@ -1517,7 +1533,7 @@ impl Database {
             &rollup_bounds,
         );
         if let Some(at) = app_type {
-            rollup_conditions.push(format!("{} = ?", folded_app_type_sql("r.app_type")));
+            rollup_conditions.push(format!("{} = ?", app_type_filter_sql("r.app_type", exact_app)));
             rollup_params.push(Box::new(at.to_string()));
         }
         push_provider_model_filters(
