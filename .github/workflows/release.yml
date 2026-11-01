@@ -36,7 +36,7 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: '观测台 v__VERSION__'
-          releaseBody: '新增只读用量 HTTP 接口，支持查询 1–366 天的 Token、费用、请求数和每日趋势，并可精确筛选 Claude Code 等应用。在 AI 用量 → 管理设备中生成只读 API 密钥，接口文档见 docs/只读用量HTTP接口.md。清理旧汇总代码并保留存储回归测试。接口仅返回本机允许共享的统计，局域网使用明文通信，请在可信网络使用。macOS 构建未公证。'
+          releaseBody: '用量 HTTP 接口新增日期区间、秒级时间区间、模型筛选，以及按天/周/月聚合。返回总 Token、估算费用、请求数和分组数据，保留 v0.1.30 字段兼容。新增 Postman 集合与请求验证，历史日汇总无法精确拆分时明确返回 422。接口仅查询本机允许共享的数据，使用方式见 docs/只读用量HTTP接口.md。局域网使用明文通信。macOS 构建未公证。'
           releaseDraft: true
           prerelease: false
           assetNamePattern: 'Observatory-[version]-[platform]-[arch][setup][ext]'

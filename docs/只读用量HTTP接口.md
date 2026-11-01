@@ -6,6 +6,17 @@
 
 接口复用共享端口，默认 17891。本机地址为 `127.0.0.1`，其他设备请使用服务器局域网 IP。HTTP 为明文；只读 API 没有自动配置路由器或公网映射。
 
+## Postman 集合
+
+仓库里带了一份可直接导入的集合和环境文件：
+
+- [`examples/postman-observatory-usage.collection.json`](examples/postman-observatory-usage.collection.json) —— 20 条请求，分「概览 / 时间区间 / 筛选 / 错误场景」四组，带保存好的成功与错误响应示例
+- [`examples/postman-observatory-usage.environment.json`](examples/postman-observatory-usage.environment.json) —— 环境变量（`baseUrl`、`apiKey` 与几个日期样例）
+
+在 Postman 里 **Import** 选这两个文件，然后把环境里的 `apiKey` 换成「管理设备」生成的密钥即可。从其他设备访问时把 `baseUrl` 改成服务器局域网 IP。
+
+集合与实现由测试绑定：`native/tests/usage_http_api.rs` 的 `postman_collection_requests_match_the_live_endpoint` 会把集合里的每条请求对着真实服务跑一遍并核对状态码，集合写错了测试就会红。
+
 ## 请求
 
 ```json
