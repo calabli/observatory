@@ -344,3 +344,19 @@ X-API-Key: 在管理设备中生成的只读密钥
 `platformCode` 决定订阅账期与周额度规则，且必须允许共享。提供非空 `modelIds` 时，所有允许共享的平台中匹配任一模型 ID 的记录参与合计；不提供或提供空数组时，只查询该平台全部模型，与看板 usage 接口一致。模型名称是有效计价模型 ID，精确匹配；数组最多 50 项，不能传空 ID 或包含逗号的 ID。其他参数含义与看板 usage 相同。
 
 返回看板 usage 的 `billingTotal`、`quotaCycles`、`selectedQuotaCycle`、`billingAggregations` 等字段，并附带 `modelIds`。读取操作复用看板接口，跨多次数据库查询期间发生扫描时，结果可能不是同一时刻的快照。历史数据无法精确切分时返回 422。
+
+### 模型前缀筛选
+
+`POST /api/v1/dashboard/usage` 和 `POST /api/v1/dashboard/models` 支持可选 `modelPrefix`，按有效计价模型 ID 的开头匹配，英文字母不区分大小写。例如只查询 mcode 平台的 MiniMax 模型：
+
+```json
+{"appType":"mcode","modelPrefix":"minimax","billingOffset":0,"quotaOffset":0,"devices":"local"}
+```
+
+`/dashboard/usage` 只查 `appType` 列出的平台。`/dashboard/models` 使用 `platformCode` 的订阅，并在所有允许共享的平台查找前缀匹配的模型：
+
+```json
+{"platformCode":"mcode","modelPrefix":"minimax"}
+```
+
+未提供 `modelPrefix` 时原有精确匹配和不传模型的行为不变。前缀不能与 `model`、`modelsByApp` 或非空 `modelIds` 同时提供；空白前缀返回 400，无匹配结果返回零用量。查询涉及多次数据库读取，并发扫描时结果可能不是同一时刻的快照。

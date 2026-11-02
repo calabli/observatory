@@ -2087,3 +2087,32 @@ async fn dashboard_models_uses_platform_subscription_and_aggregates_shared_apps(
     assert_eq!(invalid.status(),400);
     handle.stop();
 }
+
+#[tokio::test]
+async fn dashboard_model_prefix_matches_case_insensitively_without_changing_exact_queries() {
+    let db=Arc::new(Database::memory().unwrap());
+    let start=(today()-Duration::days(40)).to_string();
+    let end=(today()+Duration::days(40)).to_string();
+    save_subscription(&db,"mcode",&start,&end,json!({"startDay":4,"startTime":"19:00:00","endDay":4,"endTime":"19:00:00"}));
+    let ts=Local::now().timestamp()-5;
+    insert_detail(&db,"prefix-a","mcode","MiniMax-M3",None,100,0,0,0,"1",ts);
+    insert_detail(&db,"prefix-b","mcode","minimax-m2",None,200,0,0,0,"2",ts);
+    insert_detail(&db,"prefix-c","codex","MINIMAX-M3",None,300,0,0,0,"3",ts);
+    insert_detail(&db,"prefix-other","mcode","other",None,500,0,0,0,"5",ts);
+    let handle=server::start(db.clone(),0).await.unwrap();
+    let key=public_api::rotate_key(&db).unwrap();
+    let http=reqwest::Client::builder().no_proxy().build().unwrap();
+    let base=format!("http://127.0.0.1:{}",handle.port);
+    let call=|path:&str,body:Value| http.post(format!("{base}{path}")).header("X-API-Key",&key).json(&body).send();
+    let one:Value=call("/api/v1/dashboard/usage",json!({"appType":"mcode","modelPrefix":"minimax"})).await.unwrap().json().await.unwrap();
+    assert_eq!(one["billingTotal"]["totalTokens"],300);
+    let all:Value=call("/api/v1/dashboard/models",json!({"platformCode":"mcode","modelPrefix":"minimax"})).await.unwrap().json().await.unwrap();
+    assert_eq!(all["billingTotal"]["totalTokens"],600);
+    let empty:Value=call("/api/v1/dashboard/usage",json!({"appType":"mcode","modelPrefix":"no-such-model"})).await.unwrap().json().await.unwrap();
+    assert_eq!(empty["billingTotal"]["totalTokens"],0);
+    let original:Value=call("/api/v1/dashboard/usage",json!({"appType":"mcode","model":"MiniMax-M3"})).await.unwrap().json().await.unwrap();
+    assert_eq!(original["billingTotal"]["totalTokens"],100);
+    assert_eq!(call("/api/v1/dashboard/usage",json!({"appType":"mcode","modelPrefix":""})).await.unwrap().status(),400);
+    assert_eq!(call("/api/v1/dashboard/usage",json!({"appType":"mcode","modelPrefix":"mini","model":"other"})).await.unwrap().status(),400);
+    handle.stop();
+}

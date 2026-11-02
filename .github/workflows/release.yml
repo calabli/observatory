@@ -36,7 +36,7 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: '观测台 v__VERSION__'
-          releaseBody: '修复多设备筛选菜单背景透明、文字与页面重叠的问题，并改善复选框对齐。macOS 构建未公证。'
+          releaseBody: '看板用量接口新增 modelPrefix 模型前缀匹配，支持指定平台或跨已共享平台统计；保留原有精确匹配行为。macOS 构建未公证。'
           releaseDraft: true
           prerelease: false
           assetNamePattern: 'Observatory-[version]-[platform]-[arch][setup][ext]'

@@ -1234,6 +1234,7 @@ fn summary_inner(db: &Database, query: SummaryQuery, enforce_share: bool) -> Res
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DashboardQuery {
     pub app_type: String,
+    #[serde(default)] pub model_prefix: Option<String>,
     #[serde(default)] pub billing_offset: i32,
     #[serde(default)] pub quota_offset: i32,
     #[serde(default)] pub model: Option<String>,
@@ -1246,7 +1247,27 @@ fn anniversary(anchor: NaiveDate, months: u32) -> Result<NaiveDate, ApiError> {
         .ok_or_else(|| ApiError::invalid("订阅账期超出日期范围"))
 }
 
-pub fn dashboard_usage(db: &Database, query: DashboardQuery) -> Result<Value, ApiError> {
+pub fn dashboard_usage(db: &Database, mut query: DashboardQuery) -> Result<Value, ApiError> {
+    if let Some(prefix) = query.model_prefix.take() {
+        if query.model.is_some() || query.models_by_app.is_some() {
+            return Err(ApiError::invalid("modelPrefix 不能与 model 或 modelsByApp 同时使用"));
+        }
+        let shared = super::identity::share_settings(db).shared_app_types;
+        let apps = parse_app_list(&shared, &query.app_type)?;
+        let ids = prefix_models(db, &apps, query.devices.as_deref(), &prefix)?;
+        query.model = Some(if ids.is_empty() { format!("__observatory_no_match_{}", uuid::Uuid::new_v4()) } else { ids.join(",") });
+        let mut result = dashboard_usage(db, query)?;
+        // Never expose the internal no-match sentinel as a real model selection.
+        fn clean(value: &mut Value) {
+            if let Some(obj) = value.as_object_mut() {
+                if obj.get("model").and_then(Value::as_array).is_some_and(|v| v.iter().any(|v| v.as_str().is_some_and(|s| s.starts_with("__observatory_no_match_")))) { obj.insert("model".into(), json!([])); }
+                for child in obj.values_mut() { clean(child); }
+            } else if let Some(items) = value.as_array_mut() { for child in items { clean(child); } }
+        }
+        if ids.is_empty() { clean(&mut result); }
+        result["modelPrefix"] = json!(prefix.trim());
+        return Ok(result);
+    }
     if !(-120..=0).contains(&query.billing_offset) {
         return Err(ApiError::invalid("billingOffset 必须在 -120 到 0 之间"));
     }
@@ -1339,6 +1360,7 @@ pub fn dashboard_usage(db: &Database, query: DashboardQuery) -> Result<Value, Ap
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DashboardModelsQuery {
     pub platform_code: String,
+    #[serde(default)] pub model_prefix: Option<String>,
     #[serde(default)] pub model_ids: Vec<String>,
     #[serde(default)] pub billing_offset: i32,
     #[serde(default)] pub quota_offset: i32,
@@ -1357,16 +1379,40 @@ pub fn dashboard_models(db: &Database, query: DashboardModelsQuery) -> Result<Va
         }
         if !models.iter().any(|v| v == trimmed) { models.push(trimmed.to_string()); }
     }
+    if query.model_prefix.is_some() && !models.is_empty() { return Err(ApiError::invalid("modelPrefix 不能与 modelIds 同时使用")); }
     let mut apps = vec![platform];
-    if !models.is_empty() {
+    if !models.is_empty() || query.model_prefix.is_some() {
         for app in shared { if !apps.contains(&app) { apps.push(app); } }
     }
     let mut value = dashboard_usage(db, DashboardQuery {
         app_type: apps.join(","),
+        model_prefix: query.model_prefix,
         billing_offset: query.billing_offset, quota_offset: query.quota_offset,
         model: if models.is_empty() { None } else { Some(models.join(",")) },
         models_by_app: None, devices: query.devices,
     })?;
     value["modelIds"] = json!(models);
     Ok(value)
+}
+
+/// Resolve prefixes against effective pricing models across the selected devices.
+fn prefix_models(db: &Database, apps: &[String], device_filter: Option<&str>, prefix: &str) -> Result<Vec<String>, ApiError> {
+    let prefix = prefix.trim();
+    if prefix.is_empty() || prefix.len() > 256 { return Err(ApiError::invalid("modelPrefix 不能为空或超过 256 字节")); }
+    let devices = parse_device_selection(db, device_filter)?;
+    let projection = if devices.is_local_only() { None } else if devices.local {
+        Some(super::projection::database_for_peers(db, &devices.peers)?)
+    } else { Some(super::projection::database_for_peers_only(db, &devices.peers)?) };
+    let source = projection.as_deref().unwrap_or(db);
+    let needle = prefix.to_ascii_lowercase();
+    let mut ids = Vec::new();
+    for app in apps {
+        for row in source.get_model_stats(None, None, Some(app), None, None)? {
+            if row.model.to_ascii_lowercase().starts_with(&needle) && !ids.contains(&row.model) {
+                if row.model.contains(',') { return Err(ApiError::invalid("匹配的模型 ID 包含逗号，暂不支持前缀查询")); }
+                ids.push(row.model);
+            }
+        }
+    }
+    Ok(ids)
 }
