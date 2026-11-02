@@ -332,6 +332,11 @@ async fn peer_snapshots_support_filters_replace_and_disabled_devices() {
     assert_eq!(local_only["summary"]["totalCost"], "1.000000");
     assert_eq!(peer_only_dashboard["summary"]["totalCost"], "2.000000");
     assert_eq!(both["summary"]["totalRequests"], 2);
+    let all_http = lan_usage::public_api::summary(&local, lan_usage::public_api::SummaryQuery { start_time:Some("2026-10-26T00:00:00Z".into()), end_time:Some("2026-10-27T00:00:00Z".into()), app_type:Some("dsh".into()), devices:Some("all".into()), ..Default::default() }).unwrap();
+    assert_eq!(all_http["requests"], 2);
+    assert!(all_http["devices"].as_array().unwrap().contains(&json!(info.device_id)));
+    assert!(lan_usage::public_api::summary(&local, lan_usage::public_api::SummaryQuery { days:Some(1), devices:Some("all,local".into()), ..Default::default() }).is_err());
+
     assert!(tray_backend.call("dashboard", json!({"multiDevice":true,"deviceIds":[]})).await.is_err());
 
     local.execute_batch(&format!("UPDATE lan_devices SET last_sync_at = NULL WHERE device_id = '{}';", info.device_id)).unwrap();
@@ -361,6 +366,10 @@ async fn peer_snapshots_support_filters_replace_and_disabled_devices() {
     );
     lan_usage::storage::set_device_enabled(&local, &info.device_id, false).unwrap();
     assert!(lan_usage::projection::database_for_peer(&local, &info.device_id).is_err());
+    let disabled_all = lan_usage::public_api::summary(&local, lan_usage::public_api::SummaryQuery { start_time:Some("2026-10-26T00:00:00Z".into()), end_time:Some("2026-10-27T00:00:00Z".into()), app_type:Some("dsh".into()), devices:Some("ALL".into()), ..Default::default() }).unwrap();
+    assert_eq!(disabled_all["requests"], 1);
+    assert_eq!(disabled_all["devices"], json!(["local"]));
+
     assert_eq!(
         lan_usage::projection::database(&local)
             .unwrap()

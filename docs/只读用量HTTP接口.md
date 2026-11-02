@@ -360,3 +360,13 @@ X-API-Key: 在管理设备中生成的只读密钥
 ```
 
 未提供 `modelPrefix` 时原有精确匹配和不传模型的行为不变。前缀不能与 `model`、`modelsByApp` 或非空 `modelIds` 同时提供；空白前缀返回 400，无匹配结果返回零用量。查询涉及多次数据库读取，并发扫描时结果可能不是同一时刻的快照。
+
+### 查询全部设备
+
+`devices` 支持 `all`（不区分大小写），表示本机和当前已配对、已启用的所有设备。适用于 `summary`、`cycle`、`cycles` 及两个看板接口。例如：
+
+```json
+{"appType":"mcode","modelPrefix":"minimax","devices":"all"}
+```
+
+不填 `devices` 仍只查询本机；`all` 必须单独使用，不能与 `local` 或设备 ID 混用。远端使用最近同步到本机的快照，未同步成功的设备不保证具有最新数据。汇总接口的 `devices` 字段列出实际参与的设备 ID。

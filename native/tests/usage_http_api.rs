@@ -1176,7 +1176,7 @@ async fn http_query_device_selection_defaults_to_local() {
     let key = public_api::rotate_key(&db).unwrap();
 
     // 默认与显式 local 都是只查本机。
-    for query in ["days=7&appType=claude", "days=7&appType=claude&devices=local"] {
+    for query in ["days=7&appType=claude", "days=7&appType=claude&devices=local", "days=7&appType=claude&devices=all"] {
         let response = http
             .get(format!("{url}?{query}"))
             .header("X-API-Key", &key)

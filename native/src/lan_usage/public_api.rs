@@ -368,6 +368,19 @@ fn parse_device_selection(
             peers: Vec::new(),
         });
     };
+    // `all` is an explicit alias for local plus all currently paired and enabled peers.
+    // Keep it exclusive to avoid silently accepting a misspelled or stale ID.
+    if value.trim().eq_ignore_ascii_case("all") {
+        let mut peers = known_devices(db)?;
+        let local_id = super::identity::device_id(db)?;
+        peers.retain(|peer| peer != &local_id);
+        peers.sort();
+        peers.dedup();
+        return Ok(DeviceSelection { local: true, peers });
+    }
+    if value.split(',').any(|part| part.trim().eq_ignore_ascii_case("all")) {
+        return Err(ApiError::invalid("devices=all 不能与其他设备混用"));
+    }
     let mut selection = DeviceSelection {
         local: false,
         peers: Vec::new(),

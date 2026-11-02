@@ -36,7 +36,7 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: '观测台 v__VERSION__'
-          releaseBody: '看板用量接口新增 modelPrefix 模型前缀匹配，支持指定平台或跨已共享平台统计；保留原有精确匹配行为。macOS 构建未公证。'
+          releaseBody: '用量接口支持 devices=all，汇总本机和全部已配对、已启用设备；默认仍只查询本机。macOS 构建未公证。'
           releaseDraft: true
           prerelease: false
           assetNamePattern: 'Observatory-[version]-[platform]-[arch][setup][ext]'
