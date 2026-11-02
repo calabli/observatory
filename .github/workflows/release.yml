@@ -36,7 +36,7 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: '观测台 v__VERSION__'
-          releaseBody: '多设备汇总新增设备多选，可按所选设备查看用量、趋势、排行和请求详情。macOS 构建未公证。'
+          releaseBody: '修复多设备筛选菜单背景透明、文字与页面重叠的问题，并改善复选框对齐。macOS 构建未公证。'
           releaseDraft: true
           prerelease: false
           assetNamePattern: 'Observatory-[version]-[platform]-[arch][setup][ext]'
