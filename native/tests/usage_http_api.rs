@@ -1276,6 +1276,183 @@ async fn http_cycle_endpoint_uses_the_first_platform_for_the_subscription() {
     handle.stop();
 }
 
+/// 周期序列：一次拿到本周期与前 N 个周期，给看板画柱状图。
+#[tokio::test]
+async fn http_cycle_series_returns_a_series_of_cycles() {
+    let db = Arc::new(Database::memory().unwrap());
+    let (start, end) = year_window();
+    // 周期对齐到本地午夜：每个周期正好覆盖 7 个自然日。
+    save_subscription(
+        &db,
+        "claude",
+        &start,
+        &end,
+        json!({"startDay":4,"startTime":"00:00:00","endDay":4,"endTime":"00:00:00"}),
+    );
+    // 今天往前 10 天，每天一条明细，落满两个周期。
+    let today = today();
+    for offset in 0..10 {
+        let date = today - chrono::Duration::days(offset);
+        insert_detail(
+            &db,
+            &format!("d{offset}"),
+            "claude",
+            "m",
+            None,
+            100,
+            20,
+            0,
+            0,
+            "1.00",
+            local_ts(date, 0, 1),
+        );
+    }
+
+    let handle = server::start(db.clone(), 0).await.unwrap();
+    let url = format!("http://127.0.0.1:{}/api/v1/usage/cycles", handle.port);
+    let http = reqwest::Client::builder().no_proxy().build().unwrap();
+    let key = public_api::rotate_key(&db).unwrap();
+
+    let response = http
+        .get(format!("{url}?appType=claude&count=3"))
+        .header("X-API-Key", &key)
+        .send()
+        .await
+        .unwrap();
+    assert!(response.status().is_success());
+    let body: Value = response.json().await.unwrap();
+
+    // 按自然日归集。
+    assert_eq!(body["granularity"], "day");
+    assert_eq!(body["appType"], json!(["claude"]));
+    assert_eq!(body["scope"], "local");
+    assert_eq!(body["subscription"]["name"], "Claude Max");
+    assert_eq!(
+        body["subscription"]["rule"],
+        json!({"startDay":4,"startTime":"00:00:00","endDay":4,"endTime":"00:00:00"})
+    );
+
+    let cycles = body["cycles"].as_array().unwrap();
+    assert_eq!(cycles.len(), 3, "应返回 3 个周期");
+    // 当前周期 index=0，往前依次是 -1、-2。
+    assert_eq!(cycles[0]["index"], 0);
+    assert_eq!(cycles[1]["index"], -1);
+    assert_eq!(cycles[2]["index"], -2);
+    // 周期窗口首尾相接。
+    assert_eq!(cycles[1]["end"], cycles[0]["start"]);
+    assert_eq!(cycles[2]["end"], cycles[1]["start"]);
+    // 每个周期正好 7 个自然日。
+    for cycle in cycles {
+        let first = NaiveDate::parse_from_str(cycle["startDate"].as_str().unwrap(), "%Y-%m-%d").unwrap();
+        let last = NaiveDate::parse_from_str(cycle["endDate"].as_str().unwrap(), "%Y-%m-%d").unwrap();
+        assert_eq!((last - first).num_days(), 6, "周期应覆盖 7 个自然日");
+    }
+    // 用量：最近两个周期各有明细（7 天 + 3 天）。
+    assert_eq!(cycles[0]["requests"], 5);
+    assert_eq!(cycles[1]["requests"], 5);
+    assert_eq!(cycles[2]["requests"], 0);
+    assert_eq!(cycles[0]["totalTokens"], 600);
+    assert_eq!(cycles[0]["costUsd"], 5.0);
+    // 当前周期还没结束。
+    assert_eq!(cycles[0]["complete"], false);
+    assert_eq!(cycles[1]["complete"], true);
+
+    // 默认返回 8 个周期。
+    let response = http
+        .get(format!("{url}?appType=claude"))
+        .header("X-API-Key", &key)
+        .send()
+        .await
+        .unwrap();
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["cycles"].as_array().unwrap().len(), 8);
+
+    // 参数错误。
+    for params in ["", "appType=claude&count=0", "appType=claude&count=abc", "appType=claude&unknown=1"] {
+        let response = http
+            .get(format!("{url}?{params}"))
+            .header("X-API-Key", &key)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 400, "{params}");
+    }
+    // 没有订阅 → 404。
+    let response = http
+        .get(format!("{url}?appType=codex"))
+        .header("X-API-Key", &key)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 404);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "SUBSCRIPTION_NOT_FOUND");
+
+    handle.stop();
+}
+
+/// 周期序列按自然日归集，所以不会因为切到归档日而报 422。
+#[tokio::test]
+async fn http_cycle_series_never_hits_the_precision_error() {
+    let db = Arc::new(Database::memory().unwrap());
+    let (start, end) = year_window();
+    save_subscription(
+        &db,
+        "claude",
+        &start,
+        &end,
+        json!({"startDay":4,"startTime":"19:00:00","endDay":4,"endTime":"19:00:00"}),
+    );
+    // 把日汇总放在某个周期的**边界日**上——只有边界日会被秒级区间切开。
+    let rule: observatory_usage_core::subscriptions::WeeklyRule = serde_json::from_value(
+        json!({"startDay":4,"startTime":"19:00:00","endDay":4,"endTime":"19:00:00"}),
+    )
+    .unwrap();
+    let (boundary_start, _) =
+        observatory_usage_core::subscriptions::weekly_cycle(&rule, Local::now(), -6).unwrap();
+    let old = boundary_start.date_naive();
+    insert_rollup(&db, old, "claude", "m", 3, 30, 6, "0.30");
+
+    let handle = server::start(db.clone(), 0).await.unwrap();
+    let url = format!("http://127.0.0.1:{}/api/v1/usage/cycles", handle.port);
+    let http = reqwest::Client::builder().no_proxy().build().unwrap();
+    let key = public_api::rotate_key(&db).unwrap();
+
+    // 单周期查询在同样的区间上会 422。
+    let response = http
+        .get(format!(
+            "http://127.0.0.1:{}/api/v1/usage/cycle?appType=claude&offset=-6",
+            handle.port
+        ))
+        .header("X-API-Key", &key)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 422);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["code"], "RANGE_PRECISION_UNAVAILABLE");
+
+    // 序列端点按自然日归集，照样能返回。
+    let response = http
+        .get(format!("{url}?appType=claude&count=8"))
+        .header("X-API-Key", &key)
+        .send()
+        .await
+        .unwrap();
+    assert!(response.status().is_success());
+    let body: Value = response.json().await.unwrap();
+    let cycles = body["cycles"].as_array().unwrap();
+    assert_eq!(cycles.len(), 8);
+    // 那条归档日汇总被算进了它所属的周期。
+    let total: u64 = cycles
+        .iter()
+        .map(|cycle| cycle["requests"].as_u64().unwrap_or(0))
+        .sum();
+    assert_eq!(total, 3);
+
+    handle.stop();
+}
+
 #[tokio::test]
 async fn http_auth_validation_revocation_and_read_only_key() {    let db = Arc::new(Database::memory().unwrap());
     seed(&db);
@@ -1668,7 +1845,7 @@ fn postman_collection_is_importable_and_consistent() {
     for request in &requests {
         let name = request["name"].as_str().unwrap();
         assert_eq!(request["request"]["method"], "GET", "{name}");
-        // 只允许指向这两个只读查询端点。
+        // 只允许指向这三个只读查询端点。
         let path = request["request"]["url"]["path"]
             .as_array()
             .unwrap()
@@ -1677,11 +1854,13 @@ fn postman_collection_is_importable_and_consistent() {
             .collect::<Vec<_>>()
             .join("/");
         assert!(
-            path == "api/v1/usage/summary" || path == "api/v1/usage/cycle",
+            path == "api/v1/usage/summary"
+                || path == "api/v1/usage/cycle"
+                || path == "api/v1/usage/cycles",
             "{name} 的路径不对: {path}"
         );
         // 周期端点必须指定 Agent 平台——除了专门演示「缺少 appType」的那条。
-        if path == "api/v1/usage/cycle" && !name.contains("缺少 appType") {
+        if path.starts_with("api/v1/usage/cycle") && !name.contains("缺少 appType") {
             let has_app = request["request"]["url"]["query"]
                 .as_array()
                 .unwrap()
@@ -1775,6 +1954,13 @@ async fn postman_collection_requests_match_the_live_endpoint() {
         ("archivedStartTime", at(yesterday, 9)),
         ("archivedEndTime", at(yesterday, 18)),
         ("model", "m".to_string()),
+        // 多个模型：逗号分隔。种子数据的模型是 m，m2 没有记录。
+        ("models", "m,m2".to_string()),
+        // 按平台分别指定模型。
+        (
+            "modelsByApp",
+            "{\"claude\":[\"m\"],\"codex\":[\"m\"]}".to_string(),
+        ),
     ];
 
     let collection: Value =
@@ -1847,5 +2033,57 @@ async fn postman_collection_requests_match_the_live_endpoint() {
         }
     }
 
+    handle.stop();
+}
+
+#[tokio::test]
+async fn dashboard_http_returns_billing_cycles_and_model_breakdown() {
+    let db = Arc::new(Database::memory().unwrap());
+    let start = (today() - Duration::days(45)).to_string();
+    let end = (today() + Duration::days(50)).to_string();
+    save_subscription(&db, "claude", &start, &end, json!({"startDay":4,"startTime":"19:00:00","endDay":4,"endTime":"19:00:00"}));
+    let timestamp = Local::now().timestamp() - 5;
+    insert_detail(&db, "dashboard-model-a", "claude", "model-a", None, 100, 20, 30, 0, "1.25", timestamp);
+    insert_detail(&db, "dashboard-model-b", "claude", "model-b", None, 200, 10, 0, 0, "2.00", timestamp);
+    let handle = server::start(db.clone(),0).await.unwrap();
+    let key = public_api::rotate_key(&db).unwrap();
+    let url = format!("http://127.0.0.1:{}/api/v1/dashboard/usage",handle.port);
+    let http=reqwest::Client::builder().no_proxy().build().unwrap();
+    let denied=http.post(&url).json(&json!({"appType":"claude"})).send().await.unwrap();
+    assert_eq!(denied.status(),401);
+    let response=http.post(&url).header("X-API-Key",key).json(&json!({"appType":"claude"})).send().await.unwrap();
+    assert_eq!(response.status(),200);
+    let body:Value=response.json().await.unwrap();
+    assert_eq!(body["billingTotal"]["totalTokens"],360);
+    assert_eq!(body["billingAggregations"]["byAppAndModel"].as_array().unwrap().len(),2);
+    assert!(!body["quotaCycles"].as_array().unwrap().is_empty());
+    assert!(body["selectedQuotaCycle"]["usage"]["daily"].is_array());
+    handle.stop();
+}
+
+#[tokio::test]
+async fn dashboard_models_uses_platform_subscription_and_aggregates_shared_apps() {
+    let db=Arc::new(Database::memory().unwrap());
+    let start=(today()-Duration::days(40)).to_string();
+    let end=(today()+Duration::days(40)).to_string();
+    save_subscription(&db,"claude",&start,&end,json!({"startDay":4,"startTime":"19:00:00","endDay":4,"endTime":"19:00:00"}));
+    let ts=Local::now().timestamp()-5;
+    insert_detail(&db,"cross-a","claude","shared-model",None,100,0,0,0,"1",ts);
+    insert_detail(&db,"cross-b","codex","shared-model",None,200,0,0,0,"2",ts);
+    insert_detail(&db,"cross-c","codex","other-model",None,500,0,0,0,"5",ts);
+    let handle=server::start(db.clone(),0).await.unwrap();
+    let key=public_api::rotate_key(&db).unwrap();
+    let http=reqwest::Client::builder().no_proxy().build().unwrap();
+    let url=format!("http://127.0.0.1:{}/api/v1/dashboard/models",handle.port);
+    let call=|body:Value| http.post(&url).header("X-API-Key",&key).json(&body).send();
+    let matched:Value=call(json!({"platformCode":"claude","modelIds":["shared-model"]})).await.unwrap().json().await.unwrap();
+    assert_eq!(matched["scope"]["subscriptionApp"],"claude");
+    assert_eq!(matched["billingTotal"]["totalTokens"],300);
+    let default:Value=call(json!({"platformCode":"claude"})).await.unwrap().json().await.unwrap();
+    assert_eq!(default["billingTotal"]["totalTokens"],100);
+    let empty:Value=call(json!({"platformCode":"claude","modelIds":[]})).await.unwrap().json().await.unwrap();
+    assert_eq!(empty["billingTotal"]["totalTokens"],100);
+    let invalid=call(json!({"platformCode":"claude","modelIds":[""]})).await.unwrap();
+    assert_eq!(invalid.status(),400);
     handle.stop();
 }

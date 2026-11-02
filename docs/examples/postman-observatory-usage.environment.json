@@ -79,6 +79,16 @@
       "value": "claude-opus-5-5",
       "type": "default",
       "enabled": true
+    },
+    {
+      "key": "models",
+      "value": "m,m2",
+      "type": "default"
+    },
+    {
+      "key": "modelsByApp",
+      "value": "{\"claude\":[\"m\"],\"codex\":[\"m\"]}",
+      "type": "default"
     }
   ],
   "_postman_variable_scope": "environment",

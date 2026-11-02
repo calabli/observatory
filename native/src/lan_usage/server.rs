@@ -59,6 +59,9 @@ pub async fn start_with_lock(
         .route("/api/lan/usage", get(usage_handler))
         .route("/api/v1/usage/summary", get(summary_handler))
         .route("/api/v1/usage/cycle", get(cycle_handler))
+        .route("/api/v1/usage/cycles", get(cycles_handler))
+        .route("/api/v1/dashboard/usage", post(dashboard_handler))
+        .route("/api/v1/dashboard/models", post(dashboard_models_handler))
         .route("/api/lan/pair", post(pair_handler))
         .route("/api/lan/revoke", post(revoke_handler))
         .route("/api/lan/scan", post(scan_handler))
@@ -109,6 +112,40 @@ pub async fn start_with_lock(
 /// 这里用 (状态码, 说明) 这种直接可响应的形式。
 type HandlerError = (StatusCode, String);
 
+async fn dashboard_models_handler(
+    State(state): State<Arc<ServerState>>,
+    headers: HeaderMap,
+    payload: Result<Json<super::public_api::DashboardModelsQuery>, axum::extract::rejection::JsonRejection>,
+) -> Result<impl axum::response::IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let key = headers.get("x-api-key").and_then(|v| v.to_str().ok()).unwrap_or("");
+    if !super::public_api::key_matches(&state.db, key) && authorized(&state, &headers).is_err() {
+        return Err((StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"缺少有效的只读 API 密钥或配对凭证","code":"INVALID_API_KEY"}))));
+    }
+    let Json(query) = payload.map_err(|_| (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"请求内容无效","code":"INVALID_PARAMETERS"}))))?;
+    let db = state.db.clone();
+    let result = tokio::task::spawn_blocking(move || super::public_api::dashboard_models(&db, query)).await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"用量查询失败","code":"USAGE_QUERY_FAILED"}))))?;
+    let result = result.map_err(|error| (StatusCode::from_u16(error.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR), Json(error.to_json())))?;
+    Ok(([("Cache-Control", "no-store")], Json(result)))
+}
+
+async fn dashboard_handler(
+    State(state): State<Arc<ServerState>>,
+    headers: HeaderMap,
+    payload: Result<Json<super::public_api::DashboardQuery>, axum::extract::rejection::JsonRejection>,
+) -> Result<impl axum::response::IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let key = headers.get("x-api-key").and_then(|v| v.to_str().ok()).unwrap_or("");
+    if !super::public_api::key_matches(&state.db, key) && authorized(&state, &headers).is_err() {
+        return Err((StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"缺少有效的只读 API 密钥或配对凭证","code":"INVALID_API_KEY"}))));
+    }
+    let Json(query) = payload.map_err(|_| (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"请求内容无效","code":"INVALID_PARAMETERS"}))))?;
+    let db = state.db.clone();
+    let result = tokio::task::spawn_blocking(move || super::public_api::dashboard_usage(&db, query)).await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"用量查询失败","code":"USAGE_QUERY_FAILED"}))))?;
+    let result = result.map_err(|error| (StatusCode::from_u16(error.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR), Json(error.to_json())))?;
+    Ok(([("Cache-Control", "no-store")], Json(result)))
+}
+
 async fn summary_handler(
     State(state): State<Arc<ServerState>>,
     headers: HeaderMap,
@@ -158,6 +195,35 @@ async fn cycle_handler(
     let Query(query) = query.map_err(|_| (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"查询参数无效","code":"INVALID_PARAMETERS"}))))?;
     let db = state.db.clone();
     let result = tokio::task::spawn_blocking(move || super::public_api::cycle_summary(&db, query)).await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"用量查询失败","code":"USAGE_QUERY_FAILED"}))))?;
+    let result = result.map_err(|error| {
+        let status = StatusCode::from_u16(error.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        (status, Json(error.to_json()))
+    })?;
+    Ok(([("Cache-Control", "no-store")], Json(result)))
+}
+
+/// `GET /api/v1/usage/cycles`：查某个 Agent 平台最近若干个额度周期的用量序列。
+///
+/// 给看板用：一次拿到「本周期 + 前 N 个周期」，按自然日归集，不会 422。
+async fn cycles_handler(
+    State(state): State<Arc<ServerState>>,
+    headers: HeaderMap,
+    raw: Option<RawQuery>,
+    query: Result<Query<super::public_api::CycleSeriesQuery>, QueryRejection>,
+) -> Result<impl axum::response::IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let key = headers.get("x-api-key").and_then(|v| v.to_str().ok()).unwrap_or("");
+    if !super::public_api::key_matches(&state.db, key) && authorized(&state, &headers).is_err() {
+        return Err((StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"缺少有效的只读 API 密钥或配对凭证","code":"INVALID_API_KEY"}))));
+    }
+    if let Some(RawQuery(Some(raw))) = &raw {
+        if let Some(duplicate) = duplicate_query_keys(raw) {
+            return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":format!("参数重复: {duplicate}"),"code":"INVALID_PARAMETERS"}))));
+        }
+    }
+    let Query(query) = query.map_err(|_| (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"查询参数无效","code":"INVALID_PARAMETERS"}))))?;
+    let db = state.db.clone();
+    let result = tokio::task::spawn_blocking(move || super::public_api::cycle_series(&db, query)).await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"用量查询失败","code":"USAGE_QUERY_FAILED"}))))?;
     let result = result.map_err(|error| {
         let status = StatusCode::from_u16(error.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);

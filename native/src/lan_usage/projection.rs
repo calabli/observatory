@@ -12,7 +12,9 @@ use crate::services::usage_stats::provider_name_coalesce;
 use super::{identity, DeviceInfo, UsageExport};
 
 struct CachedProjection {
-    key: (usize, String, i64, i64, String),
+    /// 缓存键必须能区分「全部配对设备」与「一台都不要」这两种选择，
+    /// 否则空选集会命中包含全部设备的投影，把别人的用量算进来。
+    key: (usize, String, i64, i64, bool, Option<Vec<String>>),
     db: Arc<Database>,
 }
 
@@ -67,7 +69,14 @@ fn copy_usage_table(
         for (index, name) in columns.iter().enumerate() {
             let value: Value = row.get(index).map_err(sql_error)?;
             values.push(match (name.as_str(), value) {
-                ("request_id" | "provider_id" | "session_id", Value::Text(value)) => {
+                // 空 provider_id 要和 [`add_provider`] 用同一个写法，否则后面按
+                // provider 归并时查不到对应行，provider_id 会被置成 NULL，
+                // 违反 NOT NULL，整个投影直接构建失败。
+                ("provider_id", Value::Text(value)) => Value::Text(format!(
+                    "{origin}{}",
+                    if value.is_empty() { "_legacy" } else { &value }
+                )),
+                ("request_id" | "session_id", Value::Text(value)) => {
                     Value::Text(format!("{origin}{value}"))
                 }
                 (_, value) => value,
@@ -265,13 +274,15 @@ fn database_selected(
     let version = read
         .query_row("PRAGMA data_version", [], |row| row.get::<_, i64>(0))
         .map_err(sql_error)?;
-    let peer_key = peers.map(|list| list.join(",")).unwrap_or_default();
+    // 键里直接放选中的设备列表，不做字符串编码：`None`（全部）与 `Some(vec![])`
+    // （一台都不要）是两种不同的选择，拼成字符串会撞在一起。
     let key = (
         std::ptr::from_ref(db) as usize,
         device_id.clone(),
         changes,
         version,
-        format!("{include_local}|{peer_key}"),
+        include_local,
+        peers.map(|list| list.to_vec()),
     );
     if let Some(peers) = peers {
         for peer in peers {
@@ -407,8 +418,12 @@ fn database_selected(
         conn: Mutex::new(target),
         log_count_cache: Mutex::new(None),
     });
-    cache.retain(|cached| cached.key.0 != key.0 || cached.key.4 != key.4);
-    if cache.len() >= 2 {
+    // 同一台库、同一个设备选择的旧投影已被数据变化淘汰。
+    cache.retain(|cached| {
+        cached.key.0 != key.0 || cached.key.4 != key.4 || cached.key.5 != key.5
+    });
+    // 设备组合变多了（托盘的全量投影 + 各种设备子集），多留几份避免来回重建。
+    if cache.len() >= 8 {
         cache.remove(0);
     }
     cache.push(CachedProjection {

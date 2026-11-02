@@ -280,6 +280,50 @@ fn parse_app_list(shared: &[String], value: &str) -> Result<Vec<String>, ApiErro
     Ok(apps)
 }
 
+/// 解析 `modelsByApp`：平台 → 模型 ID 数组的 JSON 对象。
+///
+/// 必须配合 `appType` 使用，且不能与 `model` 同时出现。映射里的平台必须
+/// 在 `appType` 里；已选平台没出现在映射中时，它的全部模型都参与统计。
+fn parse_models_by_app(
+    apps: &[String],
+    value: Option<&str>,
+    models: Option<&Vec<String>>,
+    app_type_provided: bool,
+) -> Result<Option<BTreeMap<String, Vec<String>>>, ApiError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    if models.is_some() || !app_type_provided || value.len() > 8192 {
+        return Err(ApiError::invalid(
+            "modelsByApp 需要指定 appType，不能与 model 同时使用",
+        ));
+    }
+    let mut selected: BTreeMap<String, Vec<String>> = serde_json::from_str(value)
+        .map_err(|_| ApiError::invalid("modelsByApp 必须是平台到模型数组的 JSON 对象"))?;
+    if selected.is_empty() {
+        return Err(ApiError::invalid("modelsByApp 不能为空"));
+    }
+    for (app, list) in &mut selected {
+        if !apps.contains(app) || list.is_empty() || list.len() > 50 {
+            return Err(ApiError::invalid(
+                "modelsByApp 包含未选择的平台或无效模型列表",
+            ));
+        }
+        let mut unique = Vec::new();
+        for model in list.iter() {
+            let model = model.trim();
+            if model.is_empty() || model.len() > 256 {
+                return Err(ApiError::invalid("模型 ID 无效"));
+            }
+            if !unique.iter().any(|m| m == model) {
+                unique.push(model.to_owned());
+            }
+        }
+        *list = unique;
+    }
+    Ok(Some(selected))
+}
+
 /// 解析模型标识列表：逗号分隔，精确匹配。
 fn parse_model_list(value: &str) -> Result<Vec<String>, ApiError> {
     let mut models: Vec<String> = Vec::new();
@@ -723,6 +767,258 @@ fn cycle_summary_inner(
     )
 }
 
+/// 周期序列查询参数。`deny_unknown_fields` 让未知参数直接被拒绝。
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CycleSeriesQuery {
+    /// 应用标识（Agent 平台），多个用逗号分隔。必填。
+    ///
+    /// 周期规则**以第一个平台为准**，与 `/api/v1/usage/cycle` 一致。
+    pub app_type: String,
+    /// 返回多少个周期，含当前周期。默认 8，上限 52。
+    #[serde(default)]
+    pub count: Option<u32>,
+    /// 模型标识，多个用逗号分隔。
+    #[serde(default)]
+    pub model: Option<String>,
+    /// 按平台分别指定模型 ID，JSON 字符串。
+    #[serde(default)]
+    pub models_by_app: Option<String>,
+    /// 设备集合，逗号分隔。默认只查本机。
+    #[serde(default)]
+    pub devices: Option<String>,
+}
+
+/// 查询某个 Agent 平台最近若干个额度周期的用量序列。
+///
+/// 给看板用：一次拿到「本周期 + 前 N 个周期」的柱状图数据。
+///
+/// 与 `/api/v1/usage/cycle` 的区别在**归集口径**：
+///
+/// - 单周期端点按秒级区间统计，区间两端会切开某个自然日；
+/// - 序列端点按**自然日归属**统计——每个自然日整体归入「午夜落在哪个周期」
+///   的那个周期。
+///
+/// 之所以这样分，是因为历史只剩每日汇总时无法把某一天按小时拆开，切开的
+/// 那天只能整日计入或整日排除（那会返回 422）。自然日归属永远可算，柱子
+/// 之间也口径一致。
+pub fn cycle_series(db: &Database, query: CycleSeriesQuery) -> Result<Value, ApiError> {
+    cycle_series_inner(db, query, true)
+}
+
+/// 本机读取不受局域网共享勾选限制。
+pub(crate) fn local_cycle_series(
+    db: &Database,
+    query: CycleSeriesQuery,
+) -> Result<Value, ApiError> {
+    cycle_series_inner(db, query, false)
+}
+
+fn cycle_series_inner(
+    db: &Database,
+    query: CycleSeriesQuery,
+    enforce_share: bool,
+) -> Result<Value, ApiError> {
+    let shared = if enforce_share {
+        super::identity::share_settings(db).shared_app_types
+    } else {
+        super::default_shared_app_types()
+    };
+    let apps = parse_app_list(&shared, &query.app_type)?;
+    // 订阅以第一个平台为准。
+    let app_type = apps[0].clone();
+    let models: Option<Vec<String>> = match query.model.as_deref() {
+        Some(value) => Some(parse_model_list(value)?),
+        None => None,
+    };
+    let models_by_app = parse_models_by_app(&apps, query.models_by_app.as_deref(), models.as_ref(), true)?;
+    let devices = parse_device_selection(db, query.devices.as_deref())?;
+    let projection = if devices.is_local_only() {
+        None
+    } else if devices.local {
+        Some(super::projection::database_for_peers(db, &devices.peers)?)
+    } else {
+        Some(super::projection::database_for_peers_only(
+            db,
+            &devices.peers,
+        )?)
+    };
+    let source: &Database = match &projection {
+        Some(projection) => projection.as_ref(),
+        None => db,
+    };
+
+    let subscription = pick_subscription(db, &app_type)?;
+    let count = match query.count {
+        None => 8,
+        Some(value) if (1..=52).contains(&value) => value,
+        Some(_) => return Err(ApiError::invalid("count 必须在 1 到 52 之间")),
+    };
+    let now = Local
+        .timestamp_opt(Local::now().timestamp(), 0)
+        .single()
+        .unwrap();
+
+    // 各周期窗口：当前周期往前数 count-1 个。
+    let mut windows: Vec<(i32, DateTime<Local>, DateTime<Local>)> = Vec::new();
+    for index in 0..count {
+        let offset = -(index as i32);
+        let (start, end) =
+            crate::subscriptions::weekly_cycle(&subscription.rule, now, offset)
+                .map_err(|message| ApiError::invalid(message))?;
+        windows.push((offset, start, end));
+    }
+
+    // 每个周期归属的自然日：午夜落在窗口内的那些日期。
+    let mut spans: Vec<(NaiveDate, NaiveDate)> = Vec::new();
+    for (_, start, end) in &windows {
+        let first = ceil_midnight(*start)?;
+        let last_exclusive = ceil_midnight(*end)?;
+        spans.push((first.date_naive(), last_exclusive.date_naive()));
+    }
+    let range_start = spans
+        .iter()
+        .map(|(first, _)| *first)
+        .min()
+        .ok_or_else(|| ApiError::invalid("周期区间无效"))?;
+    let range_end = spans
+        .iter()
+        .map(|(_, last)| *last)
+        .max()
+        .ok_or_else(|| ApiError::invalid("周期区间无效"))?;
+
+    // 整段都是自然日，取数不会切天，因此不会出现 422。
+    let start_ts = local_midnight(range_start)?.timestamp();
+    let end_ts = local_midnight(range_end)?.timestamp();
+    if end_ts <= start_ts {
+        return Err(ApiError::invalid("周期区间无效"));
+    }
+    let app_refs: Vec<&str> = apps.iter().map(|value| value.as_str()).collect();
+    let by_date = daily_metrics(
+        source,
+        start_ts,
+        end_ts,
+        range_start,
+        range_end.pred_opt().unwrap_or(range_start),
+        &app_refs,
+        models.as_deref(),
+        models_by_app.as_ref(),
+    )?;
+
+    let mut cycles = Vec::with_capacity(windows.len());
+    for (index, (offset, start, end)) in windows.iter().enumerate() {
+        let (first_date, last_date) = spans[index];
+        let mut metrics = Metrics::default();
+        let mut date = first_date;
+        while date < last_date {
+            if let Some(value) = by_date.get(&date) {
+                metrics.merge(value);
+            }
+            match date.succ_opt() {
+                Some(next) => date = next,
+                None => break,
+            }
+        }
+        let mut row = metrics.json();
+        row["index"] = json!(offset);
+        row["start"] = json!(start.to_rfc3339());
+        row["end"] = json!(end.to_rfc3339());
+        row["startDate"] = json!(first_date.format("%Y-%m-%d").to_string());
+        row["endDate"] = json!(last_date.pred_opt().map(|d| d.format("%Y-%m-%d").to_string()));
+        // 周期还没走完就是进行中。
+        row["complete"] = json!(*end <= now);
+        cycles.push(row);
+    }
+
+    let mut result = json!({
+        "scope": if devices.is_local_only() { "local" } else { "multi" },
+        "devices": device_labels(&devices),
+        "appType": apps,
+        "apps": apps,
+        "model": models,
+        "modelsByApp": models_by_app,
+        "granularity": "day",
+        "subscription": {
+            "name": subscription.name,
+            "rule": subscription.rule,
+            "startDate": subscription.start_date,
+            "endDate": subscription.end_date,
+        },
+        "cycles": cycles,
+        "updatedAt": Local::now().to_rfc3339(),
+    });
+    result["lastScanAt"] = json!(crate::services::session_usage::last_sync_completed_at());
+    Ok(result)
+}
+
+/// 向上取整到本机时区的下一个午夜。
+fn ceil_midnight(value: DateTime<Local>) -> Result<DateTime<Local>, ApiError> {
+    let midnight = local_midnight(value.date_naive())?;
+    if midnight >= value {
+        return Ok(midnight);
+    }
+    let next = value
+        .date_naive()
+        .succ_opt()
+        .ok_or_else(|| ApiError::date_range("日期超出范围"))?;
+    local_midnight(next)
+}
+
+/// 取区间内按本地日期归集的聚合值。
+///
+/// 与汇总接口用同一套筛选、去重与定价口径，所以数字一致。
+fn daily_metrics(
+    source: &Database,
+    start_ts: i64,
+    end_ts_exclusive: i64,
+    first_date: NaiveDate,
+    last_date: NaiveDate,
+    app_refs: &[&str],
+    models: Option<&[String]>,
+    models_by_app: Option<&BTreeMap<String, Vec<String>>>,
+) -> Result<BTreeMap<NaiveDate, Metrics>, ApiError> {
+    let range = ResolvedRange {
+        start_ts,
+        end_ts_exclusive,
+        first_date,
+        last_date,
+    };
+    let partial_dates = partial_local_dates(&range)?;
+    let (rows, precision_dates): (Vec<DailyUsageRow>, Vec<String>) =
+        source.with_connection(|conn| -> Result<(Vec<DailyUsageRow>, Vec<String>), ApiError> {
+            let precision =
+                rollup_dates(conn, &partial_dates, app_refs, models, models_by_app)?;
+            if !precision.is_empty() {
+                return Ok((Vec::new(), precision));
+            }
+            let rows = daily_usage_rows(
+                conn,
+                start_ts,
+                end_ts_exclusive,
+                app_refs,
+                models,
+                models_by_app,
+            )?;
+            Ok((rows, Vec::new()))
+        })?;
+    if !precision_dates.is_empty() {
+        return Err(ApiError::precision(precision_dates));
+    }
+    let mut by_date: BTreeMap<NaiveDate, Metrics> = BTreeMap::new();
+    for row in rows {
+        let entry = by_date.entry(row.date).or_default();
+        entry.add(
+            row.request_count,
+            row.total_input_tokens,
+            row.total_output_tokens,
+            row.total_cache_read_tokens,
+            row.total_cache_creation_tokens,
+            &row.total_cost,
+        )?;
+    }
+    Ok(by_date)
+}
+
 /// 挑出该应用要用的订阅：优先今天生效的，其次是启用的，最后退回第一条。
 fn pick_subscription(
     db: &Database,
@@ -773,27 +1069,12 @@ fn summary_inner(db: &Database, query: SummaryQuery, enforce_share: bool) -> Res
         Some(value) => Some(parse_model_list(value)?),
         None => None,
     };
-    let models_by_app: Option<BTreeMap<String, Vec<String>>> = match query.models_by_app.as_deref() {
-        None => None,
-        Some(value) => {
-            if models.is_some() || query.app_type.is_none() || value.len() > 8192 {
-                return Err(ApiError::invalid("modelsByApp 需要指定 appType，不能与 model 同时使用"));
-            }
-            let mut selected: BTreeMap<String, Vec<String>> = serde_json::from_str(value).map_err(|_| ApiError::invalid("modelsByApp 必须是平台到模型数组的 JSON 对象"))?;
-            if selected.is_empty() { return Err(ApiError::invalid("modelsByApp 不能为空")); }
-            for (app, list) in &mut selected {
-                if !apps.contains(app) || list.is_empty() || list.len()>50 { return Err(ApiError::invalid("modelsByApp 包含未选择的平台或无效模型列表")); }
-                let mut unique = Vec::new();
-                for model in list.iter() {
-                    let model = model.trim();
-                    if model.is_empty() || model.len()>256 { return Err(ApiError::invalid("模型 ID 无效")); }
-                    if !unique.iter().any(|m| m == model) { unique.push(model.to_owned()); }
-                }
-                *list = unique;
-            }
-            Some(selected)
-        }
-    };
+    let models_by_app: Option<BTreeMap<String, Vec<String>>> = parse_models_by_app(
+        &apps,
+        query.models_by_app.as_deref(),
+        models.as_ref(),
+        query.app_type.is_some(),
+    )?;
 
     let group = match query.group_by.as_deref() {
         Some(value) => {
@@ -945,4 +1226,147 @@ fn summary_inner(db: &Database, query: SummaryQuery, enforce_share: bool) -> Res
     result["buckets"] = json!(buckets);
     result["daily"] = json!(daily);
     Ok(result)
+}
+
+/// Read-only dashboard aggregation. Time windows are half-open and clipped to
+/// the configured subscription; monthly anniversaries clamp to the month's end.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DashboardQuery {
+    pub app_type: String,
+    #[serde(default)] pub billing_offset: i32,
+    #[serde(default)] pub quota_offset: i32,
+    #[serde(default)] pub model: Option<String>,
+    #[serde(default)] pub models_by_app: Option<String>,
+    #[serde(default)] pub devices: Option<String>,
+}
+
+fn anniversary(anchor: NaiveDate, months: u32) -> Result<NaiveDate, ApiError> {
+    anchor.checked_add_months(chrono::Months::new(months))
+        .ok_or_else(|| ApiError::invalid("订阅账期超出日期范围"))
+}
+
+pub fn dashboard_usage(db: &Database, query: DashboardQuery) -> Result<Value, ApiError> {
+    if !(-120..=0).contains(&query.billing_offset) {
+        return Err(ApiError::invalid("billingOffset 必须在 -120 到 0 之间"));
+    }
+    if !(-52..=0).contains(&query.quota_offset) { return Err(ApiError::invalid("quotaOffset 必须在 -52 到 0 之间")); }
+    let shared = super::identity::share_settings(db).shared_app_types;
+    let apps = parse_app_list(&shared, &query.app_type)?;
+    let selected_models = query.model.as_deref().map(parse_model_list).transpose()?;
+    let models_by_app = parse_models_by_app(&apps, query.models_by_app.as_deref(), selected_models.as_ref(), true)?;
+    let devices = parse_device_selection(db, query.devices.as_deref())?;
+    let projection = if devices.is_local_only() { None } else if devices.local {
+        Some(super::projection::database_for_peers(db, &devices.peers)?)
+    } else { Some(super::projection::database_for_peers_only(db, &devices.peers)?) };
+    let source = projection.as_deref().unwrap_or(db);
+    let sub = pick_subscription(db, &apps[0])?;
+    let start_date = parse_date(&sub.start_date)?;
+    let end_date = parse_date(&sub.end_date)?;
+    let now = Local.timestamp_opt(Local::now().timestamp(), 0).single().unwrap();
+    let today = now.date_naive();
+    if today < start_date || !sub.enabled { return Err(ApiError::cycle_unavailable("订阅尚未生效或未启用")); }
+    let effective_date = std::cmp::min(today, end_date.pred_opt().ok_or_else(|| ApiError::invalid("订阅日期无效"))?);
+    let mut index: u32 = 0;
+    let period_days = if sub.billing == "期" { sub.custom_interval_days.map(i64::from) } else { None };
+    let boundary = |n: u32| -> Result<NaiveDate, ApiError> {
+        if let Some(days) = period_days { return start_date.checked_add_signed(Duration::days(days * i64::from(n))).ok_or_else(|| ApiError::invalid("订阅账期超出范围")); }
+        let factor = if sub.billing == "年" { 12 } else { 1 };
+        anniversary(start_date, n.checked_mul(factor).ok_or_else(|| ApiError::invalid("订阅账期超出范围"))?)
+    };
+    while boundary(index + 1)? <= effective_date {
+        index += 1;
+        if index > 12000 { return Err(ApiError::invalid("订阅账期过多")); }
+    }
+    let selected = i64::from(index) + i64::from(query.billing_offset);
+    if selected < 0 { return Err(ApiError::cycle_unavailable("没有更早的订阅账期")); }
+    let start = local_midnight(boundary(selected as u32)?)?;
+    let end = local_midnight(std::cmp::min(boundary(selected as u32 + 1)?, end_date))?;
+    let data_end = std::cmp::min(end, now);
+    if data_end <= start { return Err(ApiError::cycle_unavailable("账期没有可查询的数据")); }
+    let summary = |a: DateTime<Local>, b: DateTime<Local>| -> Result<Value, ApiError> {
+        summary_inner(db, SummaryQuery {
+            app_type: Some(query.app_type.clone()), model: query.model.clone(),
+            models_by_app: query.models_by_app.clone(), devices: query.devices.clone(),
+            start_time: Some(to_rfc3339(a)), end_time: Some(to_rfc3339(b)), ..Default::default()
+        }, true)
+    };
+    let total = summary(start, data_end)?;
+    let mut cycles = Vec::new();
+    // Enumerate backwards from the request time, then reverse into chronological order.
+    for n in 0..5200 {
+        let (a, b) = crate::subscriptions::weekly_cycle(&sub.rule, now, -n)
+            .map_err(ApiError::invalid)?;
+        if b <= start { break; }
+        let from = std::cmp::max(a, start);
+        let to = std::cmp::min(b, data_end);
+        if from < to {
+            cycles.push(json!({"cycleStart":to_rfc3339(a),"cycleEndExclusive":to_rfc3339(b),
+                "countedStart":to_rfc3339(from),"countedEndExclusive":to_rfc3339(to),
+                "partial":from != a || to != b,"usage":summary(from,to)?}));
+        }
+        if n == 5199 { return Err(ApiError::invalid("订阅额度周期过多")); }
+    }
+    cycles.reverse();
+    let (week_start, week_end) = crate::subscriptions::weekly_cycle(&sub.rule, now, query.quota_offset).map_err(ApiError::invalid)?;
+    let week_from = std::cmp::max(week_start, local_midnight(start_date)?);
+    let week_to = std::cmp::min(std::cmp::min(week_end, local_midnight(end_date)?), now);
+    let selected_week = if week_from < week_to { Some(summary(week_from, week_to)?) } else { None };
+    let mut by_app_model = Vec::new();
+    for app in &apps {
+        let candidates = source.get_model_stats(Some(start.timestamp()), Some(data_end.timestamp() - 1), Some(app), None, None)?;
+        for candidate in candidates {
+            let model = candidate.model;
+            if selected_models.as_ref().is_some_and(|v| !v.contains(&model)) ||
+                models_by_app.as_ref().and_then(|v| v.get(app)).is_some_and(|v| !v.contains(&model)) { continue; }
+            let usage = summary_inner(db, SummaryQuery { app_type:Some(app.clone()), model:Some(model.clone()),
+                devices:query.devices.clone(), start_time:Some(to_rfc3339(start)), end_time:Some(to_rfc3339(data_end)), ..Default::default() }, true)?;
+            by_app_model.push(json!({"appType":app,"model":model,"usage":usage}));
+        }
+    }
+    by_app_model.sort_by(|a,b| b["usage"]["totalTokens"].as_u64().cmp(&a["usage"]["totalTokens"].as_u64()));
+    Ok(json!({"scope":{"subscriptionApp":apps[0],"devices":query.devices,"timezone":"server-local"},
+        "subscription":{"id":sub.id,"name":sub.name,"billing":sub.billing,
+            "billingPeriod":{"offset":query.billing_offset,"start":to_rfc3339(start),"endExclusive":to_rfc3339(end),"dataEndExclusive":to_rfc3339(data_end)}},
+        "billingTotal":total,"quotaCycles":cycles,"billingAggregations":{"byAppAndModel":by_app_model},
+        "selectedQuotaCycle":{"offset":query.quota_offset,"cycleStart":to_rfc3339(week_start),"cycleEndExclusive":to_rfc3339(week_end),"usage":selected_week},
+        "updatedAt":to_rfc3339(now)}))
+}
+
+
+/// Query models across shared platforms, using one platform's subscription.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DashboardModelsQuery {
+    pub platform_code: String,
+    #[serde(default)] pub model_ids: Vec<String>,
+    #[serde(default)] pub billing_offset: i32,
+    #[serde(default)] pub quota_offset: i32,
+    #[serde(default)] pub devices: Option<String>,
+}
+
+pub fn dashboard_models(db: &Database, query: DashboardModelsQuery) -> Result<Value, ApiError> {
+    let shared = super::identity::share_settings(db).shared_app_types;
+    let platform = resolve_shared_app(&shared, &query.platform_code)?;
+    if query.model_ids.len() > 50 { return Err(ApiError::invalid("modelIds 最多 50 项")); }
+    let mut models = Vec::new();
+    for id in &query.model_ids {
+        let trimmed = id.trim();
+        if trimmed.is_empty() || trimmed.len() > 256 || trimmed.contains(',') {
+            return Err(ApiError::invalid("模型 ID 不能为空、过长或包含逗号"));
+        }
+        if !models.iter().any(|v| v == trimmed) { models.push(trimmed.to_string()); }
+    }
+    let mut apps = vec![platform];
+    if !models.is_empty() {
+        for app in shared { if !apps.contains(&app) { apps.push(app); } }
+    }
+    let mut value = dashboard_usage(db, DashboardQuery {
+        app_type: apps.join(","),
+        billing_offset: query.billing_offset, quota_offset: query.quota_offset,
+        model: if models.is_empty() { None } else { Some(models.join(",")) },
+        models_by_app: None, devices: query.devices,
+    })?;
+    value["modelIds"] = json!(models);
+    Ok(value)
 }

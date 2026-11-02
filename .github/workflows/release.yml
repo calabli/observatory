@@ -36,7 +36,7 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: '观测台 v__VERSION__'
-          releaseBody: '新增订阅与额度管理、当前及历史订阅周期查询；用量接口支持多平台、按平台筛选模型、按天周月聚合和多设备查询。订阅周期以第一个平台为准。详见 docs/只读用量HTTP接口.md。macOS 构建未公证。'
+          releaseBody: '新增看板用量接口和跨平台模型筛选，可按指定平台的订阅账期、周额度周期汇总用量，并按应用和模型查看明细。详情见 docs/只读用量HTTP接口.md。macOS 构建未公证。'
           releaseDraft: true
           prerelease: false
           assetNamePattern: 'Observatory-[version]-[platform]-[arch][setup][ext]'

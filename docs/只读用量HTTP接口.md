@@ -10,7 +10,7 @@
 
 仓库里带了一份可直接导入的集合和环境文件：
 
-- [`examples/postman-observatory-usage.collection.json`](examples/postman-observatory-usage.collection.json) —— 25 条请求，分「概览 / 时间区间 / 筛选 / 错误场景」四组，带保存好的成功与错误响应示例
+- [`examples/postman-observatory-usage.collection.json`](examples/postman-observatory-usage.collection.json) —— 38 条请求，分「概览 / 时间区间 / 筛选 / 错误场景」四组，带保存好的成功与错误响应示例
 - [`examples/postman-observatory-usage.environment.json`](examples/postman-observatory-usage.environment.json) —— 环境变量（`baseUrl`、`apiKey` 与几个日期样例）
 
 在 Postman 里 **Import** 选这两个文件，然后把环境里的 `apiKey` 换成「管理设备」生成的密钥即可。从其他设备访问时把 `baseUrl` 改成服务器局域网 IP。
@@ -25,6 +25,7 @@
 |---|---|
 | `GET /api/v1/usage/summary` | 按时间区间查用量。区间由调用方指定 |
 | `GET /api/v1/usage/cycle` | 按 Agent 平台查**当前额度周期**内的用量。区间由服务端按订阅规则算好 |
+| `GET /api/v1/usage/cycles` | 按 Agent 平台查**最近若干个周期**的用量序列。看板画趋势柱状图用 |
 
 ```json
 {
@@ -176,16 +177,87 @@ curl -G 'http://127.0.0.1:17891/api/v1/usage/cycle' \
 ]
 ```
 
+## 周期序列
+
+看板要画「近 8 周用量」这种柱状图时，用这个端点：
+
+```http
+GET /api/v1/usage/cycles?appType=claude&count=8
+X-API-Key: 在管理设备中生成的只读密钥
+```
+
+一次返回当前周期与前若干个周期，每个周期一份合计。
+
+| 参数 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `appType` | 字符串 | 无 | **必填**。多个 Agent 平台用逗号分隔，第一个平台用于选择订阅周期 |
+| `count` | 整数 | 8 | 返回多少个周期（含当前），1–52 |
+| `model` | 字符串 | 无 | 多个模型 ID 用逗号分隔 |
+| `modelsByApp` | JSON 字符串 | 无 | 按平台分别指定模型 ID 数组 |
+| `devices` | 字符串 | `local` | 设备集合，`local` 表示本机 |
+
+### 归集口径与单周期端点的区别
+
+- `/api/v1/usage/cycle` 按**秒级区间**统计，区间两端会切开某个自然日；
+- `/api/v1/usage/cycles` 按**自然日归属**统计——每个自然日整体归入「午夜落在哪个周期」的那个周期。
+
+之所以分开：历史只剩每日汇总时无法把某一天按小时拆开，切开的那天只能整日计入或整日排除（单周期端点会因此返回 422）。自然日归属永远可算，柱子之间口径也一致。
+
+代价是边界日会整体归入**按午夜落点所在的周期**（例如周期从周四 19:00 开始，周四当天整点之后的用量算在上一个周期里），因此与精确到秒的单周期查询可能相差边界当日的部分用量。响应用 `granularity: "day"` 标明这一点，每个周期同时给出精确窗口（`start`/`end`）与实际归属的日期（`startDate`/`endDate`）。
+
+### 返回
+
+```json
+{
+  "scope": "local",
+  "devices": ["local"],
+  "appType": ["claude"],
+  "apps": ["claude"],
+  "model": null,
+  "modelsByApp": null,
+  "granularity": "day",
+  "subscription": {
+    "name": "Claude Max",
+    "rule": {"startDay": 4, "startTime": "19:00:00", "endDay": 4, "endTime": "19:00:00"},
+    "startDate": "2025-11-02",
+    "endDate": "2027-11-02"
+  },
+  "cycles": [
+    {
+      "requests": 4,
+      "inputTokens": 400,
+      "outputTokens": 80,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 0,
+      "totalTokens": 480,
+      "costUsd": 4.0,
+      "index": 0,
+      "start": "2026-10-29T19:00:00+08:00",
+      "end": "2026-11-05T19:00:00+08:00",
+      "startDate": "2026-10-30",
+      "endDate": "2026-11-05",
+      "complete": false
+    }
+  ],
+  "updatedAt": "2026-11-02T09:32:29.824459800+08:00",
+  "lastScanAt": null
+}
+```
+
+`index` 是周期序号：0 是当前周期，-1 是上一个。`complete` 表示该周期是否已经走完。`subscription` 给出周期规则与有效期，看板可以据此显示「每周四 19:00 重置」。
+
 ## 返回
 
 `daily` 始终返回（每日粒度），`buckets` 按 `groupBy` 分组。两者是同一批数据的两种分组方式，与顶层合计加总一致。
 
 | 字段 | 类型 | 含义 |
 |---|---|---|
-| `scope` | string | 固定 `local`，只统计本机记录 |
+| `scope` | string | `local` 只统计本机记录；并入配对设备后为 `multi` |
+| `devices` | string[] | 本次实际统计的设备集合，本机记作 `local` |
 | `appType` | string[]/null | 指定应用列表，未指定为 null |
 | `apps` | string[] | 本次实际纳入的允许共享应用 |
 | `model` | string[]/null | 指定模型列表，未指定为 null |
+| `modelsByApp` | object/null | 按平台分别指定的模型映射；未用该筛选时为 null |
 | `modelFilterBasis` | string | 固定 `effectivePricingModel`，即 `COALESCE(NULLIF(pricing_model,''), model)` |
 | `days` | integer | 查询触及的本地日期数量 |
 | `startDate` / `endDate` | string | 查询触及的首末本地日期 |
@@ -260,3 +332,15 @@ curl -G 'http://127.0.0.1:17891/api/v1/usage/cycle' \
 趋势图也可以改用 `/buckets`，相对标签路径 `/period`、数值路径 `/totalTokens` 或 `/costUsd`。TinyPane 最多显示最后 30 个序列点，本接口可以返回多于 30 天；需要更长趋势请在其他客户端查看。
 
 图表标题对应 URL 中的 `appType=claude`；修改应用筛选时也应修改标题。
+
+## 看板：跨平台按模型汇总
+
+`POST /api/v1/dashboard/models`，请求头 `X-API-Key` 为只读密钥。示例：
+
+```json
+{"platformCode":"codex","modelIds":["gpt-6.1-sol","gpt-6.1-terra"],"billingOffset":0,"quotaOffset":0,"devices":"local"}
+```
+
+`platformCode` 决定订阅账期与周额度规则，且必须允许共享。提供非空 `modelIds` 时，所有允许共享的平台中匹配任一模型 ID 的记录参与合计；不提供或提供空数组时，只查询该平台全部模型，与看板 usage 接口一致。模型名称是有效计价模型 ID，精确匹配；数组最多 50 项，不能传空 ID 或包含逗号的 ID。其他参数含义与看板 usage 相同。
+
+返回看板 usage 的 `billingTotal`、`quotaCycles`、`selectedQuotaCycle`、`billingAggregations` 等字段，并附带 `modelIds`。读取操作复用看板接口，跨多次数据库查询期间发生扫描时，结果可能不是同一时刻的快照。历史数据无法精确切分时返回 422。

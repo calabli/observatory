@@ -143,10 +143,12 @@ URL 中的正号必须编码为 `%2B`，客户端也可使用标准 URL 查询�
 
 | 字段 | 类型 | 含义 |
 |---|---|---|
-| `scope` | string | 第一阶段固定 `local` |
-| `appType` | string/null | 指定应用，未指定为 null |
+| `scope` | string | `local` 只统计本机记录；并入配对设备后为 `multi` |
+| `devices` | string[] | 本次实际统计的设备集合，本机记作 `local` |
+| `appType` | string[]/null | 指定应用列表，未指定为 null |
 | `apps` | string[] | 本次实际纳入的允许共享应用 |
-| `model` | string/null | 指定模型，未指定为 null |
+| `model` | string[]/null | 指定模型列表，未指定为 null |
+| `modelsByApp` | object/null | 按平台分别指定的模型映射；未用该筛选时为 null |
 | `modelFilterBasis` | string | `effectivePricingModel` |
 | `days` | integer | 查询触及的本地日期数量 |
 | `startDate` / `endDate` | string | 查询触及的首末本地日期；不代替精确 range |
@@ -177,9 +179,11 @@ URL 中的正号必须编码为 `%2B`，客户端也可使用标准 URL 查询�
 ```json
 {
   "scope": "local",
-  "appType": "claude",
+  "devices": ["local"],
+  "appType": ["claude"],
   "apps": ["claude"],
   "model": null,
+  "modelsByApp": null,
   "modelFilterBasis": "effectivePricingModel",
   "days": 1,
   "startDate": "2026-11-01",

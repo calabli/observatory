@@ -250,6 +250,14 @@ impl UsageBackend {
                     .map_err(|e| AppError::Message(e.to_string()))?
                     .map_err(structured_usage_error)
             }
+            "subscription_cycle_series" => {
+                // 最近若干个额度周期的用量序列（按自然日归集）。
+                let query = serde_json::from_value(args).map_err(|e| AppError::InvalidInput(e.to_string()))?;
+                let db = self.db.clone();
+                tokio::task::spawn_blocking(move || lan_usage::public_api::local_cycle_series(&db, query)).await
+                    .map_err(|e| AppError::Message(e.to_string()))?
+                    .map_err(structured_usage_error)
+            }
             "usage_api_key_status" => Ok(json!({"configured":lan_usage::public_api::key_configured(&self.db)?})),
             "usage_api_key_rotate" => Ok(json!({"key":lan_usage::public_api::rotate_key(&self.db)?})),
             "usage_api_key_revoke" => { lan_usage::public_api::revoke_key(&self.db)?; Ok(json!(true)) },

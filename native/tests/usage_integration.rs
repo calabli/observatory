@@ -377,6 +377,66 @@ async fn peer_snapshots_support_filters_replace_and_disabled_devices() {
     server.stop();
     local_server.stop();
 }
+
+/// 「全部配对设备」和「一台都不要」是两种不同的选择，不能命中同一份投影。
+///
+/// 缓存键如果把两者折叠成同一个字符串，先查过全量投影再查空选集就会拿到
+/// 包含对方用量的投影——那是跨设备的数据串味。
+#[tokio::test]
+async fn an_empty_peer_selection_never_reuses_the_all_peers_projection() {
+    let _guard = isolate();
+    let local = Arc::new(Database::memory().unwrap());
+    let peer = Arc::new(Database::memory().unwrap());
+    seed(&local, "local-request", "dsh", "1", 10, 2, 0, 2);
+    seed(&peer, "peer-request", "dsh", "2", 20, 4, 0, 2);
+    let server = lan_usage::server::start(peer.clone(), 0).await.unwrap();
+    let local_server = lan_usage::server::start(local.clone(), 0).await.unwrap();
+    let info = lan_usage::identity::device_info(&peer).unwrap();
+    let own_info = lan_usage::identity::device_info(&local).unwrap();
+    let (code, _) = lan_usage::pairing::generate(&peer).unwrap();
+    let reverse = lan_usage::pairing::new_token();
+    lan_usage::pairing::store_grant(&local, &info.device_id, &reverse).unwrap();
+    let token = lan_usage::client::pair("127.0.0.1", server.port, &own_info, local_server.port, &code, &reverse).await.unwrap();
+    local.set_setting(&format!("lan_outgoing_token_v1:{}", info.device_id), &token).unwrap();
+    lan_usage::storage::register_device(&local, &info.device_id, "Peer", "127.0.0.1", server.port)
+        .unwrap();
+    lan_usage::client::sync_device(&local, &info.device_id)
+        .await
+        .unwrap();
+
+    // 先查全量投影：本机 + 对方，共 2 条。
+    let all = lan_usage::projection::database(&local).unwrap();
+    assert_eq!(
+        all.get_usage_summary(None, None, None, None, None).unwrap().total_requests,
+        2
+    );
+
+    // 再查「本机 + 空选集」：只能有本机的 1 条，不能拿到对方的。
+    let local_only = lan_usage::projection::database_for_peers(&local, &[]).unwrap();
+    let summary = local_only
+        .get_usage_summary(None, None, None, None, None)
+        .unwrap();
+    assert_eq!(summary.total_requests, 1);
+    assert_eq!(summary.total_cost, "1.000000");
+
+    // 「只有对方」也不能带上本机。
+    let peer_only = lan_usage::projection::database_for_peers_only(&local, &[info.device_id.clone()]).unwrap();
+    let summary = peer_only
+        .get_usage_summary(None, None, None, None, None)
+        .unwrap();
+    assert_eq!(summary.total_requests, 1);
+    assert_eq!(summary.total_cost, "2.000000");
+
+    // 全量投影本身没被空选集污染。
+    let all = lan_usage::projection::database(&local).unwrap();
+    assert_eq!(
+        all.get_usage_summary(None, None, None, None, None).unwrap().total_requests,
+        2
+    );
+
+    server.stop();
+    local_server.stop();
+}
 #[tokio::test]
 async fn zero_cost_backfill_and_source_preferences_persist() {
     let _guard = isolate();

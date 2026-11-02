@@ -67,7 +67,7 @@
               "cookie": [],
               "body": {
                 "mode": "raw",
-                "raw": "{\n  \"requests\": 1,\n  \"inputTokens\": 100,\n  \"outputTokens\": 20,\n  \"cacheReadTokens\": 300,\n  \"cacheWriteTokens\": 10,\n  \"totalTokens\": 430,\n  \"costUsd\": 1.25,\n  \"scope\": \"local\",\n  \"appType\": \"claude\",\n  \"apps\": [\"claude\"],\n  \"model\": null,\n  \"modelFilterBasis\": \"effectivePricingModel\",\n  \"days\": 1,\n  \"startDate\": \"2026-11-01\",\n  \"endDate\": \"2026-11-01\",\n  \"range\": {\n    \"start\": \"2026-11-01T00:00:00+08:00\",\n    \"endExclusive\": \"2026-11-02T00:00:00+08:00\",\n    \"timezone\": \"server-local\"\n  },\n  \"groupBy\": \"day\",\n  \"currency\": \"USD\",\n  \"inputTokenSemantics\": \"fresh\",\n  \"updatedAt\": \"2026-11-01T13:42:11Z\",\n  \"lastScanAt\": null,\n  \"buckets\": [\n    {\n      \"requests\": 1,\n      \"inputTokens\": 100,\n      \"outputTokens\": 20,\n      \"cacheReadTokens\": 300,\n      \"cacheWriteTokens\": 10,\n      \"totalTokens\": 430,\n      \"costUsd\": 1.25,\n      \"period\": \"2026-11-01\",\n      \"start\": \"2026-11-01T00:00:00+08:00\",\n      \"endExclusive\": \"2026-11-02T00:00:00+08:00\"\n    }\n  ],\n  \"daily\": [\n    {\n      \"requests\": 1,\n      \"inputTokens\": 100,\n      \"outputTokens\": 20,\n      \"cacheReadTokens\": 300,\n      \"cacheWriteTokens\": 10,\n      \"totalTokens\": 430,\n      \"costUsd\": 1.25,\n      \"date\": \"2026-11-01\"\n    }\n  ]\n}"
+                "raw": "{\n  \"requests\": 1,\n  \"inputTokens\": 100,\n  \"outputTokens\": 20,\n  \"cacheReadTokens\": 300,\n  \"cacheWriteTokens\": 10,\n  \"totalTokens\": 430,\n  \"costUsd\": 1.25,\n  \"scope\": \"local\",\n  \"appType\": [\n    \"claude\"\n  ],\n  \"apps\": [\n    \"claude\"\n  ],\n  \"model\": null,\n  \"modelFilterBasis\": \"effectivePricingModel\",\n  \"days\": 1,\n  \"startDate\": \"2026-11-01\",\n  \"endDate\": \"2026-11-01\",\n  \"range\": {\n    \"start\": \"2026-11-01T00:00:00+08:00\",\n    \"endExclusive\": \"2026-11-02T00:00:00+08:00\",\n    \"timezone\": \"server-local\"\n  },\n  \"groupBy\": \"day\",\n  \"currency\": \"USD\",\n  \"inputTokenSemantics\": \"fresh\",\n  \"updatedAt\": \"2026-11-01T13:42:11Z\",\n  \"lastScanAt\": null,\n  \"buckets\": [\n    {\n      \"requests\": 1,\n      \"inputTokens\": 100,\n      \"outputTokens\": 20,\n      \"cacheReadTokens\": 300,\n      \"cacheWriteTokens\": 10,\n      \"totalTokens\": 430,\n      \"costUsd\": 1.25,\n      \"period\": \"2026-11-01\",\n      \"start\": \"2026-11-01T00:00:00+08:00\",\n      \"endExclusive\": \"2026-11-02T00:00:00+08:00\"\n    }\n  ],\n  \"daily\": [\n    {\n      \"requests\": 1,\n      \"inputTokens\": 100,\n      \"outputTokens\": 20,\n      \"cacheReadTokens\": 300,\n      \"cacheWriteTokens\": 10,\n      \"totalTokens\": 430,\n      \"costUsd\": 1.25,\n      \"date\": \"2026-11-01\"\n    }\n  ],\n  \"devices\": [\n    \"local\"\n  ]\n}"
               },
               "options": {
                 "raw": {
@@ -210,7 +210,7 @@
               "cookie": [],
               "body": {
                 "mode": "raw",
-                "raw": "{\n  \"scope\": \"local\",\n  \"appType\": \"claude\",\n  \"apps\": [\n    \"claude\"\n  ],\n  \"model\": null,\n  \"modelFilterBasis\": \"effectivePricingModel\",\n  \"days\": 5,\n  \"startDate\": \"2026-10-29\",\n  \"endDate\": \"2026-11-02\",\n  \"range\": {\n    \"start\": \"2026-10-29T19:00:00+08:00\",\n    \"endExclusive\": \"2026-11-02T05:12:00+08:00\",\n    \"timezone\": \"server-local\"\n  },\n  \"groupBy\": \"day\",\n  \"currency\": \"USD\",\n  \"inputTokenSemantics\": \"fresh\",\n  \"requests\": 128,\n  \"inputTokens\": 2068,\n  \"outputTokens\": 1367239,\n  \"cacheReadTokens\": 429848775,\n  \"cacheWriteTokens\": 3755596,\n  \"totalTokens\": 434973678,\n  \"costUsd\": 143.367575,\n  \"updatedAt\": \"2026-11-02T04:56:12.881734500+00:00\",\n  \"lastScanAt\": 1793561400000,\n  \"buckets\": [],\n  \"daily\": []\n}"
+                "raw": "{\n  \"scope\": \"local\",\n  \"appType\": [\n    \"claude\"\n  ],\n  \"apps\": [\n    \"claude\"\n  ],\n  \"model\": null,\n  \"modelFilterBasis\": \"effectivePricingModel\",\n  \"days\": 5,\n  \"startDate\": \"2026-10-29\",\n  \"endDate\": \"2026-11-02\",\n  \"range\": {\n    \"start\": \"2026-10-29T19:00:00+08:00\",\n    \"endExclusive\": \"2026-11-02T05:12:00+08:00\",\n    \"timezone\": \"server-local\"\n  },\n  \"groupBy\": \"day\",\n  \"currency\": \"USD\",\n  \"inputTokenSemantics\": \"fresh\",\n  \"requests\": 128,\n  \"inputTokens\": 2068,\n  \"outputTokens\": 1367239,\n  \"cacheReadTokens\": 429848775,\n  \"cacheWriteTokens\": 3755596,\n  \"totalTokens\": 434973678,\n  \"costUsd\": 143.367575,\n  \"updatedAt\": \"2026-11-02T04:56:12.881734500+00:00\",\n  \"lastScanAt\": 1793561400000,\n  \"buckets\": [],\n  \"daily\": [],\n  \"devices\": [\n    \"local\"\n  ]\n}"
               }
             },
             {
@@ -259,7 +259,133 @@
               "cookie": [],
               "body": {
                 "mode": "raw",
-                "raw": "{\n  \"error\": \"该应用没有订阅记录，无法确定额度周期: codex\",\n  \"code\": \"SUBSCRIPTION_NOT_FOUND\"\n}"
+                "raw": "{\n  \"error\": \"该应用没有订阅记录，无法确定额度周期: codex\",\n  \"code\": \"SUBSCRIPTION_NOT_FOUND\",\n  \"devices\": [\n    \"local\"\n  ]\n}"
+              }
+            }
+          ]
+        },
+        {
+          "name": "多个平台合计 · Claude Code + Codex",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=1&appType=claude,codex",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "1"
+                },
+                {
+                  "key": "appType",
+                  "value": "claude,codex"
+                }
+              ]
+            },
+            "description": "appType 用逗号分隔多个平台，结果按平台合并统计。重复的平台会去重，顺序保持请求里的顺序。"
+          },
+          "response": [
+            {
+              "name": "200 · 两个平台合计",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "key": "Cache-Control",
+                  "value": "no-store"
+                }
+              ],
+              "cookie": [],
+              "body": {
+                "mode": "raw",
+                "raw": "{\n  \"scope\": \"local\",\n  \"appType\": [\n    \"claude\",\n    \"codex\"\n  ],\n  \"apps\": [\n    \"claude\",\n    \"codex\"\n  ],\n  \"model\": null,\n  \"modelFilterBasis\": \"effectivePricingModel\",\n  \"devices\": [\n    \"local\"\n  ],\n  \"days\": 1,\n  \"startDate\": \"2026-11-01\",\n  \"endDate\": \"2026-11-01\",\n  \"range\": {\n    \"start\": \"2026-11-01T00:00:00+08:00\",\n    \"endExclusive\": \"2026-11-02T00:00:00+08:00\",\n    \"timezone\": \"server-local\"\n  },\n  \"groupBy\": \"day\",\n  \"currency\": \"USD\",\n  \"inputTokenSemantics\": \"fresh\",\n  \"requests\": 2,\n  \"inputTokens\": 600,\n  \"outputTokens\": 20,\n  \"cacheReadTokens\": 300,\n  \"cacheWriteTokens\": 10,\n  \"totalTokens\": 930,\n  \"costUsd\": 6.25,\n  \"updatedAt\": \"2026-11-02T05:14:12.881734500+00:00\",\n  \"lastScanAt\": 1793561400000,\n  \"buckets\": [],\n  \"daily\": []\n}"
+              }
+            }
+          ]
+        },
+        {
+          "name": "近 8 周用量 · Claude Code",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/cycles?appType=claude&count=8",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "cycles"
+              ],
+              "query": [
+                {
+                  "key": "appType",
+                  "value": "claude"
+                },
+                {
+                  "key": "count",
+                  "value": "8"
+                }
+              ]
+            },
+            "description": "当前周期 + 前 7 个周期的用量序列，看板画趋势柱状图用。按自然日归集，不会因为周期边界切到归档日而返回 422。"
+          },
+          "response": [
+            {
+              "name": "200 · 周期序列",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "key": "Cache-Control",
+                  "value": "no-store"
+                }
+              ],
+              "cookie": [],
+              "body": {
+                "mode": "raw",
+                "raw": "{\n  \"scope\": \"local\",\n  \"devices\": [\n    \"local\"\n  ],\n  \"appType\": [\n    \"claude\"\n  ],\n  \"apps\": [\n    \"claude\"\n  ],\n  \"model\": null,\n  \"modelsByApp\": null,\n  \"granularity\": \"day\",\n  \"subscription\": {\n    \"name\": \"Claude Max\",\n    \"rule\": {\n      \"startDay\": 4,\n      \"startTime\": \"19:00:00\",\n      \"endDay\": 4,\n      \"endTime\": \"19:00:00\"\n    },\n    \"startDate\": \"2025-11-02\",\n    \"endDate\": \"2027-11-02\"\n  },\n  \"cycles\": [\n    {\n      \"requests\": 4,\n      \"inputTokens\": 400,\n      \"outputTokens\": 80,\n      \"cacheReadTokens\": 0,\n      \"cacheWriteTokens\": 0,\n      \"totalTokens\": 480,\n      \"costUsd\": 4,\n      \"index\": 0,\n      \"start\": \"2026-10-29T19:00:00+08:00\",\n      \"end\": \"2026-11-05T19:00:00+08:00\",\n      \"startDate\": \"2026-10-30\",\n      \"endDate\": \"2026-11-05\",\n      \"complete\": false\n    },\n    {\n      \"requests\": 7,\n      \"inputTokens\": 700,\n      \"outputTokens\": 140,\n      \"cacheReadTokens\": 0,\n      \"cacheWriteTokens\": 0,\n      \"totalTokens\": 840,\n      \"costUsd\": 7,\n      \"index\": -1,\n      \"start\": \"2026-10-22T19:00:00+08:00\",\n      \"end\": \"2026-10-29T19:00:00+08:00\",\n      \"startDate\": \"2026-10-23\",\n      \"endDate\": \"2026-10-29\",\n      \"complete\": true\n    }\n  ],\n  \"updatedAt\": \"2026-11-02T09:32:29.824459800+08:00\",\n  \"lastScanAt\": null\n}"
               }
             }
           ]
@@ -647,6 +773,186 @@
             "description": "offset=-1 表示上一个额度周期。周期边界依然由服务端按订阅规则算好。"
           },
           "response": []
+        },
+        {
+          "name": "多个模型 · 两个平台",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=1&appType=claude,codex&model={{models}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "1"
+                },
+                {
+                  "key": "appType",
+                  "value": "claude,codex"
+                },
+                {
+                  "key": "model",
+                  "value": "{{models}}"
+                }
+              ]
+            },
+            "description": "model 用逗号分隔多个模型，按有效计价模型 ID 精确筛选。平台与模型可以同时指定。"
+          },
+          "response": []
+        },
+        {
+          "name": "指定设备集合 · 本机",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=7&appType=claude&devices=local",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "7"
+                },
+                {
+                  "key": "appType",
+                  "value": "claude"
+                },
+                {
+                  "key": "devices",
+                  "value": "local"
+                }
+              ]
+            },
+            "description": "devices 逗号分隔设备集合，默认只查本机。local 指本机，其余填配对设备的 deviceId。指定配对设备后 scope 变成 multi。"
+          },
+          "response": []
+        },
+        {
+          "name": "按平台分别指定模型",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=1&appType=claude,codex&modelsByApp={{modelsByApp}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "1"
+                },
+                {
+                  "key": "appType",
+                  "value": "claude,codex"
+                },
+                {
+                  "key": "modelsByApp",
+                  "value": "{{modelsByApp}}"
+                }
+              ]
+            },
+            "description": "modelsByApp 是 JSON 字符串，平台 → 模型 ID 数组。映射里的平台必须出现在 appType 里；已选平台没出现在映射中时，该平台的全部模型都参与统计。"
+          },
+          "response": []
+        },
+        {
+          "name": "当前周期 · 按周分组",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/cycle?appType=claude&groupBy=week",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "cycle"
+              ],
+              "query": [
+                {
+                  "key": "appType",
+                  "value": "claude"
+                },
+                {
+                  "key": "groupBy",
+                  "value": "week"
+                }
+              ]
+            },
+            "description": "周期端点的 groupBy 只改变分组方式，不改变周期范围与总量。"
+          },
+          "response": []
         }
       ]
     },
@@ -703,7 +1009,7 @@
               "cookie": [],
               "body": {
                 "mode": "raw",
-                "raw": "{\n  \"error\": \"days 必须为 1–366\",\n  \"code\": \"INVALID_PARAMETERS\"\n}"
+                "raw": "{\n  \"error\": \"days 必须为 1–366\",\n  \"code\": \"INVALID_PARAMETERS\",\n  \"devices\": [\n    \"local\"\n  ]\n}"
               },
               "options": {
                 "raw": {
@@ -767,7 +1073,7 @@
               "cookie": [],
               "body": {
                 "mode": "raw",
-                "raw": "{\n  \"error\": \"查询参数无效\",\n  \"code\": \"INVALID_PARAMETERS\"\n}"
+                "raw": "{\n  \"error\": \"查询参数无效\",\n  \"code\": \"INVALID_PARAMETERS\",\n  \"devices\": [\n    \"local\"\n  ]\n}"
               },
               "options": {
                 "raw": {
@@ -831,7 +1137,7 @@
               "cookie": [],
               "body": {
                 "mode": "raw",
-                "raw": "{\n  \"error\": \"参数重复: days\",\n  \"code\": \"INVALID_PARAMETERS\"\n}"
+                "raw": "{\n  \"error\": \"参数重复: days\",\n  \"code\": \"INVALID_PARAMETERS\",\n  \"devices\": [\n    \"local\"\n  ]\n}"
               },
               "options": {
                 "raw": {
@@ -895,7 +1201,7 @@
               "cookie": [],
               "body": {
                 "mode": "raw",
-                "raw": "{\n  \"error\": \"不支持的 groupBy: year\",\n  \"code\": \"UNSUPPORTED_GROUP_BY\"\n}"
+                "raw": "{\n  \"error\": \"不支持的 groupBy: year\",\n  \"code\": \"UNSUPPORTED_GROUP_BY\",\n  \"devices\": [\n    \"local\"\n  ]\n}"
               },
               "options": {
                 "raw": {
@@ -959,7 +1265,7 @@
               "cookie": [],
               "body": {
                 "mode": "raw",
-                "raw": "{\n  \"error\": \"startDate 不能与 days 同时使用\",\n  \"code\": \"CONFLICTING_TIME_PARAMETERS\"\n}"
+                "raw": "{\n  \"error\": \"startDate 不能与 days 同时使用\",\n  \"code\": \"CONFLICTING_TIME_PARAMETERS\",\n  \"devices\": [\n    \"local\"\n  ]\n}"
               },
               "options": {
                 "raw": {
@@ -1024,7 +1330,7 @@
               "cookie": [],
               "body": {
                 "mode": "raw",
-                "raw": "{\n  \"error\": \"时间必须为带 UTC 偏移的 RFC 3339: 2026-10-31T09:00:00\",\n  \"code\": \"INVALID_PARAMETERS\"\n}"
+                "raw": "{\n  \"error\": \"时间必须为带 UTC 偏移的 RFC 3339: 2026-10-31T09:00:00\",\n  \"code\": \"INVALID_PARAMETERS\",\n  \"devices\": [\n    \"local\"\n  ]\n}"
               },
               "options": {
                 "raw": {
@@ -1088,7 +1394,7 @@
               "cookie": [],
               "body": {
                 "mode": "raw",
-                "raw": "{\n  \"error\": \"不支持的应用标识: not-an-app\",\n  \"code\": \"UNSUPPORTED_APP_TYPE\"\n}"
+                "raw": "{\n  \"error\": \"不支持的应用标识: not-an-app\",\n  \"code\": \"UNSUPPORTED_APP_TYPE\",\n  \"devices\": [\n    \"local\"\n  ]\n}"
               },
               "options": {
                 "raw": {
@@ -1152,7 +1458,7 @@
               "cookie": [],
               "body": {
                 "mode": "raw",
-                "raw": "{\n  \"error\": \"该应用未允许共享\",\n  \"code\": \"APP_NOT_SHARED\"\n}"
+                "raw": "{\n  \"error\": \"该应用未允许共享\",\n  \"code\": \"APP_NOT_SHARED\",\n  \"devices\": [\n    \"local\"\n  ]\n}"
               },
               "options": {
                 "raw": {
@@ -1221,7 +1527,7 @@
               "cookie": [],
               "body": {
                 "mode": "raw",
-                "raw": "{\n  \"error\": \"查询区间截断了仅有日汇总的历史日期，请改用完整日期\",\n  \"code\": \"RANGE_PRECISION_UNAVAILABLE\",\n  \"details\": {\n    \"dates\": [\"2026-10-01\"]\n  }\n}"
+                "raw": "{\n  \"error\": \"查询区间截断了仅有日汇总的历史日期，请改用完整日期\",\n  \"code\": \"RANGE_PRECISION_UNAVAILABLE\",\n  \"details\": {\n    \"dates\": [\n      \"2026-10-01\"\n    ]\n  },\n  \"devices\": [\n    \"local\"\n  ]\n}"
               },
               "options": {
                 "raw": {
@@ -1276,7 +1582,7 @@
               "cookie": [],
               "body": {
                 "mode": "raw",
-                "raw": "{\n  \"error\": \"缺少有效的只读 API 密钥或配对凭证\",\n  \"code\": \"INVALID_API_KEY\"\n}"
+                "raw": "{\n  \"error\": \"缺少有效的只读 API 密钥或配对凭证\",\n  \"code\": \"INVALID_API_KEY\",\n  \"devices\": [\n    \"local\"\n  ]\n}"
               },
               "options": {
                 "raw": {
@@ -1448,10 +1754,316 @@
               "cookie": [],
               "body": {
                 "mode": "raw",
-                "raw": "{\n  \"error\": \"该周期尚未开始: claude\",\n  \"code\": \"CYCLE_NOT_AVAILABLE\"\n}"
+                "raw": "{\n  \"error\": \"该周期尚未开始: claude\",\n  \"code\": \"CYCLE_NOT_AVAILABLE\",\n  \"devices\": [\n    \"local\"\n  ]\n}"
               }
             }
           ]
+        },
+        {
+          "name": "400 · 设备不存在或未启用",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=7&appType=claude&devices=not-a-paired-device",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "7"
+                },
+                {
+                  "key": "appType",
+                  "value": "claude"
+                },
+                {
+                  "key": "devices",
+                  "value": "not-a-paired-device"
+                }
+              ]
+            },
+            "description": "设备必须已配对且启用，否则无法确定它的用量。"
+          },
+          "response": []
+        },
+        {
+          "name": "400 · 应用列表有空段",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=7&appType=claude,",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "7"
+                },
+                {
+                  "key": "appType",
+                  "value": "claude,"
+                }
+              ]
+            },
+            "description": "逗号分隔的列表里不能有空段，空段不会被当成「所有应用」。"
+          },
+          "response": []
+        },
+        {
+          "name": "400 · modelsByApp 需要 appType",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=1&modelsByApp={{modelsByApp}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "1"
+                },
+                {
+                  "key": "modelsByApp",
+                  "value": "{{modelsByApp}}"
+                }
+              ]
+            },
+            "description": "modelsByApp 必须与 appType 一起使用。"
+          },
+          "response": []
+        },
+        {
+          "name": "400 · modelsByApp 与 model 冲突",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=1&appType=claude&model={{model}}&modelsByApp={{modelsByApp}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "1"
+                },
+                {
+                  "key": "appType",
+                  "value": "claude"
+                },
+                {
+                  "key": "model",
+                  "value": "{{model}}"
+                },
+                {
+                  "key": "modelsByApp",
+                  "value": "{{modelsByApp}}"
+                }
+              ]
+            },
+            "description": "model 与 modelsByApp 不能同时使用。"
+          },
+          "response": []
+        },
+        {
+          "name": "400 · modelsByApp 里有未选中的平台",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=1&appType=claude&modelsByApp={\"codex\":[\"m\"]}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "1"
+                },
+                {
+                  "key": "appType",
+                  "value": "claude"
+                },
+                {
+                  "key": "modelsByApp",
+                  "value": "{\"codex\":[\"m\"]}"
+                }
+              ]
+            },
+            "description": "映射里的平台必须出现在 appType 里。"
+          },
+          "response": []
+        },
+        {
+          "name": "400 · 周期序列 count 越界",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/cycles?appType=claude&count=0",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "cycles"
+              ],
+              "query": [
+                {
+                  "key": "appType",
+                  "value": "claude"
+                },
+                {
+                  "key": "count",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "count 必须在 1 到 52 之间。"
+          },
+          "response": []
+        },
+        {
+          "name": "404 · 周期序列没有订阅",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/cycles?appType=codex",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "cycles"
+              ],
+              "query": [
+                {
+                  "key": "appType",
+                  "value": "codex"
+                }
+              ]
+            },
+            "description": "该应用没有订阅记录，算不出周期规则。"
+          },
+          "response": []
         }
       ]
     }
