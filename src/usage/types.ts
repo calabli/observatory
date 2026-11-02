@@ -47,6 +47,7 @@ export interface Dashboard {
 }
 export interface UsageFilters extends LogFilters {
   multiDevice: boolean;
+  deviceIds?: string[];
   page: number;
   pageSize: number;
 }

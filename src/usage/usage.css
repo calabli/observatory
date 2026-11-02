@@ -659,3 +659,12 @@
     padding: 17px 13px;
   }
 }
+#observatory-root .usage-device-select { position: relative; min-width: 130px; }
+#observatory-root .usage-device-select summary { cursor:pointer; list-style:none; padding:9px 30px 9px 12px; border:1px solid var(--border); border-radius:8px; background:var(--card); font-size:13px; position:relative; }
+#observatory-root .usage-device-select summary::-webkit-details-marker { display:none; }
+#observatory-root .usage-device-select summary::after { content:'⌄'; position:absolute; right:12px; top:7px; color:var(--muted); }
+#observatory-root .usage-device-options { position:absolute; z-index:30; top:calc(100% + 5px); left:0; min-width:220px; max-height:300px; overflow:auto; padding:6px; background:var(--card); border:1px solid var(--border); border-radius:9px; box-shadow:0 12px 30px #0004; }
+#observatory-root .usage-device-options label { display:flex; gap:8px; align-items:center; padding:8px; cursor:pointer; font-size:13px; overflow-wrap:anywhere; }
+#observatory-root .usage-device-options label:hover { background:var(--muted-bg, #80808018); border-radius:5px; }
+#observatory-root .usage-device-options button { width:100%; text-align:left; padding:8px; border:0; background:transparent; color:inherit; cursor:pointer; }
+#observatory-root .usage-device-options small { display:block; padding:6px 8px; color:var(--muted); }

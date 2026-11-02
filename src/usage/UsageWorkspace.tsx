@@ -220,6 +220,7 @@ export function UsageWorkspace({
   const [scope, setScope] = useState(
     saved.scope === "multi" ? "multi" : "local",
   );
+  const [selectedDevices, setSelectedDevices] = useState<string[] | null>(null);
   const [range, setRange] = useState<Range>(saved.range ?? "today");
   const [app, setApp] = useState(saved.app ?? "");
   const [model, setModel] = useState(saved.model ?? "");
@@ -285,6 +286,7 @@ export function UsageWorkspace({
     providerName: provider || undefined,
     statusCode: statusCode ? Number(statusCode) : undefined,
     multiDevice: scope === "multi",
+    deviceIds: scope === "multi" ? selectedDevices ?? undefined : undefined,
     page,
     pageSize: size,
   };
@@ -556,6 +558,26 @@ export function UsageWorkspace({
             <option value="all">全部时间</option>
             <option value="custom">自定义时间</option>
           </select>
+          {scope === "multi" && (
+            <details className="usage-device-select">
+              <summary aria-label="选择统计设备">
+                {selectedDevices === null ? "全部设备" : `已选 ${selectedDevices.length} 台设备`}
+              </summary>
+              <div className="usage-device-options">
+                <button type="button" onClick={() => change(() => setSelectedDevices(null))}>全部设备</button>
+                {[{deviceId: "local", deviceName: `${lan.data?.local.deviceName ?? "本机"}（本机）`}, ...(lan.data?.devices.filter(d => d.enabled && d.paired) ?? [])].map(device => {
+                  const all = ["local", ...(lan.data?.devices.filter(d => d.enabled && d.paired).map(d => d.deviceId) ?? [])];
+                  const current = selectedDevices ?? all;
+                  const checked = current.includes(device.deviceId);
+                  return <label key={device.deviceId}><input type="checkbox" checked={checked} onChange={() => change(() => {
+                    const next = checked ? current.filter(id => id !== device.deviceId) : [...current, device.deviceId];
+                    if (next.length) setSelectedDevices(next);
+                  })} /> <span>{device.deviceName}</span></label>;
+                })}
+                <small>至少选择一台设备</small>
+              </div>
+            </details>
+          )}
           <AppSelect
             sources={sources}
             value={app}
@@ -1172,6 +1194,7 @@ export function UsageWorkspace({
         <RequestDetail
           id={detail}
           multi={scope === "multi"}
+          deviceIds={selectedDevices ?? undefined}
           close={() => setDetail(null)}
         />
       )}
@@ -1706,18 +1729,21 @@ function StatsTable({
 function RequestDetail({
   id,
   multi,
+  deviceIds,
   close,
 }: {
   id: string;
   multi: boolean;
+  deviceIds?: string[];
   close: () => void;
 }) {
   const data = useQuery({
-    queryKey: ["usage", "detail", multi, id],
+    queryKey: ["usage", "detail", multi, deviceIds, id],
     queryFn: () =>
       usageCall<RequestLog | null>("request_detail", {
         requestId: id,
         multiDevice: multi,
+        deviceIds,
       }),
     retry: false,
   });

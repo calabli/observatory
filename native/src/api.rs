@@ -31,6 +31,7 @@ struct Query {
     #[serde(flatten)]
     filters: LogFilters,
     multi_device: bool,
+    device_ids: Option<Vec<String>>,
     page: u32,
     page_size: u32,
     request_id: String,
@@ -208,6 +209,16 @@ impl UsageBackend {
             Ok(self.db.clone())
         }
     }
+    fn query_selected_database(&self, q: &Query) -> Result<Arc<Database>, AppError> {
+        if !q.multi_device { return Ok(self.db.clone()); }
+        let Some(ids) = &q.device_ids else { return self.query_database(true); };
+        if ids.is_empty() { return Err(AppError::InvalidInput("请至少选择一台设备".into())); }
+        let local = ids.iter().any(|id| id == "local");
+        let peers: Vec<String> = ids.iter().filter(|id| id.as_str() != "local").cloned().collect();
+        if local && peers.is_empty() { return Ok(self.db.clone()); }
+        if local { lan_usage::projection::database_for_peers(&self.db, &peers) }
+        else { lan_usage::projection::database_for_peers_only(&self.db, &peers) }
+    }
     pub async fn call(&self, op: &str, args: Value) -> Result<Value, AppError> {
         match op {
             "subscriptions_get" => {
@@ -296,7 +307,7 @@ impl UsageBackend {
             "dashboard" => {
                 let q: Query = serde_json::from_value(args)
                     .map_err(|e| AppError::InvalidInput(e.to_string()))?;
-                let db = self.query_database(q.multi_device)?;
+                let db = self.query_selected_database(&q)?;
                 let f = &q.filters;
                 let (s, e, a, p, m) = (
                     f.start_date,
@@ -337,7 +348,7 @@ impl UsageBackend {
             "request_detail" => {
                 let q: Query = serde_json::from_value(args)
                     .map_err(|e| AppError::InvalidInput(e.to_string()))?;
-                let db = self.query_database(q.multi_device)?;
+                let db = self.query_selected_database(&q)?;
                 to_json(db.get_request_detail(&q.request_id)?)
             }
             "sources_save" => {

@@ -325,6 +325,15 @@ async fn peer_snapshots_support_filters_replace_and_disabled_devices() {
     assert_eq!(all["summary"]["totalRequests"], 2);
     assert_eq!(only_peer["summary"]["totalRequests"], 1);
     assert_eq!(only_peer["summary"]["totalCost"], "2.000000");
+    let local_only = tray_backend.call("dashboard", json!({"multiDevice":true,"deviceIds":["local"]})).await.unwrap();
+    let peer_only_dashboard = tray_backend.call("dashboard", json!({"multiDevice":true,"deviceIds":[info.device_id]})).await.unwrap();
+    let both = tray_backend.call("dashboard", json!({"multiDevice":true,"deviceIds":["local",info.device_id]})).await.unwrap();
+    assert_eq!(local_only["summary"]["totalRequests"], 1);
+    assert_eq!(local_only["summary"]["totalCost"], "1.000000");
+    assert_eq!(peer_only_dashboard["summary"]["totalCost"], "2.000000");
+    assert_eq!(both["summary"]["totalRequests"], 2);
+    assert!(tray_backend.call("dashboard", json!({"multiDevice":true,"deviceIds":[]})).await.is_err());
+
     local.execute_batch(&format!("UPDATE lan_devices SET last_sync_at = NULL WHERE device_id = '{}';", info.device_id)).unwrap();
     assert_eq!(lan_usage::projection::database_for_peer(&local, &info.device_id).unwrap().get_usage_summary(None, None, None, None, None).unwrap().total_requests, 1);
     let cached_total = lan_usage::projection::database(&local).unwrap();
