@@ -297,3 +297,12 @@ test('billing quota windows preserve gaps in the configured rule', () => {
  assert.equal(rows.length,2);
  assert.ok(rows[0].end<rows[1].start);
 });
+
+const {aggregateIndependently} = await loadModule('../src/subscriptions/aggregate.ts');
+test('weekly aggregation preserves other periods when one request fails', async () => {
+  const error = new Error('precision unavailable');
+  const rows = await aggregateIndependently([1,2,3], async (n) => { if (n === 2) throw error; return n * 10; });
+  assert.deepEqual(rows.map(r => r.value), [10,null,30]);
+  assert.equal(rows[1].error, error);
+  assert.equal(rows[2].error, null);
+});

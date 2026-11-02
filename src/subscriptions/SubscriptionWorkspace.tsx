@@ -29,6 +29,7 @@ import {
   type WeeklyRule,
 } from "./cycles";
 import { formatSubscriptionPrice } from "./format";
+import { aggregateIndependently } from "./aggregate";
 import { filterAndSort } from "./list";
 import "./subscriptions.css";
 
@@ -392,15 +393,12 @@ export function SubscriptionWorkspace() {
     enabled: mode === "billing" && !!item && !billingWeeks.error && billingWeeks.windows.length > 0,
     queryFn: async () => {
       if (!item) return [];
-      const rows: { start: Date; end: Date; cycleStart: Date; cycleEnd: Date; usage: Summary }[] = [];
-      for (const window of billingWeeks.windows) {
-        const usage = await usageCall<Summary>("subscription_usage", {
+      return aggregateIndependently(billingWeeks.windows, (window) =>
+        usageCall<Summary>("subscription_usage", {
           startTime: iso(window.start), endTime: iso(window.end), appType: item.appType,
           devices: deviceScope, dailyLimit: 0,
-        });
-        rows.push({ ...window, usage });
-      }
-      return rows;
+        }),
+      );
     },
     retry: false,
   });
@@ -905,16 +903,21 @@ export function SubscriptionWorkspace() {
                     {billingWeeks.error || weeklyRows.error ? (
                       <div className="usage-error" role="alert">周额度聚合失败：{billingWeeks.error || friendlyError(weeklyRows.error)}</div>
                     ) : weeklyRows.isFetching ? <p className="muted">正在汇总周额度…</p> : !weeklyRows.data?.length ? <p className="muted">当前账期暂无已开始的额度周期</p> : (
-                      <div className="sp-billing-week-list">{weeklyRows.data.map((row) => (
-                        <div className="sp-billing-week-row" key={row.cycleStart.toISOString()}>
-                          <div><strong>{display(row.start)} — {display(row.end)}</strong><small>{row.start.getTime() !== row.cycleStart.getTime() || row.end.getTime() !== row.cycleEnd.getTime() ? "账期内部分周期" : "完整额度周期"}</small></div>
-                          <div><strong>{formatTokens(row.usage.totalTokens)}</strong><small>Token</small></div>
-                          <div><strong>{formatMoney(row.usage.costUsd)}</strong><small>估算费用</small></div>
-                          <div><strong>{row.usage.requests.toLocaleString()}</strong><small>请求</small></div>
-                        </div>
-                      ))}</div>
+                      <div className="sp-billing-week-list">{weeklyRows.data.map(({ window: row, value: usage, error }) => {
+                        const parsed = error ? parseUsageError(error) : null;
+                        const dates = Array.isArray(parsed?.details?.dates) ? parsed.details.dates.filter((date): date is string => typeof date === "string") : [];
+                        const reason = parsed?.code === "RANGE_PRECISION_UNAVAILABLE"
+                          ? `历史数据仅有日汇总，无法精确拆分${dates.length ? `（${dates.join("、")}）` : ""}`
+                          : parsed?.message || "该周期查询失败";
+                        return <div className="sp-billing-week-row" key={row.cycleStart.toISOString()}>
+                          <div><strong>{display(row.start)} — {display(row.end)}</strong><small>{row.start.getTime() !== row.cycleStart.getTime() || row.end.getTime() !== row.cycleEnd.getTime() ? "账期内部分周期" : "完整额度周期"}</small>{error != null && <small role="alert">{reason}</small>}</div>
+                          <div><strong>{usage ? formatTokens(usage.totalTokens) : "—"}</strong><small>Token</small></div>
+                          <div><strong>{usage ? formatMoney(usage.costUsd) : "—"}</strong><small>估算费用</small></div>
+                          <div><strong>{usage ? usage.requests.toLocaleString() : "—"}</strong><small>请求</small></div>
+                        </div>;
+                      })}</div>
                     )}
-                    <p className="hint">按当前订阅的额度规则统计；规则存在空档时，周周期之和可能小于账期总量。远端数据以最近同步快照为准。</p>
+                    <p className="hint">按当前订阅的额度规则统计；无法精确拆分的周期显示为“—”，其他周期仍可查看。规则存在空档时，周周期之和可能小于账期总量。远端数据以最近同步快照为准。</p>
                   </section>
                 )}
                 <section className="panel sp-chart">
