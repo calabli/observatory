@@ -370,3 +370,19 @@ X-API-Key: 在管理设备中生成的只读密钥
 ```
 
 不填 `devices` 仍只查询本机；`all` 必须单独使用，不能与 `local` 或设备 ID 混用。远端使用最近同步到本机的快照，未同步成功的设备不保证具有最新数据。汇总接口的 `devices` 字段列出实际参与的设备 ID。
+
+### 多个前缀与精确模型混合
+
+`POST /api/v1/dashboard/models` 可同时提供 `modelIds`（精确模型 ID 数组）和 `modelPrefixes`（前缀数组）。任一条件匹配即可，重复命中只统计一次；前缀的英文字母不区分大小写，精确 ID 继续区分大小写。只传 `modelPrefixes` 也可，两个数组都为空或未传时仍只查 `platformCode` 的所有模型。
+
+```json
+{"platformCode":"mcode","modelIds":["exact-model-id"],"modelPrefixes":["minimax","deepseek"],"devices":"all"}
+```
+
+两个数组各最多 50 项；前缀不能是空字符串。原来的单数 `modelPrefix` 仍可单独使用，为兼容旧行为，不能与非空 `modelIds` 或 `modelPrefixes` 同时传入。返回的 `modelIds` 和 `modelPrefixes` 分别反映去重后的输入；无任何模型匹配时用量为零。
+
+### 普通汇总：模型前缀与全部历史
+
+`GET /api/v1/usage/summary?allTime=true&modelPrefix=deepseek&devices=all` 查询本机及所有已配对、已启用设备上允许共享平台中，以 `deepseek` 开头的有效计价模型的全部历史；不依赖订阅。前缀匹配忽略 ASCII 字母大小写。`allTime=true` 从所选设备和允许查询的平台最早记录所在本地日起，统计到服务端当前本地日的结束，不限制 366 天。无匹配模型返回零用量。
+
+`allTime=true` 不能与 `days`、`startDate`、`endDate`、`startTime`、`endTime` 混用；`modelPrefix` 不能与 `model` 或 `modelsByApp` 混用。两项不传时维持原有默认查询最近 7 天和原有精确模型筛选。响应中的 `allTime` 和 `modelPrefix` 表示请求采用的条件。远端数据为最近一次成功同步到本机的快照；完整历史的 `daily` 数组可能较大。

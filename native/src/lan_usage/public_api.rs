@@ -150,6 +150,8 @@ impl From<AppError> for ApiError {
 pub struct SummaryQuery {
     /// 最近 N 个日历日（1–366），含结束日在内。
     pub days: Option<u32>,
+    /// 查询从最早记录至今的全部历史。
+    pub all_time: Option<bool>,
     /// 结束日期 `YYYY-MM-DD`，默认服务器今天。
     pub end_date: Option<String>,
     /// 开始日期 `YYYY-MM-DD`，两端都包含。不能与 `days` 同时使用。
@@ -162,6 +164,8 @@ pub struct SummaryQuery {
     pub app_type: Option<String>,
     /// 按有效计价模型精确筛选，口径与页面一致。
     pub model: Option<String>,
+    /// 有效计价模型 ID 的前缀，ASCII 字母忽略大小写。
+    pub model_prefix: Option<String>,
     /// JSON object mapping selected app IDs to their selected model IDs.
     pub models_by_app: Option<String>,
     /// 分组方式：`day`（默认）、`week`、`month`。
@@ -1069,7 +1073,7 @@ pub(crate) fn local_summary(db: &Database, query: SummaryQuery) -> Result<Value,
     summary_inner(db, query, false)
 }
 
-fn summary_inner(db: &Database, query: SummaryQuery, enforce_share: bool) -> Result<Value, ApiError> {
+fn summary_inner(db: &Database, mut query: SummaryQuery, enforce_share: bool) -> Result<Value, ApiError> {
     let shared = if enforce_share { super::identity::share_settings(db).shared_app_types } else { super::default_shared_app_types() };
 
     // 应用筛选：指定的应用必须受支持且已勾选共享；不指定时只合计允许共享的应用。
@@ -1078,6 +1082,24 @@ fn summary_inner(db: &Database, query: SummaryQuery, enforce_share: bool) -> Res
         None => shared.clone(),
     };
 
+    let prefix = query.model_prefix.take();
+    if prefix.is_some() && (query.model.is_some() || query.models_by_app.is_some()) {
+        return Err(ApiError::invalid("modelPrefix 不能与 model 或 modelsByApp 同时使用"));
+    }
+    if query.all_time == Some(true) && (query.days.is_some() || query.start_date.is_some() || query.end_date.is_some() || query.start_time.is_some() || query.end_time.is_some()) {
+        return Err(ApiError::conflicting("allTime 不能与其他时间参数混用"));
+    }
+    let devices = parse_device_selection(db, query.devices.as_deref())?;
+    let projection = if devices.is_local_only() { None } else if devices.local {
+        Some(super::projection::database_for_peers(db, &devices.peers)?)
+    } else { Some(super::projection::database_for_peers_only(db, &devices.peers)?) };
+    let source: &Database = projection.as_deref().unwrap_or(db);
+    let mut no_match = false;
+    if let Some(value) = prefix.as_deref() {
+        let ids = prefix_models(db, &apps, query.devices.as_deref(), value)?;
+        no_match = ids.is_empty();
+        query.model = Some(if no_match { format!("__observatory_no_match_{}", uuid::Uuid::new_v4()) } else { ids.join(",") });
+    }
     let models: Option<Vec<String>> = match query.model.as_deref() {
         Some(value) => Some(parse_model_list(value)?),
         None => None,
@@ -1100,25 +1122,19 @@ fn summary_inner(db: &Database, query: SummaryQuery, enforce_share: bool) -> Res
         None => GroupBy::Day,
     };
 
-    let range = resolve_range(&query, Local::now())?;
+    let range = if query.all_time == Some(true) {
+        let today = Local::now().date_naive();
+        let mut first = today;
+        for app in &apps {
+            if let Some(value) = source.get_first_usage_date(Some(app), None, None)? {
+                let date = parse_date(&value)?;
+                if date < first { first = date; }
+            }
+        }
+        let tomorrow = today.succ_opt().ok_or_else(|| ApiError::date_range("日期超出范围"))?;
+        ResolvedRange { start_ts: local_midnight(first)?.timestamp(), end_ts_exclusive: local_midnight(tomorrow)?.timestamp(), first_date:first, last_date:today }
+    } else { resolve_range(&query, Local::now())? };
     let partial_dates = partial_local_dates(&range)?;
-
-    // 设备集合：默认只查本机；指定配对设备时走投影，把那些设备的用量并进来。
-    let devices = parse_device_selection(db, query.devices.as_deref())?;
-    let projection = if devices.is_local_only() {
-        None
-    } else if devices.local {
-        Some(super::projection::database_for_peers(db, &devices.peers)?)
-    } else {
-        Some(super::projection::database_for_peers_only(
-            db,
-            &devices.peers,
-        )?)
-    };
-    let source: &Database = match &projection {
-        Some(projection) => projection.as_ref(),
-        None => db,
-    };
 
     let app_refs: Vec<&str> = apps.iter().map(|value| value.as_str()).collect();
     let model_ref = models.as_deref();
@@ -1234,6 +1250,9 @@ fn summary_inner(db: &Database, query: SummaryQuery, enforce_share: bool) -> Res
     result["groupBy"] = json!(group.label());
     result["currency"] = json!("USD");
     result["inputTokenSemantics"] = json!("fresh");
+    if let Some(value) = prefix { result["modelPrefix"] = json!(value.trim()); }
+    if no_match { result["model"] = json!([]); }
+    if query.all_time == Some(true) { result["allTime"] = json!(true); }
     result["updatedAt"] = json!(chrono::Utc::now().to_rfc3339());
     result["lastScanAt"] = json!(crate::services::session_usage::last_sync_completed_at());
     result["buckets"] = json!(buckets);
@@ -1374,6 +1393,7 @@ pub fn dashboard_usage(db: &Database, mut query: DashboardQuery) -> Result<Value
 pub struct DashboardModelsQuery {
     pub platform_code: String,
     #[serde(default)] pub model_prefix: Option<String>,
+    #[serde(default)] pub model_prefixes: Vec<String>,
     #[serde(default)] pub model_ids: Vec<String>,
     #[serde(default)] pub billing_offset: i32,
     #[serde(default)] pub quota_offset: i32,
@@ -1392,18 +1412,47 @@ pub fn dashboard_models(db: &Database, query: DashboardModelsQuery) -> Result<Va
         }
         if !models.iter().any(|v| v == trimmed) { models.push(trimmed.to_string()); }
     }
-    if query.model_prefix.is_some() && !models.is_empty() { return Err(ApiError::invalid("modelPrefix 不能与 modelIds 同时使用")); }
+    if query.model_prefixes.len() > 50 { return Err(ApiError::invalid("modelPrefixes 最多 50 项")); }
+    // Preserve the original single-prefix contract; plural prefixes can be
+    // combined with exact IDs using OR semantics.
+    if query.model_prefix.is_some() && (!models.is_empty() || !query.model_prefixes.is_empty()) {
+        return Err(ApiError::invalid("modelPrefix 不能与 modelIds 或 modelPrefixes 同时使用"));
+    }
+    let mut prefixes = Vec::new();
+    for item in &query.model_prefixes {
+        let prefix = item.trim();
+        if prefix.is_empty() || prefix.len() > 256 { return Err(ApiError::invalid("模型前缀不能为空或超过 256 字节")); }
+        if !prefixes.iter().any(|v: &String| v.eq_ignore_ascii_case(prefix)) { prefixes.push(prefix.to_owned()); }
+    }
     let mut apps = vec![platform];
-    if !models.is_empty() || query.model_prefix.is_some() {
+    if !models.is_empty() || query.model_prefix.is_some() || !prefixes.is_empty() {
         for app in shared { if !apps.contains(&app) { apps.push(app); } }
     }
+    let mut resolved = models.clone();
+    for prefix in &prefixes {
+        for id in prefix_models(db, &apps, query.devices.as_deref(), prefix)? {
+            if !resolved.contains(&id) { resolved.push(id); }
+        }
+    }
+    let no_matches = !prefixes.is_empty() && resolved.is_empty();
+    if no_matches { resolved.push(format!("__observatory_no_match_{}", uuid::Uuid::new_v4())); }
     let mut value = dashboard_usage(db, DashboardQuery {
         app_type: apps.join(","),
         model_prefix: query.model_prefix,
         billing_offset: query.billing_offset, quota_offset: query.quota_offset,
-        model: if models.is_empty() { None } else { Some(models.join(",")) },
+        model: if resolved.is_empty() { None } else { Some(resolved.join(",")) },
         models_by_app: None, devices: query.devices,
     })?;
+    if no_matches {
+        fn clean(value: &mut Value) {
+            if let Some(obj) = value.as_object_mut() {
+                if obj.get("model").and_then(Value::as_array).is_some_and(|v| v.iter().any(|v| v.as_str().is_some_and(|s| s.starts_with("__observatory_no_match_")))) { obj.insert("model".into(), json!([])); }
+                for child in obj.values_mut() { clean(child); }
+            } else if let Some(items) = value.as_array_mut() { for child in items { clean(child); } }
+        }
+        clean(&mut value);
+    }
+    if !prefixes.is_empty() { value["modelPrefixes"] = json!(prefixes); }
     value["modelIds"] = json!(models);
     Ok(value)
 }

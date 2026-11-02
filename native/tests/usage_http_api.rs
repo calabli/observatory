@@ -2108,11 +2108,49 @@ async fn dashboard_model_prefix_matches_case_insensitively_without_changing_exac
     assert_eq!(one["billingTotal"]["totalTokens"],300);
     let all:Value=call("/api/v1/dashboard/models",json!({"platformCode":"mcode","modelPrefix":"minimax"})).await.unwrap().json().await.unwrap();
     assert_eq!(all["billingTotal"]["totalTokens"],600);
+    let combined:Value=call("/api/v1/dashboard/models",json!({"platformCode":"mcode","modelIds":["MiniMax-M3","other"],"modelPrefixes":["mini","MINIMAX","other"]})).await.unwrap().json().await.unwrap();
+    assert_eq!(combined["billingTotal"]["totalTokens"],1100);
+    let zero:Value=call("/api/v1/dashboard/models",json!({"platformCode":"mcode","modelPrefixes":["no-such-model","not-found"]})).await.unwrap().json().await.unwrap();
+    assert_eq!(zero["billingTotal"]["totalTokens"],0);
+    assert_eq!(call("/api/v1/dashboard/models",json!({"platformCode":"mcode","modelPrefixes":[""]})).await.unwrap().status(),400);
+
     let empty:Value=call("/api/v1/dashboard/usage",json!({"appType":"mcode","modelPrefix":"no-such-model"})).await.unwrap().json().await.unwrap();
     assert_eq!(empty["billingTotal"]["totalTokens"],0);
     let original:Value=call("/api/v1/dashboard/usage",json!({"appType":"mcode","model":"MiniMax-M3"})).await.unwrap().json().await.unwrap();
     assert_eq!(original["billingTotal"]["totalTokens"],100);
     assert_eq!(call("/api/v1/dashboard/usage",json!({"appType":"mcode","modelPrefix":""})).await.unwrap().status(),400);
     assert_eq!(call("/api/v1/dashboard/usage",json!({"appType":"mcode","modelPrefix":"mini","model":"other"})).await.unwrap().status(),400);
+    handle.stop();
+}
+
+#[tokio::test]
+async fn summary_all_time_prefix_accepts_long_history_and_preserves_defaults() {
+    let db=Arc::new(Database::memory().unwrap());
+    let old=today()-Duration::days(400);
+    insert_rollup(&db, old, "claude", "DeepSeek-old", 2, 100, 10, "1.00");
+    insert_rollup(&db, old, "codex", "deepseek-new", 3, 200, 20, "2.00");
+    insert_rollup(&db, old, "claude", "other", 4, 500, 0, "3.00");
+    let handle=server::start(db.clone(),0).await.unwrap();
+    let key=public_api::rotate_key(&db).unwrap();
+    let http=reqwest::Client::builder().no_proxy().build().unwrap();
+    let url=format!("http://127.0.0.1:{}/api/v1/usage/summary",handle.port);
+    let call=|q:&str| http.get(format!("{url}?{q}")).header("X-API-Key",&key).send();
+    let response=call("allTime=true&modelPrefix=deepseek&devices=all&groupBy=month").await.unwrap();
+    assert_eq!(response.status(),200);
+    let body:Value=response.json().await.unwrap();
+    assert_eq!(body["totalTokens"],330);
+    assert_eq!(body["requests"],5);
+    assert_eq!(body["allTime"],true);
+    assert_eq!(body["modelPrefix"],"deepseek");
+    assert!(body["days"].as_u64().unwrap()>366);
+    let none:Value=call("allTime=true&modelPrefix=not-found").await.unwrap().json().await.unwrap();
+    assert_eq!(none["totalTokens"],0);
+    assert_eq!(none["model"],json!([]));
+    let default:Value=call("modelPrefix=deepseek").await.unwrap().json().await.unwrap();
+    assert_eq!(default["totalTokens"],0);
+    assert_eq!(default["days"],7);
+    assert_eq!(call("allTime=true&days=7").await.unwrap().status(),400);
+    assert_eq!(call("modelPrefix=deepseek&model=other").await.unwrap().status(),400);
+    assert_eq!(call("modelPrefix=").await.unwrap().status(),400);
     handle.stop();
 }

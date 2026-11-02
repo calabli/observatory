@@ -334,6 +334,11 @@ async fn peer_snapshots_support_filters_replace_and_disabled_devices() {
     assert_eq!(both["summary"]["totalRequests"], 2);
     let all_http = lan_usage::public_api::summary(&local, lan_usage::public_api::SummaryQuery { start_time:Some("2026-10-26T00:00:00Z".into()), end_time:Some("2026-10-27T00:00:00Z".into()), app_type:Some("dsh".into()), devices:Some("all".into()), ..Default::default() }).unwrap();
     assert_eq!(all_http["requests"], 2);
+    let all_history = lan_usage::public_api::summary(&local, lan_usage::public_api::SummaryQuery { all_time:Some(true), model_prefix:Some("fixture".into()), app_type:Some("dsh".into()), devices:Some("all".into()), ..Default::default() }).unwrap();
+    assert_eq!(all_history["requests"], 2);
+    let no_match = lan_usage::public_api::summary(&local, lan_usage::public_api::SummaryQuery { all_time:Some(true), model_prefix:Some("missing".into()), app_type:Some("dsh".into()), devices:Some("all".into()), ..Default::default() }).unwrap();
+    assert_eq!(no_match["requests"], 0);
+
     assert!(all_http["devices"].as_array().unwrap().contains(&json!(info.device_id)));
     assert!(lan_usage::public_api::summary(&local, lan_usage::public_api::SummaryQuery { days:Some(1), devices:Some("all,local".into()), ..Default::default() }).is_err());
 

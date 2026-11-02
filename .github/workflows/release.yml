@@ -36,7 +36,7 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: '观测台 v__VERSION__'
-          releaseBody: '用量接口支持 devices=all，汇总本机和全部已配对、已启用设备；默认仍只查询本机。macOS 构建未公证。'
+          releaseBody: '普通用量汇总支持模型前缀、全部历史和全部设备；看板接口支持多个模型前缀与精确模型 ID 混合筛选。macOS 构建未公证。'
           releaseDraft: true
           prerelease: false
           assetNamePattern: 'Observatory-[version]-[platform]-[arch][setup][ext]'
