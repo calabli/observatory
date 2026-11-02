@@ -12,7 +12,7 @@ use crate::services::sql_helpers::{
 use chrono::{Local, NaiveDate, TimeZone, Timelike};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
 use std::sync::LazyLock;
 
@@ -2662,6 +2662,42 @@ fn app_type_in_list(apps: &[&str]) -> String {
         .join(", ")
 }
 
+/// 把模型标识列表拼成 `IN (...)` 片段。
+///
+/// 与 [`app_type_in_list`] 同样的转义规则：单引号翻倍，避免拼进 SQL。
+fn model_in_list(models: &[String]) -> String {
+    models
+        .iter()
+        .map(|value| format!("'{}'", value.replace('\'', "''")))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// If a platform has no entry in the map, all of its models are included.
+fn app_model_filter(
+    alias: &str,
+    apps: &[&str],
+    models: Option<&[String]>,
+    by_app: Option<&BTreeMap<String, Vec<String>>>,
+) -> String {
+    if let Some(by_app) = by_app {
+        let parts: Vec<String> = apps.iter().map(|app| {
+            let app_condition = format!("{alias}.app_type = '{}'", app.replace('\'', "''"));
+            match by_app.get(*app) {
+                Some(list) => format!("({app_condition} AND {} IN ({}))", effective_model_sql(alias), model_in_list(list)),
+                None => format!("({app_condition})"),
+            }
+        }).collect();
+        format!("({})", parts.join(" OR "))
+    } else {
+        let app_condition = format!("{alias}.app_type IN ({})", app_type_in_list(apps));
+        match models.filter(|m| !m.is_empty()) {
+            Some(list) => format!("{app_condition} AND {} IN ({})", effective_model_sql(alias), model_in_list(list)),
+            None => app_condition,
+        }
+    }
+}
+
 /// 只读用量查询：一次取回区间内「明细 + 日汇总」的按本地日期聚合结果。
 ///
 /// 与 [`Database::get_daily_trends`] 同一口径：同一条跨源去重过滤、同一套缓存
@@ -2677,12 +2713,12 @@ pub(crate) fn daily_usage_rows(
     start_ts: i64,
     end_ts_exclusive: i64,
     apps: &[&str],
-    model: Option<&str>,
+    models: Option<&[String]>,
+    models_by_app: Option<&BTreeMap<String, Vec<String>>>,
 ) -> Result<Vec<DailyUsageRow>, AppError> {
     if apps.is_empty() || end_ts_exclusive <= start_ts {
         return Ok(Vec::new());
     }
-    let app_list = app_type_in_list(apps);
 
     let mut detail_conditions = vec![effective_usage_log_filter_for_range(
         conn,
@@ -2690,12 +2726,8 @@ pub(crate) fn daily_usage_rows(
         Some(start_ts),
         Some(end_ts_exclusive - 1),
     )?];
-    detail_conditions.push(format!("l.app_type IN ({app_list})"));
-    let mut detail_params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
-    if let Some(model) = model {
-        detail_conditions.push(format!("{} = ?3", effective_model_sql("l")));
-        detail_params.push(Box::new(model.to_string()));
-    }
+    detail_conditions.push(app_model_filter("l", apps, models, models_by_app));
+    let detail_params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
 
     let fresh_input = fresh_input_sql("l");
     let detail_sql = format!(
@@ -2762,14 +2794,9 @@ pub(crate) fn daily_usage_rows(
         if let Some(end) = &rollup_bounds.end {
             rollup_conditions.push(format!("r.date <= ?{rollup_index}"));
             rollup_params.push(Box::new(end.clone()));
-            rollup_index += 1;
         }
     }
-    rollup_conditions.push(format!("r.app_type IN ({app_list})"));
-    if let Some(model) = model {
-        rollup_conditions.push(format!("{} = ?{rollup_index}", effective_model_sql("r")));
-        rollup_params.push(Box::new(model.to_string()));
-    }
+    rollup_conditions.push(app_model_filter("r", apps, models, models_by_app));
     let rollup_where = format!("WHERE {}", rollup_conditions.join(" AND "));
 
     let fresh_input_rollup = fresh_input_sql("r");
@@ -2841,7 +2868,8 @@ pub(crate) fn rollup_dates(
     conn: &Connection,
     dates: &[NaiveDate],
     apps: &[&str],
-    model: Option<&str>,
+    models: Option<&[String]>,
+    models_by_app: Option<&BTreeMap<String, Vec<String>>>,
 ) -> Result<Vec<String>, AppError> {
     if dates.is_empty() || apps.is_empty() {
         return Ok(Vec::new());
@@ -2851,25 +2879,17 @@ pub(crate) fn rollup_dates(
         .map(|date| format!("'{}'", date.format("%Y-%m-%d")))
         .collect::<Vec<_>>()
         .join(", ");
-    let app_list = app_type_in_list(apps);
 
-    let mut conditions = vec![
+    let conditions = vec![
         format!("r.date IN ({date_list})"),
-        format!("r.app_type IN ({app_list})"),
+        app_model_filter("r", apps, models, models_by_app),
     ];
-    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
-    if let Some(model) = model {
-        conditions.push(format!("{} = ?", effective_model_sql("r")));
-        params.push(Box::new(model.to_string()));
-    }
     let where_clause = format!("WHERE {}", conditions.join(" AND "));
     let sql = format!(
         "SELECT DISTINCT r.date FROM usage_daily_rollups r {where_clause} ORDER BY r.date ASC"
     );
     let mut statement = conn.prepare(&sql)?;
-    let param_refs: Vec<&dyn rusqlite::ToSql> =
-        params.iter().map(|param| param.as_ref()).collect();
-    let mapped = statement.query_map(param_refs.as_slice(), |row| row.get::<_, String>(0))?;
+    let mapped = statement.query_map([], |row| row.get::<_, String>(0))?;
     let mut dates = Vec::new();
     for row in mapped {
         dates.push(row?);

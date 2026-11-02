@@ -27,7 +27,7 @@ jobs:
       - run: npm test
       - run: npm run typecheck
       - name: Verify pairing and multi-device scans
-        run: cargo test --manifest-path native/Cargo.toml --test pairing_codes --test scan_jobs --test lan_pair_scan --test lan_storage --test usage_http_api --locked
+        run: cargo test --manifest-path native/Cargo.toml --test pairing_codes --test scan_jobs --test lan_pair_scan --test lan_storage --test usage_http_api --test subscriptions --locked
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -36,7 +36,7 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: '观测台 v__VERSION__'
-          releaseBody: '用量 HTTP 接口新增日期区间、秒级时间区间、模型筛选，以及按天/周/月聚合。返回总 Token、估算费用、请求数和分组数据，保留 v0.1.30 字段兼容。新增 Postman 集合与请求验证，历史日汇总无法精确拆分时明确返回 422。接口仅查询本机允许共享的数据，使用方式见 docs/只读用量HTTP接口.md。局域网使用明文通信。macOS 构建未公证。'
+          releaseBody: '新增订阅与额度管理、当前及历史订阅周期查询；用量接口支持多平台、按平台筛选模型、按天周月聚合和多设备查询。订阅周期以第一个平台为准。详见 docs/只读用量HTTP接口.md。macOS 构建未公证。'
           releaseDraft: true
           prerelease: false
           assetNamePattern: 'Observatory-[version]-[platform]-[arch][setup][ext]'

@@ -4,6 +4,43 @@ declare global {
     __TAURI_INTERNALS__?: unknown;
   }
 }
+/** 结构化错误：保留稳定错误码与细节，供界面按类型分别处理。 */
+export type UsageError = {
+  code: string;
+  message: string;
+  details?: Record<string, unknown>;
+};
+const ENVELOPE = "observatoryError";
+/**
+ * 解开 Rust 侧的结构化错误信封。
+ *
+ * `usage_call` 的错误通道是纯字符串，所以带 `code` / `details` 的错误会被
+ * 编码成 `{"observatoryError":{...}}` 传过来。普通错误消息按原样返回，
+ * `code` 为空串。
+ */
+export function parseUsageError(error: unknown): UsageError {
+  const raw = error instanceof Error ? error.message : String(error ?? "");
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && ENVELOPE in parsed) {
+      const body = (parsed as Record<string, unknown>)[ENVELOPE];
+      if (body && typeof body === "object") {
+        const record = body as Record<string, unknown>;
+        return {
+          code: typeof record.code === "string" ? record.code : "",
+          message: typeof record.error === "string" ? record.error : raw,
+          details:
+            record.details && typeof record.details === "object"
+              ? (record.details as Record<string, unknown>)
+              : undefined,
+        };
+      }
+    }
+  } catch {
+    // 普通错误消息，不是结构化信封。
+  }
+  return { code: "", message: raw };
+}
 export async function usageCall<T>(op: string, args: unknown = {}): Promise<T> {
   if (window.__TAURI_INTERNALS__) {
     const { invoke } = await import("@tauri-apps/api/core");

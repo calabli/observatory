@@ -1,6 +1,7 @@
 export type Page =
   | "overview"
   | "usage"
+  | "subscriptions"
   | "agents"
   | "performance"
   | "network"

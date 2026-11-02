@@ -58,6 +58,7 @@ pub async fn start_with_lock(
         .route("/api/lan/info", get(info_handler))
         .route("/api/lan/usage", get(usage_handler))
         .route("/api/v1/usage/summary", get(summary_handler))
+        .route("/api/v1/usage/cycle", get(cycle_handler))
         .route("/api/lan/pair", post(pair_handler))
         .route("/api/lan/revoke", post(revoke_handler))
         .route("/api/lan/scan", post(scan_handler))
@@ -135,9 +136,38 @@ async fn summary_handler(
     Ok(([("Cache-Control", "no-store")], Json(result)))
 }
 
+/// `GET /api/v1/usage/cycle`：查某个 Agent 平台当前额度周期内的用量。
+///
+/// 返回体与 `/api/v1/usage/summary` 完全一致，只是区间由服务端按订阅的
+/// 周期规则算好。
+async fn cycle_handler(
+    State(state): State<Arc<ServerState>>,
+    headers: HeaderMap,
+    raw: Option<RawQuery>,
+    query: Result<Query<super::public_api::CycleQuery>, QueryRejection>,
+) -> Result<impl axum::response::IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let key = headers.get("x-api-key").and_then(|v| v.to_str().ok()).unwrap_or("");
+    if !super::public_api::key_matches(&state.db, key) && authorized(&state, &headers).is_err() {
+        return Err((StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"缺少有效的只读 API 密钥或配对凭证","code":"INVALID_API_KEY"}))));
+    }
+    if let Some(RawQuery(Some(raw))) = &raw {
+        if let Some(duplicate) = duplicate_query_keys(raw) {
+            return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":format!("参数重复: {duplicate}"),"code":"INVALID_PARAMETERS"}))));
+        }
+    }
+    let Query(query) = query.map_err(|_| (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"查询参数无效","code":"INVALID_PARAMETERS"}))))?;
+    let db = state.db.clone();
+    let result = tokio::task::spawn_blocking(move || super::public_api::cycle_summary(&db, query)).await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error":"用量查询失败","code":"USAGE_QUERY_FAILED"}))))?;
+    let result = result.map_err(|error| {
+        let status = StatusCode::from_u16(error.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        (status, Json(error.to_json()))
+    })?;
+    Ok(([("Cache-Control", "no-store")], Json(result)))
+}
+
 /// 找出重复出现的查询参数名。
-fn duplicate_query_keys(raw: &str) -> Option<String> {
-    let mut seen = std::collections::HashSet::new();
+fn duplicate_query_keys(raw: &str) -> Option<String> {    let mut seen = std::collections::HashSet::new();
     for pair in raw.split('&').filter(|part| !part.is_empty()) {
         let key = percent_decode(pair.split('=').next().unwrap_or(""));
         if !seen.insert(key.clone()) {

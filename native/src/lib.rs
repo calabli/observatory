@@ -13,6 +13,7 @@ pub mod scan_jobs;
 pub mod opencode_config;
 pub mod proxy;
 pub mod services;
+pub mod subscriptions;
 pub mod session_manager;
 
 pub mod codex_config {

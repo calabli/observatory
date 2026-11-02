@@ -80,6 +80,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { UsageWorkspace } from "./usage/UsageWorkspace";
+import { SubscriptionWorkspace } from "./subscriptions/SubscriptionWorkspace";
 import { DeviceManager } from "./usage/DeviceManager";
 import { TrayPanel } from "./tray/TrayPanel";
 import { NetworkOverview } from "./network/NetworkOverview";
@@ -119,6 +120,7 @@ const brandIcons: Record<string, string> = {
 const nav: { id: Page; label: string; icon: LucideIcon }[] = [
   { id: "overview", label: "总览", icon: Radar },
   { id: "usage", label: "AI 用量", icon: Boxes },
+  { id: "subscriptions", label: "订阅与额度", icon: Clock3 },
   { id: "agents", label: "Agent 追踪", icon: ListTree },
   { id: "performance", label: "设备性能", icon: Activity },
   { id: "network", label: "网络诊断", icon: Network },
@@ -127,6 +129,10 @@ const nav: { id: Page; label: string; icon: LucideIcon }[] = [
 const titles: Record<Page, [string, string]> = {
   overview: ["运行总览", "把 AI 调用、设备负载与网络状态放在一起看。"],
   usage: ["AI 用量", "从一次调用到多设备汇总，费用与用量清晰可查。"],
+  subscriptions: [
+    "订阅与额度",
+    "管理订阅和额度周期，查看所选时间范围内的用量。",
+  ],
   agents: [
     "Agent 追踪",
     "沿着任务调用链，查看模型、工具与子 Agent 的执行过程。",
@@ -1275,32 +1281,37 @@ function App() {
             <p>{titles[page][1]}</p>
           </div>
           <div className="page-controls">
-            {page !== "usage" && page !== "devices" && page !== "network" && (
-              <label className="device-picker">
-                <Laptop size={14} />
-                <select
-                  value={device}
-                  aria-label="观测设备"
-                  onChange={(e) => setDevice(e.target.value as DeviceId)}
+            {page !== "usage" &&
+              page !== "subscriptions" &&
+              page !== "devices" &&
+              page !== "network" && (
+                <label className="device-picker">
+                  <Laptop size={14} />
+                  <select
+                    value={device}
+                    aria-label="观测设备"
+                    onChange={(e) => setDevice(e.target.value as DeviceId)}
+                  >
+                    <option value="windows">Windows 工作站</option>
+                    <option value="mac">MacBook Pro</option>
+                  </select>
+                </label>
+              )}
+            {page !== "usage" &&
+              page !== "subscriptions" &&
+              page !== "network" && (
+                <button
+                  className="icon-button"
+                  aria-label="刷新当前指标"
+                  onClick={refresh}
+                  disabled={busy}
                 >
-                  <option value="windows">Windows 工作站</option>
-                  <option value="mac">MacBook Pro</option>
-                </select>
-              </label>
-            )}
-            {page !== "usage" && page !== "network" && (
-              <button
-                className="icon-button"
-                aria-label="刷新当前指标"
-                onClick={refresh}
-                disabled={busy}
-              >
-                <RefreshCw size={15} className={busy ? "refreshing" : ""} />
-              </button>
-            )}
+                  <RefreshCw size={15} className={busy ? "refreshing" : ""} />
+                </button>
+              )}
           </div>
         </div>
-        {page !== "network" && (
+        {page !== "network" && page !== "subscriptions" && (
           <div className="context-bar">
             {page === "usage" || page === "devices" ? (
               <div className="inline">
@@ -1358,6 +1369,8 @@ function App() {
           overview
         ) : page === "usage" ? (
           usage
+        ) : page === "subscriptions" ? (
+          <SubscriptionWorkspace />
         ) : page === "agents" ? (
           agentPage
         ) : page === "performance" ? (

@@ -210,6 +210,46 @@ impl UsageBackend {
     }
     pub async fn call(&self, op: &str, args: Value) -> Result<Value, AppError> {
         match op {
+            "subscriptions_get" => {
+                to_json(crate::subscriptions::load(&self.db)?)
+            }
+            "subscriptions_save" => {
+                let records = serde_json::from_value(args.get("subscriptions").cloned().unwrap_or(Value::Null)).map_err(|_| AppError::InvalidInput("订阅列表无效".into()))?;
+                crate::subscriptions::save(&self.db, records)?;
+                Ok(json!(true))
+            }
+            "subscription_usage" => {
+                // `dailyLimit` 只影响返回的每日序列长度，不影响汇总口径，
+                // 因此不能混进 `SummaryQuery`（那是 HTTP 接口的公开契约）。
+                let mut query_args = args.clone();
+                let daily_limit = query_args
+                    .as_object_mut()
+                    .and_then(|map| map.remove("dailyLimit"))
+                    .and_then(|value| value.as_u64())
+                    .map(|value| value.min(366) as usize);
+                let query = serde_json::from_value(query_args).map_err(|e| AppError::InvalidInput(e.to_string()))?;
+                let db = self.db.clone();
+                let mut value = tokio::task::spawn_blocking(move || lan_usage::public_api::local_summary(&db, query)).await
+                    .map_err(|e| AppError::Message(e.to_string()))?
+                    .map_err(structured_usage_error)?;
+                if let Some(limit) = daily_limit {
+                    if let Some(daily) = value.get_mut("daily").and_then(Value::as_array_mut) {
+                        if daily.len() > limit {
+                            let start = daily.len() - limit;
+                            daily.drain(0..start);
+                        }
+                    }
+                }
+                Ok(value)
+            }
+            "subscription_cycle_usage" => {
+                // 当前额度周期内的用量；返回体与 `subscription_usage` 一致。
+                let query = serde_json::from_value(args).map_err(|e| AppError::InvalidInput(e.to_string()))?;
+                let db = self.db.clone();
+                tokio::task::spawn_blocking(move || lan_usage::public_api::local_cycle_summary(&db, query)).await
+                    .map_err(|e| AppError::Message(e.to_string()))?
+                    .map_err(structured_usage_error)
+            }
             "usage_api_key_status" => Ok(json!({"configured":lan_usage::public_api::key_configured(&self.db)?})),
             "usage_api_key_rotate" => Ok(json!({"key":lan_usage::public_api::rotate_key(&self.db)?})),
             "usage_api_key_revoke" => { lan_usage::public_api::revoke_key(&self.db)?; Ok(json!(true)) },
@@ -548,6 +588,20 @@ impl UsageBackend {
 }
 fn to_json(value: impl Serialize) -> Result<Value, AppError> {
     serde_json::to_value(value).map_err(|e| AppError::Message(e.to_string()))
+}
+/// 把结构化错误编码成前端可解析的信封。
+///
+/// `usage_call` 的错误通道是纯字符串：Tauri 命令返回 `Result<Value, String>`，
+/// 浏览器桥把 Rust 侧的 `AppError` 也压成 `error` 字段里的文本。想保留
+/// `code` 与 `details`（比如 422 的受影响日期），只能自己带一个信封，
+/// 前端按 `observatoryError` 标记解包。
+///
+/// 信封用独立标记字段而不是「是 JSON 就解析」，免得普通错误消息恰好是合法
+/// JSON 时被误判。
+fn structured_usage_error(error: lan_usage::public_api::ApiError) -> AppError {
+    AppError::Message(
+        serde_json::json!({ "observatoryError": error.to_json() }).to_string(),
+    )
 }
 fn string_arg<'a>(args: &'a Value, key: &str) -> Result<&'a str, AppError> {
     args.get(key)

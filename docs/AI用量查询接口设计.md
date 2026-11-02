@@ -68,7 +68,7 @@ Accept: application/json
 | `endDate` | 日期字符串 | 服务器今天 | `YYYY-MM-DD`，包含该日，不得晚于服务器今天 |
 | `startDate` | 日期字符串 | 无 | 新增：包含该日，必须不晚于 endDate |
 | `startTime` | RFC 3339 字符串 | 无 | 新增：开始时刻，包含；必须携带 UTC 偏移或 Z |
-| `endTime` | RFC 3339 字符串 | 无 | 新增：结束时刻，不包含；必须携带 UTC 偏移或 Z |
+| `endTime` | RFC 3339 字符串 | 请求当前时间 | 结束时刻，不包含；显式填写时必须携带 UTC 偏移或 Z |
 | `appType` | 字符串 | 无 | 不填时合计所有允许共享的应用；指定值必须受支持且允许共享 |
 | `model` | 字符串 | 无 | 新增：按有效计价模型 ID 精确筛选，与页面模型筛选口径一致 |
 | `groupBy` | 枚举字符串 | `day` | 新增：`day`、`week`、`month` |
@@ -79,7 +79,7 @@ Accept: application/json
 
 **指定日期区间**：填写 `startDate`，`endDate` 可省略，省略时为服务器今天。不得同时传 `days`。区间两端日期均包含。
 
-**指定秒级区间**：`startTime` 和 `endTime` 必须成对提供，且不能与 `days`、`startDate`、`endDate` 混用。精确到整秒，不接受无时区或小数秒。必须满足 `startTime < endTime`。
+**指定秒级区间**：`startTime` 必填，`endTime` 省略时取本次请求的服务器当前时间（截到整秒），且不能与 `days`、`startDate`、`endDate` 混用。精确到整秒，不接受无时区或小数秒。必须满足 `startTime < endTime`。
 
 三种模式归一化为 `[start, endExclusive)`。开始边界包含，结束边界不包含。例如查询 10 月时，结束时刻为 11 月 1 日 00:00:00，而不是再包含这一秒。
 

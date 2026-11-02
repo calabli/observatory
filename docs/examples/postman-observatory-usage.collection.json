@@ -155,6 +155,114 @@
             },
             "description": "`groupBy` 只改变 `buckets`，不改变顶层合计和 `daily`。"
           }
+        },
+        {
+          "name": "当前周期 · Claude Code",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/cycle?appType=claude",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "cycle"
+              ],
+              "query": [
+                {
+                  "key": "appType",
+                  "value": "claude"
+                }
+              ]
+            },
+            "description": "该 Agent 平台当前额度周期内的用量。区间由服务端按订阅的周期规则算好，返回体与 summary 完全一致；周期边界见 range.start 与 range.endExclusive。"
+          },
+          "response": [
+            {
+              "name": "200 · 当前周期汇总",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "key": "Cache-Control",
+                  "value": "no-store"
+                }
+              ],
+              "cookie": [],
+              "body": {
+                "mode": "raw",
+                "raw": "{\n  \"scope\": \"local\",\n  \"appType\": \"claude\",\n  \"apps\": [\n    \"claude\"\n  ],\n  \"model\": null,\n  \"modelFilterBasis\": \"effectivePricingModel\",\n  \"days\": 5,\n  \"startDate\": \"2026-10-29\",\n  \"endDate\": \"2026-11-02\",\n  \"range\": {\n    \"start\": \"2026-10-29T19:00:00+08:00\",\n    \"endExclusive\": \"2026-11-02T05:12:00+08:00\",\n    \"timezone\": \"server-local\"\n  },\n  \"groupBy\": \"day\",\n  \"currency\": \"USD\",\n  \"inputTokenSemantics\": \"fresh\",\n  \"requests\": 128,\n  \"inputTokens\": 2068,\n  \"outputTokens\": 1367239,\n  \"cacheReadTokens\": 429848775,\n  \"cacheWriteTokens\": 3755596,\n  \"totalTokens\": 434973678,\n  \"costUsd\": 143.367575,\n  \"updatedAt\": \"2026-11-02T04:56:12.881734500+00:00\",\n  \"lastScanAt\": 1793561400000,\n  \"buckets\": [],\n  \"daily\": []\n}"
+              }
+            },
+            {
+              "name": "404 · 没有订阅记录",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-API-Key",
+                    "value": "{{apiKey}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/usage/cycle?appType=codex",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "usage",
+                    "cycle"
+                  ],
+                  "query": [
+                    {
+                      "key": "appType",
+                      "value": "codex"
+                    }
+                  ]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": {
+                "mode": "raw",
+                "raw": "{\n  \"error\": \"该应用没有订阅记录，无法确定额度周期: codex\",\n  \"code\": \"SUBSCRIPTION_NOT_FOUND\"\n}"
+              }
+            }
+          ]
         }
       ]
     },
@@ -305,7 +413,7 @@
                 }
               ]
             },
-            "description": "`startTime` 与 `endTime` 必须成对提供，且不能与 `days`/`startDate`/`endDate` 混用。\n\n注意：URL 里的 `+` 必须编码为 `%2B`。Postman 会自动编码，但复制到别处时要注意。\n\n若该区间把某一天切成两半，而那天只剩日汇总（日粒度），接口返回 422 而不是给出被截断的数字。"
+            "description": "`startTime` 必填，`endTime` 省略时取本次请求的服务器当前时间（截到整秒），且不能与 `days`/`startDate`/`endDate` 混用。\n\n注意：URL 里的 `+` 必须编码为 `%2B`。Postman 会自动编码，但复制到别处时要注意。\n\n若该区间把某一天切成两半，而那天只剩日汇总（日粒度），接口返回 422 而不是给出被截断的数字。"
           }
         },
         {
@@ -497,6 +605,48 @@
             },
             "description": "`appType=claude` 仅指 Claude Code，`claude-desktop` 单独查询。"
           }
+        },
+        {
+          "name": "上一周期 · Claude Code",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/cycle?appType=claude&offset=-1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "cycle"
+              ],
+              "query": [
+                {
+                  "key": "appType",
+                  "value": "claude"
+                },
+                {
+                  "key": "offset",
+                  "value": "-1"
+                }
+              ]
+            },
+            "description": "offset=-1 表示上一个额度周期。周期边界依然由服务端按订阅规则算好。"
+          },
+          "response": []
         }
       ]
     },
@@ -1132,6 +1282,173 @@
                 "raw": {
                   "language": "json"
                 }
+              }
+            }
+          ]
+        },
+        {
+          "name": "404 · 应用没有订阅记录",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/cycle?appType=codex",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "cycle"
+              ],
+              "query": [
+                {
+                  "key": "appType",
+                  "value": "codex"
+                }
+              ]
+            },
+            "description": "该应用没有订阅记录，服务端算不出额度周期，因此返回 404。"
+          },
+          "response": []
+        },
+        {
+          "name": "400 · 周期端点缺少 appType",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/cycle",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "cycle"
+              ],
+              "query": []
+            },
+            "description": "周期端点必须指定 Agent 平台。"
+          },
+          "response": []
+        },
+        {
+          "name": "404 · 下一个周期尚未开始",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/cycle?appType=claude&offset=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "cycle"
+              ],
+              "query": [
+                {
+                  "key": "appType",
+                  "value": "claude"
+                },
+                {
+                  "key": "offset",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "offset=1 表示下一个额度周期。周期还没开始时返回 404 CYCLE_NOT_AVAILABLE——未来的用量还不存在。"
+          },
+          "response": [
+            {
+              "name": "404 · 周期尚未开始",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-API-Key",
+                    "value": "{{apiKey}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/usage/cycle?appType=claude&offset=1",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "usage",
+                    "cycle"
+                  ],
+                  "query": [
+                    {
+                      "key": "appType",
+                      "value": "claude"
+                    },
+                    {
+                      "key": "offset",
+                      "value": "1"
+                    }
+                  ]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": {
+                "mode": "raw",
+                "raw": "{\n  \"error\": \"该周期尚未开始: claude\",\n  \"code\": \"CYCLE_NOT_AVAILABLE\"\n}"
               }
             }
           ]

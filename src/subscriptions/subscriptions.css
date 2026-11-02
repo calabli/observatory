@@ -1,0 +1,372 @@
+#observatory-root .sp-page {
+  min-width: 0;
+}
+#observatory-root .sp-tabs {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 22px;
+}
+#observatory-root .sp-tabs > button:not(.button) {
+  background: none;
+  border: 0;
+  padding: 0 0 12px;
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+}
+#observatory-root .sp-tabs > button[aria-pressed="true"] {
+  color: var(--text);
+  border-bottom-color: var(--action);
+}
+#observatory-root .sp-tabs span {
+  color: var(--muted);
+  font-size: 11px;
+}
+#observatory-root .sp-add {
+  margin-left: auto;
+  margin-bottom: 10px;
+}
+#observatory-root .sp-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 18px;
+}
+#observatory-root .sp-layout main {
+  min-width: 0;
+}
+#observatory-root .sp-layout aside {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+#observatory-root .sp-section-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+#observatory-root .sp-page h2 {
+  margin: 0;
+  font-size: 15px;
+}
+#observatory-root .sp-page p {
+  color: var(--muted);
+  margin: 5px 0;
+  font-size: 12px;
+}
+#observatory-root .sp-agents {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 14px 0;
+}
+#observatory-root .sp-agent {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 14px;
+  min-width: 190px;
+}
+#observatory-root .sp-agent.selected {
+  border-color: var(--action);
+}
+#observatory-root .sp-agent strong,
+#observatory-root .sp-agent small,
+#observatory-root .sp-list-row small {
+  display: block;
+}
+#observatory-root .sp-agent small,
+#observatory-root .sp-list-row small {
+  color: var(--muted);
+  margin-top: 3px;
+}
+#observatory-root .sp-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 14px 0;
+}
+#observatory-root .sp-controls input {
+  width: 75px;
+}
+/* 检索框要放得下名称，宽一点。 */
+#observatory-root .sp-controls input[type="search"] {
+  width: 200px;
+}
+#observatory-root .sp-controls select,
+#observatory-root .sp-controls input,
+#observatory-root .sp-form input,
+#observatory-root .sp-form select {
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px;
+  color: var(--text);
+}
+#observatory-root .sp-mode {
+  display: flex;
+  background: var(--soft);
+  padding: 3px;
+  border-radius: 7px;
+}
+#observatory-root .sp-mode button {
+  background: none;
+  border: 0;
+  border-radius: 5px;
+  padding: 6px 10px;
+  color: var(--muted);
+}
+#observatory-root .sp-mode button[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--text);
+}
+#observatory-root .sp-period {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--action);
+  border-radius: 8px;
+  padding: 14px;
+}
+#observatory-root .sp-period strong,
+#observatory-root .sp-period small {
+  display: block;
+}
+#observatory-root .sp-period strong {
+  margin: 6px 0;
+}
+#observatory-root .sp-period small,
+#observatory-root .sp-cycle-nav small {
+  color: var(--muted);
+}
+#observatory-root .sp-cycle-nav select {
+  flex: 1;
+  min-width: 180px;
+  max-width: 100%;
+  padding: 8px;
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+#observatory-root .sp-cycle-nav {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+#observatory-root .sp-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-top: 14px;
+}
+#observatory-root .sp-metrics > div {
+  padding: 16px;
+  min-width: 0;
+}
+#observatory-root .sp-metrics > div + div {
+  border-left: 1px solid var(--line);
+}
+#observatory-root .sp-metrics small {
+  display: block;
+  color: var(--muted);
+}
+#observatory-root .sp-metrics strong {
+  display: block;
+  font-size: 22px;
+  margin: 10px 0;
+  overflow-wrap: anywhere;
+}
+#observatory-root .sp-chart {
+  margin-top: 14px;
+  padding: 16px;
+}
+#observatory-root .sp-bars {
+  height: 175px;
+  display: flex;
+  align-items: end;
+  gap: 4px;
+  /* 上边距留给悬停提示：提示浮在柱子顶端之上，不能被裁掉。 */
+  padding: 36px 0 24px;
+  overflow: visible;
+}
+/* 趋势图左侧刻度与柱区并排，刻度只占固定宽度，柱区自己撑开。 */
+#observatory-root .sp-chart-body {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+#observatory-root .sp-yaxis {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: end;
+  /* 与 .sp-bars 同高同内边距，刻度才能和柱子的顶/底对齐。 */
+  height: 175px;
+  padding: 36px 0 24px;
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+#observatory-root .sp-bars {
+  flex: 1;
+  min-width: 0;
+}
+#observatory-root .sp-bar-col {
+  display: flex;
+  position: relative;
+  align-items: end;
+  justify-content: center;
+  height: 100%;
+  flex: 1;
+  min-width: 6px;
+}
+#observatory-root .sp-bar-col > div {
+  width: min(100%, 32px);
+  background: var(--blue, #69b9eb);
+  border-radius: 3px 3px 0 0;
+}
+/* 悬停提示：默认收起，鼠标移上去才显示。 */
+#observatory-root .sp-bar-tip {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translate(-50%, -6px);
+  z-index: 5;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong, var(--line));
+  box-shadow: 0 6px 18px #0003;
+  color: var(--text);
+  font-size: 11px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms;
+}
+#observatory-root .sp-bar-col:hover .sp-bar-tip,
+#observatory-root .sp-bar-col:focus-within .sp-bar-tip {
+  opacity: 1;
+}
+#observatory-root .sp-bar-col small {
+  position: absolute;
+  top: 100%;
+  font-size: 10px;
+  color: var(--muted);
+}
+#observatory-root .sp-side {
+  padding: 16px;
+}
+#observatory-root .sp-side h2 {
+  margin-bottom: 14px;
+}
+#observatory-root .sp-side dl {
+  margin: 0 0 16px;
+}
+#observatory-root .sp-side dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 13px 0;
+}
+#observatory-root .sp-side dt {
+  color: var(--muted);
+}
+#observatory-root .sp-side dd {
+  margin: 0;
+  text-align: right;
+}
+#observatory-root .sp-list {
+  padding: 0 16px;
+}
+#observatory-root .sp-list-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+#observatory-root .sp-list-row > div {
+  flex: 1;
+  min-width: 180px;
+}
+/* 列表操作按钮：启停、查看用量、编辑并排，视觉上弱于删除。 */
+#observatory-root .sp-list-row .text-button {
+  white-space: nowrap;
+}
+#observatory-root .sp-list-row .text-button[aria-pressed="true"] {
+  color: var(--text);
+}
+/* 精度错误里列出的受影响日期。 */
+#observatory-root .usage-error code {
+  margin: 0 2px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: light-dark(#0000000d, #ffffff1a);
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+}
+#observatory-root .sp-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+#observatory-root .sp-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+}
+#observatory-root .sp-clock {
+  display: flex;
+  gap: 4px;
+}
+#observatory-root .sp-clock select {
+  min-width: 0;
+  flex: 1;
+}
+#observatory-root .sp-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+@media (max-width: 900px) {
+  #observatory-root .sp-layout {
+    grid-template-columns: 1fr;
+  }
+  #observatory-root .sp-layout aside {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  #observatory-root .sp-metrics {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+@media (max-width: 560px) {
+  #observatory-root .sp-layout aside,
+  #observatory-root .sp-form {
+    grid-template-columns: 1fr;
+  }
+  #observatory-root .sp-metrics > div:nth-child(3) {
+    border-left: 0;
+  }
+  #observatory-root .sp-metrics > div:nth-child(n + 3) {
+    border-top: 1px solid var(--line);
+  }
+}

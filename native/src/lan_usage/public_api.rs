@@ -85,6 +85,16 @@ impl ApiError {
         Self::new(403, "APP_NOT_SHARED", message)
     }
 
+    /// 找不到对应的记录（比如该应用没有订阅）。
+    fn not_found(message: impl Into<String>) -> Self {
+        Self::new(404, "SUBSCRIPTION_NOT_FOUND", message)
+    }
+
+    /// 该周期暂时没有可统计的区间（尚未开始，或不在订阅有效期内）。
+    fn cycle_unavailable(message: impl Into<String>) -> Self {
+        Self::new(404, "CYCLE_NOT_AVAILABLE", message)
+    }
+
     fn unsupported_app(app: &str) -> Self {
         Self::new(
             400,
@@ -152,8 +162,14 @@ pub struct SummaryQuery {
     pub app_type: Option<String>,
     /// 按有效计价模型精确筛选，口径与页面一致。
     pub model: Option<String>,
+    /// JSON object mapping selected app IDs to their selected model IDs.
+    pub models_by_app: Option<String>,
     /// 分组方式：`day`（默认）、`week`、`month`。
     pub group_by: Option<String>,
+    /// 设备集合，逗号分隔。默认只查本机。
+    ///
+    /// `local` 指本机；其余填配对设备的 `deviceId`。不填时等价于 `local`。
+    pub devices: Option<String>,
 }
 
 /// 聚合粒度。
@@ -232,6 +248,142 @@ impl Metrics {
     }
 }
 
+/// 校验并归一化应用标识：必须受支持、且已勾选共享。
+fn resolve_shared_app(shared: &[String], value: &str) -> Result<String, ApiError> {
+    let app = value.trim();
+    if app.is_empty() {
+        return Err(ApiError::invalid("appType 不能为空"));
+    }
+    if !super::SHARED_APP_TYPES.contains(&app) {
+        return Err(ApiError::unsupported_app(app));
+    }
+    if !shared.iter().any(|value| value == app) {
+        return Err(ApiError::not_shared("该应用未允许共享"));
+    }
+    Ok(app.to_owned())
+}
+
+/// 解析应用标识列表：逗号分隔，重复的去掉，顺序保持请求里的顺序。
+///
+/// 空段（`claude,,codex`）按无效处理，不当成「所有应用」。
+fn parse_app_list(shared: &[String], value: &str) -> Result<Vec<String>, ApiError> {
+    let mut apps: Vec<String> = Vec::new();
+    for part in value.split(',') {
+        let app = resolve_shared_app(shared, part)?;
+        if !apps.contains(&app) {
+            apps.push(app);
+        }
+    }
+    if apps.is_empty() {
+        return Err(ApiError::invalid("appType 不能为空"));
+    }
+    Ok(apps)
+}
+
+/// 解析模型标识列表：逗号分隔，精确匹配。
+fn parse_model_list(value: &str) -> Result<Vec<String>, ApiError> {
+    let mut models: Vec<String> = Vec::new();
+    for part in value.split(',') {
+        let trimmed = part.trim();
+        if trimmed.is_empty() {
+            return Err(ApiError::invalid("model 不能为空"));
+        }
+        if !models.iter().any(|model| model == trimmed) {
+            models.push(trimmed.to_owned());
+        }
+    }
+    if models.is_empty() {
+        return Err(ApiError::invalid("model 不能为空"));
+    }
+    Ok(models)
+}
+
+/// 一次查询涉及的设备集合。
+///
+/// `local` 是本机的别名，其余是配对设备的 `device_id`。
+struct DeviceSelection {
+    local: bool,
+    peers: Vec<String>,
+}
+
+impl DeviceSelection {
+    /// 是否只有本机——只有本机时不必走投影，直接查本机库。
+    fn is_local_only(&self) -> bool {
+        self.local && self.peers.is_empty()
+    }
+}
+
+/// 解析设备集合。默认只查本机。
+fn parse_device_selection(
+    db: &Database,
+    value: Option<&str>,
+) -> Result<DeviceSelection, ApiError> {
+    let Some(value) = value else {
+        return Ok(DeviceSelection {
+            local: true,
+            peers: Vec::new(),
+        });
+    };
+    let mut selection = DeviceSelection {
+        local: false,
+        peers: Vec::new(),
+    };
+    for part in value.split(',') {
+        let trimmed = part.trim();
+        if trimmed.is_empty() {
+            return Err(ApiError::invalid("devices 不能为空"));
+        }
+        if trimmed.eq_ignore_ascii_case("local") {
+            selection.local = true;
+            continue;
+        }
+        if !selection.peers.iter().any(|peer| peer == trimmed) {
+            selection.peers.push(trimmed.to_owned());
+        }
+    }
+    if !selection.local && selection.peers.is_empty() {
+        return Err(ApiError::invalid("devices 不能为空"));
+    }
+    // 设备必须存在且已启用，否则无法确定它的用量。
+    if !selection.peers.is_empty() {
+        let known = known_devices(db)?;
+        for peer in &selection.peers {
+            if !known.iter().any(|item| item == peer) {
+                return Err(ApiError::invalid(format!("设备不存在或未启用: {peer}")));
+            }
+        }
+    }
+    Ok(selection)
+}
+
+/// 设备集合的对外表示：本机用 `local` 表示，配对设备用它的 `deviceId`。
+fn device_labels(devices: &DeviceSelection) -> Vec<String> {
+    let mut labels = Vec::new();
+    if devices.local {
+        labels.push("local".to_owned());
+    }
+    for peer in &devices.peers {
+        if !labels.contains(peer) {
+            labels.push(peer.clone());
+        }
+    }
+    labels
+}
+
+/// 已启用且配对成功的设备。
+fn known_devices(db: &Database) -> Result<Vec<String>, AppError> {    db.with_connection(|conn| {
+        let mut statement = conn.prepare(
+            "SELECT device_id FROM lan_devices WHERE enabled = 1 AND EXISTS (SELECT 1 FROM settings WHERE key = 'lan_outgoing_token_v1:' || lan_devices.device_id)",
+        )?;
+        let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+        let mut ids = Vec::new();
+        for row in rows {
+            ids.push(row?);
+        }
+        Ok(ids)
+    })
+}
+
 /// 归一化后的查询区间：左闭右开 `[start_ts, end_ts_exclusive)`。
 struct ResolvedRange {
     start_ts: i64,
@@ -299,8 +451,9 @@ fn parse_instant(value: &str) -> Result<DateTime<FixedOffset>, ApiError> {
 ///
 /// - 最近 N 天：`days` + 可选 `endDate`；
 /// - 指定日期区间：`startDate` + 可选 `endDate`；
-/// - 指定秒级区间：`startTime` + `endTime`（互斥于前两者）。
-fn resolve_range(query: &SummaryQuery, today: NaiveDate) -> Result<ResolvedRange, ApiError> {
+/// - 指定秒级区间：`startTime` + 可选 `endTime`（省略时为请求当前时间）。
+fn resolve_range(query: &SummaryQuery, now: DateTime<Local>) -> Result<ResolvedRange, ApiError> {
+    let today = now.date_naive();
     let has_instant = query.start_time.is_some() || query.end_time.is_some();
     let has_start_date = query.start_date.is_some();
 
@@ -313,13 +466,13 @@ fn resolve_range(query: &SummaryQuery, today: NaiveDate) -> Result<ResolvedRange
         let start_value = query
             .start_time
             .as_deref()
-            .ok_or_else(|| ApiError::conflicting("startTime 与 endTime 必须成对提供"))?;
-        let end_value = query
-            .end_time
-            .as_deref()
-            .ok_or_else(|| ApiError::conflicting("startTime 与 endTime 必须成对提供"))?;
+            .ok_or_else(|| ApiError::conflicting("填写 endTime 时必须提供 startTime"))?;
         let start = parse_instant(start_value)?;
-        let end = parse_instant(end_value)?;
+        let end = match query.end_time.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
+            Some(value) => parse_instant(value)?,
+            // Use one captured request time, truncated to a whole second.
+            None => Local.timestamp_opt(now.timestamp(), 0).single().unwrap().fixed_offset(),
+        };
         if start >= end {
             return Err(ApiError::date_range("startTime 必须早于 endTime"));
         }
@@ -460,35 +613,186 @@ fn partial_local_dates(range: &ResolvedRange) -> Result<Vec<NaiveDate>, ApiError
 /// 返回的顶层指标是「所选区间的合计」，`daily` 与 `buckets` 是同一批数据的两种
 /// 分组方式，三者加总一致。
 pub fn summary(db: &Database, query: SummaryQuery) -> Result<Value, ApiError> {
-    let shared = super::identity::share_settings(db).shared_app_types;
+    summary_inner(db, query, true)
+}
+
+/// 周期查询参数。`deny_unknown_fields` 让未知参数直接被拒绝。
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CycleQuery {
+    /// 应用标识（Agent 平台），多个用逗号分隔。必填。
+    ///
+    /// 周期规则**以第一个平台为准**——周期只有一个，用哪个平台的订阅来定义
+    /// 就要明确。其余平台只参与用量统计。
+    pub app_type: String,
+    /// 周期序号：0 是当前周期（默认），-1 是上一个，1 是下一个。
+    #[serde(default)]
+    pub offset: Option<i32>,
+    /// 模型标识，多个用逗号分隔。只统计这些模型。
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub models_by_app: Option<String>,
+    /// 设备集合，逗号分隔。默认只查本机。
+    #[serde(default)]
+    pub devices: Option<String>,
+    /// 周期内的分组方式，默认按天。
+    #[serde(default)]
+    pub group_by: Option<String>,
+}
+
+/// 查询某个 Agent 平台当前额度周期内的用量。
+///
+/// 返回体与 `/api/v1/usage/summary` **完全一致**：周期只是替调用方把
+/// `startTime` / `endTime` 算好，聚合口径、字段含义、错误码都不变。
+/// 周期边界可以从 `range.start` 与 `range.endExclusive` 读出。
+pub fn cycle_summary(db: &Database, query: CycleQuery) -> Result<Value, ApiError> {
+    cycle_summary_inner(db, query, true)
+}
+
+/// 本机读取不受局域网共享勾选限制。
+pub(crate) fn local_cycle_summary(
+    db: &Database,
+    query: CycleQuery,
+) -> Result<Value, ApiError> {
+    cycle_summary_inner(db, query, false)
+}
+
+fn cycle_summary_inner(
+    db: &Database,
+    query: CycleQuery,
+    enforce_share: bool,
+) -> Result<Value, ApiError> {
+    // 先做共享校验：没勾选共享的应用不该泄露它有没有订阅。
+    let shared = if enforce_share {
+        super::identity::share_settings(db).shared_app_types
+    } else {
+        super::default_shared_app_types()
+    };
+    let apps = parse_app_list(&shared, &query.app_type)?;
+    // 订阅以第一个平台为准。
+    let app_type = apps[0].clone();
+    let offset = query.offset.unwrap_or(0);
+    if !(-52..=52).contains(&offset) {
+        return Err(ApiError::invalid("offset 必须在 -52 到 52 之间"));
+    }
+
+    let subscription = pick_subscription(db, &app_type)?;
+
+    // 请求时刻截到整秒，与汇总接口的口径一致。
+    let now = Local.timestamp_opt(Local::now().timestamp(), 0).single().unwrap();
+    let (cycle_start, cycle_end) =
+        crate::subscriptions::weekly_cycle(&subscription.rule, now, offset)
+            .map_err(|message| ApiError::invalid(message))?;
+
+    // 周期尚未开始：还没有可统计的区间。
+    if cycle_start >= now {
+        return Err(ApiError::cycle_unavailable(format!(
+            "该周期尚未开始: {app_type}"
+        )));
+    }
+
+    // 周期按订阅有效期收敛：开头取较晚者，结尾取较早者；未来的用量还不存在，
+    // 结尾再截到当前时刻。
+    let window_start = local_midnight(parse_date(&subscription.start_date)?)?;
+    let window_end = local_midnight(parse_date(&subscription.end_date)?)?;
+    let start = std::cmp::max(cycle_start, window_start);
+    let end = std::cmp::min(cycle_end, window_end);
+    let end = std::cmp::min(end, now);
+    if end <= start {
+        return Err(ApiError::cycle_unavailable(format!(
+            "该周期不在订阅有效期内: {app_type}"
+        )));
+    }
+
+    // 走同一套汇总逻辑，字段与统计口径都与 summary 一致。
+    // 用量统计覆盖请求里的全部平台，周期边界只来自第一个平台。
+    summary_inner(
+        db,
+        SummaryQuery {
+            start_time: Some(to_rfc3339(start)),
+            end_time: Some(to_rfc3339(end)),
+            app_type: Some(apps.join(",")),
+            group_by: query.group_by,
+            model: query.model,
+            models_by_app: query.models_by_app,
+            devices: query.devices,
+            ..Default::default()
+        },
+        enforce_share,
+    )
+}
+
+/// 挑出该应用要用的订阅：优先今天生效的，其次是启用的，最后退回第一条。
+fn pick_subscription(
+    db: &Database,
+    app_type: &str,
+) -> Result<crate::subscriptions::Subscription, ApiError> {
+    let all = crate::subscriptions::load(db).map_err(|error| {
+        ApiError::new(500, "USAGE_QUERY_FAILED", error.to_string())
+    })?;
+    let mut matched: Vec<crate::subscriptions::Subscription> = all
+        .into_iter()
+        .filter(|item| item.app_type == app_type)
+        .collect();
+    if matched.is_empty() {
+        return Err(ApiError::not_found(format!(
+            "该应用没有订阅记录，无法确定额度周期: {app_type}"
+        )));
+    }
+    let today = Local::now().date_naive();
+    if let Some(position) = matched.iter().position(|item| item.is_active_on(today)) {
+        return Ok(matched.swap_remove(position));
+    }
+    if let Some(position) = matched.iter().position(|item| item.enabled) {
+        return Ok(matched.swap_remove(position));
+    }
+    Ok(matched.remove(0))
+}
+
+/// 本地时刻写成带偏移的 RFC 3339。
+fn to_rfc3339(value: DateTime<Local>) -> String {
+    value.to_rfc3339_opts(chrono::SecondsFormat::Secs, false)
+}
+
+/// Local UI reads local records regardless of the LAN sharing selection.
+pub(crate) fn local_summary(db: &Database, query: SummaryQuery) -> Result<Value, ApiError> {
+    summary_inner(db, query, false)
+}
+
+fn summary_inner(db: &Database, query: SummaryQuery, enforce_share: bool) -> Result<Value, ApiError> {
+    let shared = if enforce_share { super::identity::share_settings(db).shared_app_types } else { super::default_shared_app_types() };
 
     // 应用筛选：指定的应用必须受支持且已勾选共享；不指定时只合计允许共享的应用。
     let apps: Vec<String> = match query.app_type.as_deref() {
-        Some(value) => {
-            let app = value.trim();
-            if app.is_empty() {
-                return Err(ApiError::invalid("appType 不能为空"));
-            }
-            if !super::SHARED_APP_TYPES.contains(&app) {
-                return Err(ApiError::unsupported_app(app));
-            }
-            if !shared.iter().any(|value| value == app) {
-                return Err(ApiError::not_shared("该应用未允许共享"));
-            }
-            vec![app.to_owned()]
-        }
+        Some(value) => parse_app_list(&shared, value)?,
         None => shared.clone(),
     };
 
-    let model = match query.model.as_deref() {
-        Some(value) => {
-            let trimmed = value.trim();
-            if trimmed.is_empty() {
-                return Err(ApiError::invalid("model 不能为空"));
-            }
-            Some(trimmed.to_owned())
-        }
+    let models: Option<Vec<String>> = match query.model.as_deref() {
+        Some(value) => Some(parse_model_list(value)?),
         None => None,
+    };
+    let models_by_app: Option<BTreeMap<String, Vec<String>>> = match query.models_by_app.as_deref() {
+        None => None,
+        Some(value) => {
+            if models.is_some() || query.app_type.is_none() || value.len() > 8192 {
+                return Err(ApiError::invalid("modelsByApp 需要指定 appType，不能与 model 同时使用"));
+            }
+            let mut selected: BTreeMap<String, Vec<String>> = serde_json::from_str(value).map_err(|_| ApiError::invalid("modelsByApp 必须是平台到模型数组的 JSON 对象"))?;
+            if selected.is_empty() { return Err(ApiError::invalid("modelsByApp 不能为空")); }
+            for (app, list) in &mut selected {
+                if !apps.contains(app) || list.is_empty() || list.len()>50 { return Err(ApiError::invalid("modelsByApp 包含未选择的平台或无效模型列表")); }
+                let mut unique = Vec::new();
+                for model in list.iter() {
+                    let model = model.trim();
+                    if model.is_empty() || model.len()>256 { return Err(ApiError::invalid("模型 ID 无效")); }
+                    if !unique.iter().any(|m| m == model) { unique.push(model.to_owned()); }
+                }
+                *list = unique;
+            }
+            Some(selected)
+        }
     };
 
     let group = match query.group_by.as_deref() {
@@ -502,23 +806,39 @@ pub fn summary(db: &Database, query: SummaryQuery) -> Result<Value, ApiError> {
         None => GroupBy::Day,
     };
 
-    let today = Local::now().date_naive();
-    let range = resolve_range(&query, today)?;
+    let range = resolve_range(&query, Local::now())?;
     let partial_dates = partial_local_dates(&range)?;
 
+    // 设备集合：默认只查本机；指定配对设备时走投影，把那些设备的用量并进来。
+    let devices = parse_device_selection(db, query.devices.as_deref())?;
+    let projection = if devices.is_local_only() {
+        None
+    } else if devices.local {
+        Some(super::projection::database_for_peers(db, &devices.peers)?)
+    } else {
+        Some(super::projection::database_for_peers_only(
+            db,
+            &devices.peers,
+        )?)
+    };
+    let source: &Database = match &projection {
+        Some(projection) => projection.as_ref(),
+        None => db,
+    };
+
     let app_refs: Vec<&str> = apps.iter().map(|value| value.as_str()).collect();
-    let model_ref = model.as_deref();
+    let model_ref = models.as_deref();
     let start_ts = range.start_ts;
     let end_ts = range.end_ts_exclusive;
 
     // 一次连接快照内完成：先做精度检测，再取数。
     let (rows, precision_dates): (Vec<DailyUsageRow>, Vec<String>) =
-        db.with_connection(|conn| -> Result<(Vec<DailyUsageRow>, Vec<String>), ApiError> {
-            let precision = rollup_dates(conn, &partial_dates, &app_refs, model_ref)?;
+        source.with_connection(|conn| -> Result<(Vec<DailyUsageRow>, Vec<String>), ApiError> {
+            let precision = rollup_dates(conn, &partial_dates, &app_refs, model_ref, models_by_app.as_ref())?;
             if !precision.is_empty() {
                 return Ok((Vec::new(), precision));
             }
-            let rows = daily_usage_rows(conn, start_ts, end_ts, &app_refs, model_ref)?;
+            let rows = daily_usage_rows(conn, start_ts, end_ts, &app_refs, model_ref, models_by_app.as_ref())?;
             Ok((rows, Vec::new()))
         })?;
     if !precision_dates.is_empty() {
@@ -594,10 +914,20 @@ pub fn summary(db: &Database, query: SummaryQuery) -> Result<Value, ApiError> {
     }
 
     let mut result = total.json();
-    result["scope"] = json!("local");
-    result["appType"] = json!(query.app_type);
+    // 只查本机时 scope 是 `local`；并入配对设备后是 `multi`。
+    result["scope"] = json!(if devices.is_local_only() { "local" } else { "multi" });
+    result["devices"] = json!(device_labels(&devices));
+    // 请求里指定的筛选条件；没指定就是 null。多个平台用逗号分隔传入。
+    result["appType"] = match query.app_type.as_deref() {
+        Some(value) => json!(parse_app_list(&shared, value)?),
+        None => json!(null),
+    };
     result["apps"] = json!(apps);
-    result["model"] = json!(model);
+    result["model"] = match &models {
+        Some(models) => json!(models),
+        None => json!(null),
+    };
+    if let Some(selection) = &models_by_app { result["modelsByApp"] = json!(selection); }
     result["modelFilterBasis"] = json!("effectivePricingModel");
     result["days"] = json!(dates.len());
     result["startDate"] = json!(range.first_date.format("%Y-%m-%d").to_string());

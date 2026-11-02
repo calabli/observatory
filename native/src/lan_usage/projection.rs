@@ -227,14 +227,35 @@ fn legacy_rows<T: DeserializeOwned>(
 }
 
 pub fn database(db: &Database) -> Result<Arc<Database>, AppError> {
-    database_selected(db, None)
+    database_selected(db, true, None)
 }
 
 pub fn database_for_peer(db: &Database, peer_id: &str) -> Result<Arc<Database>, AppError> {
-    database_selected(db, Some(peer_id))
+    database_selected(db, false, Some(std::slice::from_ref(&peer_id.to_owned())))
 }
 
-fn database_selected(db: &Database, peer_id: Option<&str>) -> Result<Arc<Database>, AppError> {
+/// 本机加上指定的几台配对设备。
+pub fn database_for_peers(
+    db: &Database,
+    peers: &[String],
+) -> Result<Arc<Database>, AppError> {
+    database_selected(db, true, Some(peers))
+}
+
+/// 指定的配对设备（不含本机）。
+pub fn database_for_peers_only(
+    db: &Database,
+    peers: &[String],
+) -> Result<Arc<Database>, AppError> {
+    database_selected(db, false, Some(peers))
+}
+
+/// `peers` 为 `None` 表示「全部已启用的配对设备」。
+fn database_selected(
+    db: &Database,
+    include_local: bool,
+    peers: Option<&[String]>,
+) -> Result<Arc<Database>, AppError> {
     let device_id = identity::device_id(db)?;
     let conn = lock_conn!(db.conn);
     let read = conn.unchecked_transaction().map_err(sql_error)?;
@@ -244,17 +265,20 @@ fn database_selected(db: &Database, peer_id: Option<&str>) -> Result<Arc<Databas
     let version = read
         .query_row("PRAGMA data_version", [], |row| row.get::<_, i64>(0))
         .map_err(sql_error)?;
+    let peer_key = peers.map(|list| list.join(",")).unwrap_or_default();
     let key = (
         std::ptr::from_ref(db) as usize,
         device_id.clone(),
         changes,
         version,
-        peer_id.unwrap_or("").to_owned(),
+        format!("{include_local}|{peer_key}"),
     );
-    if let Some(peer) = peer_id {
-        let exists: bool = read.query_row("SELECT EXISTS(SELECT 1 FROM lan_devices WHERE device_id = ?1 AND enabled = 1 AND EXISTS (SELECT 1 FROM settings WHERE key = 'lan_outgoing_token_v1:' || lan_devices.device_id))", [peer], |r| r.get(0)).map_err(sql_error)?;
-        if !exists {
-            return Err(AppError::Message("设备不存在或未启用".into()));
+    if let Some(peers) = peers {
+        for peer in peers {
+            let exists: bool = read.query_row("SELECT EXISTS(SELECT 1 FROM lan_devices WHERE device_id = ?1 AND enabled = 1 AND EXISTS (SELECT 1 FROM settings WHERE key = 'lan_outgoing_token_v1:' || lan_devices.device_id))", [peer], |r| r.get(0)).map_err(sql_error)?;
+            if !exists {
+                return Err(AppError::Message("设备不存在或未启用".into()));
+            }
         }
     }
     let mut cache = CACHE.lock().map_err(|e| AppError::Message(e.to_string()))?;
@@ -278,7 +302,7 @@ fn database_selected(db: &Database, peer_id: Option<&str>) -> Result<Arc<Databas
     let origin = namespace(&device_id);
     for table in ["proxy_request_logs", "usage_daily_rollups"]
         .into_iter()
-        .filter(|_| peer_id.is_none())
+        .filter(|_| include_local)
     {
         copy_usage_table(&read, &tx, table, &origin)?;
         let name = provider_name_coalesce("l", "p");
@@ -298,9 +322,20 @@ fn database_selected(db: &Database, peer_id: Option<&str>) -> Result<Arc<Databas
         }
     }
     {
-        let mut peers = read.prepare("SELECT d.device_id, d.device_name, s.payload FROM lan_devices d LEFT JOIN lan_usage_snapshots s ON d.device_id = s.device_id WHERE d.enabled = 1 AND EXISTS (SELECT 1 FROM settings WHERE key = 'lan_outgoing_token_v1:' || d.device_id) AND d.device_id <> ?1 AND (?2 IS NULL OR d.device_id = ?2)").map_err(sql_error)?;
+        // 设备集合过滤：`None` 是全部已启用的配对设备。
+        let peer_filter = match peers {
+            None => String::new(),
+            Some(list) => format!(
+                " AND d.device_id IN ({})",
+                list.iter()
+                    .map(|id| format!("'{}'", id.replace('\'', "''")))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        };
+        let mut peers = read.prepare(&format!("SELECT d.device_id, d.device_name, s.payload FROM lan_devices d LEFT JOIN lan_usage_snapshots s ON d.device_id = s.device_id WHERE d.enabled = 1 AND EXISTS (SELECT 1 FROM settings WHERE key = 'lan_outgoing_token_v1:' || d.device_id) AND d.device_id <> ?1{peer_filter}")).map_err(sql_error)?;
         let rows = peers
-            .query_map(params![device_id, peer_id], |row| {
+            .query_map(params![device_id], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
