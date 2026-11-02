@@ -258,3 +258,15 @@ export function billingQuotaWindows(rule: WeeklyRule, billing: { start: Date; en
   }
   return windows.reverse();
 }
+
+/** Whole local dates whose midnight lies in [start, end), for day-attribution fallback. */
+export function quotaWholeDates(start: Date, end: Date): { startDate: string; endDate: string } | null {
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) throw new Error("查询时间范围无效");
+  const ceil = (value: Date) => {
+    const day = new Date(value); day.setHours(0, 0, 0, 0);
+    if (day < value) day.setDate(day.getDate() + 1);
+    return day;
+  };
+  const first = ceil(start), endExclusive = ceil(end);
+  return first < endExclusive ? { startDate: localDate(first), endDate: localDate(new Date(endExclusive.getTime() - 1)) } : null;
+}

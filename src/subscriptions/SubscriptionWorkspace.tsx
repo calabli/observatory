@@ -21,6 +21,7 @@ import {
   coveringLocalDates,
   currentBillingPeriod,
   billingQuotaWindows,
+  quotaWholeDates,
   clampCycleToWindow,
   cycleOffsetRange,
   cycleOverlapsWindow,
@@ -29,7 +30,7 @@ import {
   type WeeklyRule,
 } from "./cycles";
 import { formatSubscriptionPrice } from "./format";
-import { aggregateIndependently } from "./aggregate";
+import { aggregateConsistently } from "./aggregate";
 import { filterAndSort } from "./list";
 import "./subscriptions.css";
 
@@ -393,11 +394,25 @@ export function SubscriptionWorkspace() {
     enabled: mode === "billing" && !!item && !billingWeeks.error && billingWeeks.windows.length > 0,
     queryFn: async () => {
       if (!item) return [];
-      return aggregateIndependently(billingWeeks.windows, (window) =>
-        usageCall<Summary>("subscription_usage", {
-          startTime: iso(window.start), endTime: iso(window.end), appType: item.appType,
-          devices: deviceScope, dailyLimit: 0,
+      // All periods use the same attribution. Mixing exact and day-based
+      // results can count the boundary day's detailed requests twice.
+      return aggregateConsistently(billingWeeks.windows,
+        async (window) => ({
+          usage: await usageCall<Summary>("subscription_usage", {
+            startTime: iso(window.start), endTime: iso(window.end), appType: item.appType,
+            devices: deviceScope, dailyLimit: 0,
+          }),
+          dayAttributed: false, dates: null as string[] | null,
         }),
+        async (window) => {
+          const dates = quotaWholeDates(window.start, window.end);
+          if (!dates) throw new Error("该周期内没有可归属的完整自然日");
+          const usage = await usageCall<Summary>("subscription_usage", {
+            ...dates, appType: item.appType, devices: deviceScope, dailyLimit: 0,
+          });
+          return { usage, dayAttributed: true, dates: [dates.startDate, dates.endDate] };
+        },
+        (error) => parseUsageError(error).code === "RANGE_PRECISION_UNAVAILABLE",
       );
     },
     retry: false,
@@ -903,21 +918,22 @@ export function SubscriptionWorkspace() {
                     {billingWeeks.error || weeklyRows.error ? (
                       <div className="usage-error" role="alert">周额度聚合失败：{billingWeeks.error || friendlyError(weeklyRows.error)}</div>
                     ) : weeklyRows.isFetching ? <p className="muted">正在汇总周额度…</p> : !weeklyRows.data?.length ? <p className="muted">当前账期暂无已开始的额度周期</p> : (
-                      <div className="sp-billing-week-list">{weeklyRows.data.map(({ window: row, value: usage, error }) => {
+                      <div className="sp-billing-week-list">{weeklyRows.data.map(({ window: row, value, error }) => {
+                        const usage = value?.usage;
                         const parsed = error ? parseUsageError(error) : null;
                         const dates = Array.isArray(parsed?.details?.dates) ? parsed.details.dates.filter((date): date is string => typeof date === "string") : [];
                         const reason = parsed?.code === "RANGE_PRECISION_UNAVAILABLE"
                           ? `历史数据仅有日汇总，无法精确拆分${dates.length ? `（${dates.join("、")}）` : ""}`
                           : parsed?.message || "该周期查询失败";
                         return <div className="sp-billing-week-row" key={row.cycleStart.toISOString()}>
-                          <div><strong>{display(row.start)} — {display(row.end)}</strong><small>{row.start.getTime() !== row.cycleStart.getTime() || row.end.getTime() !== row.cycleEnd.getTime() ? "账期内部分周期" : "完整额度周期"}</small>{error != null && <small role="alert">{reason}</small>}</div>
+                          <div><strong>{display(row.start)} — {display(row.end)}</strong><small>{row.start.getTime() !== row.cycleStart.getTime() || row.end.getTime() !== row.cycleEnd.getTime() ? "账期内部分周期" : "完整额度周期"}</small>{value?.dayAttributed && <small>按自然日归属（{value.dates?.[0]} 至 {value.dates?.[1]}），非精确周期</small>}{error != null && <small role="alert">{reason}</small>}</div>
                           <div><strong>{usage ? formatTokens(usage.totalTokens) : "—"}</strong><small>Token</small></div>
                           <div><strong>{usage ? formatMoney(usage.costUsd) : "—"}</strong><small>估算费用</small></div>
                           <div><strong>{usage ? usage.requests.toLocaleString() : "—"}</strong><small>请求</small></div>
                         </div>;
                       })}</div>
                     )}
-                    <p className="hint">按当前订阅的额度规则统计；无法精确拆分的周期显示为“—”，其他周期仍可查看。规则存在空档时，周周期之和可能小于账期总量。远端数据以最近同步快照为准。</p>
+                    <p className="hint">任一周期精度不足时，全部周期统一按自然日零点归属，避免重复计算；标注“按自然日归属”的结果不代表按时分秒精确切分，无法查询的周期显示为“—”。规则存在空档时，周周期之和可能小于账期总量。远端数据以最近同步快照为准。</p>
                   </section>
                 )}
                 <section className="panel sp-chart">

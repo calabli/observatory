@@ -19,6 +19,7 @@ const {
   weeklyCycle,
   currentBillingPeriod,
   billingQuotaWindows,
+  quotaWholeDates,
   activeSubscription,
   localDate,
   coveringLocalDates,
@@ -298,11 +299,30 @@ test('billing quota windows preserve gaps in the configured rule', () => {
  assert.ok(rows[0].end<rows[1].start);
 });
 
-const {aggregateIndependently} = await loadModule('../src/subscriptions/aggregate.ts');
+const {aggregateIndependently, aggregateConsistently} = await loadModule('../src/subscriptions/aggregate.ts');
 test('weekly aggregation preserves other periods when one request fails', async () => {
   const error = new Error('precision unavailable');
   const rows = await aggregateIndependently([1,2,3], async (n) => { if (n === 2) throw error; return n * 10; });
   assert.deepEqual(rows.map(r => r.value), [10,null,30]);
   assert.equal(rows[1].error, error);
   assert.equal(rows[2].error, null);
+});
+
+
+test('day attribution assigns a split day to the period containing its midnight', () => {
+ const sep17=new Date(2026,8,17,19), sep24=new Date(2026,8,24,19), oct1=new Date(2026,9,1,19);
+ assert.deepEqual(quotaWholeDates(sep17,sep24),{startDate:'2026-09-18',endDate:'2026-09-24'});
+ assert.deepEqual(quotaWholeDates(sep24,oct1),{startDate:'2026-09-25',endDate:'2026-10-01'});
+ assert.deepEqual(quotaWholeDates(new Date(2026,8,1),new Date(2026,8,2)),{startDate:'2026-09-01',endDate:'2026-09-01'});
+ assert.equal(quotaWholeDates(new Date(2026,8,24,19),new Date(2026,8,24,20)),null);
+});
+
+
+test('precision fallback uses one consistent attribution for all weeks', async () => {
+  const attempted=[];
+  const result=await aggregateConsistently([1,2,3], async n => { attempted.push(`exact-${n}`); if (n === 2) throw new Error('precision'); return n; }, async n => { attempted.push(`day-${n}`); return n*10; }, err => err.message === 'precision');
+  assert.deepEqual(result.map(row=>row.value),[10,20,30]);
+  assert.deepEqual(attempted,['exact-1','exact-2','exact-3','day-1','day-2','day-3']);
+  const exact=await aggregateConsistently([1,2],async n=>n,async()=>{throw Error('not expected')},()=>true);
+  assert.deepEqual(exact.map(row=>row.value),[1,2]);
 });

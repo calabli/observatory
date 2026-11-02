@@ -52,15 +52,17 @@ export function UpdateControl({
   if (!window.__TAURI_INTERNALS__ || !target) return null;
   return createPortal(
     <div className="update-control">
-      <button
-        className="button"
-        disabled={busy}
-        onClick={() => void inspect(true)}
-      >
-        检查更新
-      </button>
+      {!confirming && (
+        <button
+          className="button"
+          disabled={busy}
+          onClick={() => void inspect(true)}
+        >
+          检查更新
+        </button>
+      )}
       {message && <span role="status">{message}</span>}
-      {update && (
+      {update && !confirming && (
         <button
           className="button primary"
           disabled={busy}
