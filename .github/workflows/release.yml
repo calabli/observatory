@@ -36,7 +36,7 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: '观测台 v__VERSION__'
-          releaseBody: '普通用量汇总支持模型前缀、全部历史和全部设备；看板接口支持多个模型前缀与精确模型 ID 混合筛选。macOS 构建未公证。'
+          releaseBody: '订阅页新增本账期查询、多设备汇总及账期内周额度聚合；已停用或到期的订阅也可查询，并修正周期边界按钮的鼠标样式。macOS 构建未公证。'
           releaseDraft: true
           prerelease: false
           assetNamePattern: 'Observatory-[version]-[platform]-[arch][setup][ext]'

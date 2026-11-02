@@ -209,3 +209,52 @@ export function cycleOffsetRange(
 
   return { min, max };
 }
+
+/** Current billing interval anchored to the subscription start date. */
+export function currentBillingPeriod(item: {
+  enabled: boolean; startDate: string; endDate: string; billing: string;
+  customIntervalDays?: number | null;
+}, now = new Date()): { start: Date; end: Date } | null {
+  const start = startOfDay(item.startDate);
+  const end = startOfDay(item.endDate);
+  if (!start || !end || end <= start || localDate(start) !== item.startDate || localDate(end) !== item.endDate) return null;
+  if (now < start) return null;
+  // For expired subscriptions use the final instant of the validity window.
+  const effectiveNow = new Date(Math.min(now.getTime(), end.getTime() - 1));
+  const anchorYear = start.getFullYear(), anchorMonth = start.getMonth(), anchorDay = start.getDate();
+  const boundary = (index: number): Date => {
+    if (item.billing === "期") {
+      const days = item.customIntervalDays;
+      if (!days || !Number.isInteger(days) || days < 1 || days > 366) throw new Error("自定义账期无效");
+      return new Date(anchorYear, anchorMonth, anchorDay + index * days);
+    }
+    if (item.billing !== "月" && item.billing !== "年") throw new Error("账期设置无效");
+    const month = anchorMonth + index * (item.billing === "年" ? 12 : 1);
+    const lastDay = new Date(anchorYear, month + 1, 0).getDate();
+    return new Date(anchorYear, month, Math.min(anchorDay, lastDay));
+  };
+  let index = 0;
+  while (boundary(index + 1) <= effectiveNow) {
+    if (++index > 12000) throw new Error("账期超出可查询范围");
+  }
+  return { start: boundary(index), end: new Date(Math.min(boundary(index + 1).getTime(), end.getTime())) };
+}
+
+/** Exact weekly quota windows intersecting the elapsed part of a billing period. */
+export function billingQuotaWindows(rule: WeeklyRule, billing: { start: Date; end: Date }, now = new Date()) {
+  const end = new Date(Math.min(billing.end.getTime(), Math.floor(now.getTime() / 1000) * 1000));
+  if (end <= billing.start) return [];
+  const windows: { cycleStart: Date; cycleEnd: Date; start: Date; end: Date }[] = [];
+  // Use the last instant of the interval as anchor so a historical boundary
+  // does not include the following quota cycle.
+  const anchor = new Date(end.getTime() - 1);
+  for (let offset = 0; offset >= -54; offset--) {
+    const cycle = weeklyCycle(rule, anchor, offset);
+    if (cycle.end <= billing.start) break;
+    const start = new Date(Math.max(cycle.start.getTime(), billing.start.getTime()));
+    const clippedEnd = new Date(Math.min(cycle.end.getTime(), end.getTime()));
+    if (start < clippedEnd) windows.push({ cycleStart:cycle.start, cycleEnd:cycle.end, start, end:clippedEnd });
+    if (offset === -54) throw new Error("账期内的额度周期过多");
+  }
+  return windows.reverse();
+}

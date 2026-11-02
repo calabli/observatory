@@ -19,6 +19,8 @@ import type { NativeStatus } from "../usage/types";
 import {
   activeSubscription,
   coveringLocalDates,
+  currentBillingPeriod,
+  billingQuotaWindows,
   clampCycleToWindow,
   cycleOffsetRange,
   cycleOverlapsWindow,
@@ -75,7 +77,7 @@ type UiState = {
   selected?: string;
   tab?: "usage" | "manage";
   filter?: "active" | "all";
-  mode?: "week" | "days";
+  mode?: "week" | "days" | "billing";
   days?: number;
   dayPreset?: string;
   customDays?: string;
@@ -186,7 +188,7 @@ export function SubscriptionWorkspace() {
   );
   const [form, setForm] = useState<Subscription | null>(null);
   const [formError, setFormError] = useState("");
-  const [mode, setMode] = useState<"week" | "days">(initial.mode ?? "week");
+  const [mode, setMode] = useState<"week" | "days" | "billing">(initial.mode ?? "week");
   const [chartMetric, setChartMetric] = useState<
     "tokens" | "cost" | "requests"
   >(initial.chartMetric ?? "tokens");
@@ -199,6 +201,7 @@ export function SubscriptionWorkspace() {
       Number(customDays) >= 1 &&
       Number(customDays) <= 366);
   const [offset, setOffset] = useState(0);
+  const [deviceScope, setDeviceScope] = useState<"local" | "all">("local");
   const [now, setNow] = useState(() => Date.now());
   // 订阅管理列表的检索与排序。
   const [query, setQuery] = useState("");
@@ -230,12 +233,9 @@ export function SubscriptionWorkspace() {
     [items],
   );
   const item = items.find((s) => s.id === selected) ?? active[0] ?? null;
-  // 可选列表：生效中的订阅，加上当前选中的那一条（可能是未生效或已停用的）。
-  const selectable = useMemo(() => {
-    const list = [...active];
-    if (item && !list.some((s) => s.id === item.id)) list.push(item);
-    return list;
-  }, [active, item]);
+  // Keep active subscriptions first, while allowing disabled and expired plans
+  // to be selected directly for historical usage.
+  const selectable = useMemo(() => [...active, ...items.filter(s => !active.some(a => a.id === s.id))], [active, items]);
   // 选中的订阅只要还在列表里就保留：未生效或已停用的订阅也能查看历史用量。
   useEffect(() => {
     if (selected && items.some((s) => s.id === selected)) return;
@@ -299,6 +299,10 @@ export function SubscriptionWorkspace() {
     push(offset);
     return list.sort((a, b) => b - a);
   }, [cycleBounds.min, cycleBounds.max, offset]);
+  const billingPeriod = useMemo(() => {
+    if (!item) return null;
+    try { return currentBillingPeriod(item, new Date(now)); } catch { return null; }
+  }, [item, now]);
   // 周期收敛到订阅有效期内：开头取较晚者，结尾取较早者。
   const validityWindow = useMemo(
     () =>
@@ -331,6 +335,7 @@ export function SubscriptionWorkspace() {
     mode === "week" &&
     !!effectivePeriod &&
     effectivePeriod.start.getTime() >= Math.floor(now / 1000) * 1000;
+  const queryPeriod = mode === "billing" ? billingPeriod : effectivePeriod;
   const params = useMemo(() => {
     if (
       !item ||
@@ -340,27 +345,30 @@ export function SubscriptionWorkspace() {
     )
       return null;
     if (mode === "days")
-      return { days, appType: item.appType, dailyLimit: CHART_DAYS };
-    if (!effectivePeriod) return null;
+      return { days, appType: item.appType, devices: deviceScope, dailyLimit: CHART_DAYS };
+    if (!queryPeriod) return null;
     // 精度不足时改查完整日期：把被截断的那几天整日计入。
     if (dateOverride)
       return {
         startDate: dateOverride.startDate,
         endDate: dateOverride.endDate,
         appType: item.appType,
+        devices: deviceScope,
         dailyLimit: CHART_DAYS,
       };
     return {
-      startTime: iso(effectivePeriod.start),
-      endTime: iso(new Date(Math.min(effectivePeriod.end.getTime(), now))),
+      startTime: iso(queryPeriod.start),
+      endTime: iso(new Date(Math.min(queryPeriod.end.getTime(), now))),
       appType: item.appType,
+      devices: deviceScope,
       dailyLimit: CHART_DAYS,
     };
   }, [
     item,
     mode,
     days,
-    effectivePeriod,
+    queryPeriod,
+    deviceScope,
     computed?.error,
     future,
     now,
@@ -373,6 +381,28 @@ export function SubscriptionWorkspace() {
     enabled: !!params,
     retry: false,
     refetchOnWindowFocus: true,
+  });
+  const billingWeeks = useMemo(() => {
+    if (mode !== "billing" || !item || !billingPeriod) return { windows: [], error: "" };
+    try { return { windows: billingQuotaWindows(item.rule, billingPeriod, new Date(now)), error: "" }; }
+    catch (error) { return { windows: [], error: friendlyError(error) }; }
+  }, [mode, item, billingPeriod, now]);
+  const weeklyRows = useQuery({
+    queryKey: ["subscriptions", "billing-weeks", item?.appType, deviceScope, billingWeeks.windows.map(w => [iso(w.start), iso(w.end)]), revision.data?.revision],
+    enabled: mode === "billing" && !!item && !billingWeeks.error && billingWeeks.windows.length > 0,
+    queryFn: async () => {
+      if (!item) return [];
+      const rows: { start: Date; end: Date; cycleStart: Date; cycleEnd: Date; usage: Summary }[] = [];
+      for (const window of billingWeeks.windows) {
+        const usage = await usageCall<Summary>("subscription_usage", {
+          startTime: iso(window.start), endTime: iso(window.end), appType: item.appType,
+          devices: deviceScope, dailyLimit: 0,
+        });
+        rows.push({ ...window, usage });
+      }
+      return rows;
+    },
+    retry: false,
   });
   // 精度错误里带着被截断的日期，界面要把它显示出来并给一条补救路径。
   const usageError = useMemo(
@@ -527,7 +557,7 @@ export function SubscriptionWorkspace() {
                 <div className="sp-section-title">
                   <div>
                     <h2>周期用量</h2>
-                    <p>按设置的周周期或最近天数查看所选 Agent 的本机用量。</p>
+                    <p>按周额度、本账期或最近天数查看所选 Agent 的用量。</p>
                   </div>
                   <button
                     className="button"
@@ -560,7 +590,7 @@ export function SubscriptionWorkspace() {
                         <small>
                           {status.data?.sources.find((a) => a.id === s.appType)
                             ?.name ?? s.appType}
-                          {!activeSubscription(s) ? " · 未生效" : ""}
+                          {!s.enabled ? " · 已停用" : !activeSubscription(s) ? " · 未生效或已结束" : ""}
                         </small>
                       </span>
                     </button>
@@ -576,12 +606,22 @@ export function SubscriptionWorkspace() {
                       周额度周期
                     </button>
                     <button
+                      aria-pressed={mode === "billing"}
+                      onClick={() => setMode("billing")}
+                    >
+                      本账期
+                    </button>
+                    <button
                       aria-pressed={mode === "days"}
                       onClick={() => setMode("days")}
                     >
                       最近天数
                     </button>
                   </div>
+                  <select aria-label="统计设备" value={deviceScope} onChange={(e) => setDeviceScope(e.target.value as "local" | "all")}>
+                    <option value="local">本机设备</option>
+                    <option value="all">全部已配对设备</option>
+                  </select>
                   {mode === "days" && (
                     <>
                       <select
@@ -621,6 +661,11 @@ export function SubscriptionWorkspace() {
                     </>
                   )}
                 </div>
+                {mode === "billing" && (
+                  <div className="usage-note">
+                    {billingPeriod ? `${now >= billingPeriod.end.getTime() ? "最后账期" : "本账期"}：${display(billingPeriod.start)} — ${display(billingPeriod.end)}（结束不含${now < billingPeriod.end.getTime() ? "；统计截至现在" : ""}）` : "订阅尚未开始或账期设置无效，无法查询账期。"}
+                  </div>
+                )}
                 {mode === "days" && !validDays && (
                   <div className="usage-error" role="alert">
                     请输入 1–366 的整数天数。
@@ -678,6 +723,7 @@ export function SubscriptionWorkspace() {
                       <button
                         className="button"
                         disabled={offset - 1 < cycleBounds.min}
+                        title={offset - 1 < cycleBounds.min ? "已是最早周期" : "上一周期"}
                         onClick={() => setOffset((n) => n - 1)}
                       >
                         ← 上一周期
@@ -728,6 +774,7 @@ export function SubscriptionWorkspace() {
                       <button
                         className="button"
                         disabled={offset + 1 > cycleBounds.max}
+                        title={offset + 1 > cycleBounds.max ? "已是可查询的最后周期" : "下一周期"}
                         onClick={() => setOffset((n) => n + 1)}
                       >
                         下一周期 →
@@ -797,15 +844,15 @@ export function SubscriptionWorkspace() {
                         <button
                           className="button"
                           onClick={() => {
-                            if (!effectivePeriod) return;
+                            if (!queryPeriod) return;
                             const end = new Date(
                               Math.floor(
-                                Math.min(effectivePeriod.end.getTime(), now) /
+                                Math.min(queryPeriod.end.getTime(), now) /
                                   1000,
                               ) * 1000,
                             );
                             setDateOverride(
-                              coveringLocalDates(effectivePeriod.start, end),
+                              coveringLocalDates(queryPeriod.start, end),
                             );
                           }}
                         >
@@ -852,6 +899,24 @@ export function SubscriptionWorkspace() {
                     </div>
                   ))}
                 </div>
+                {mode === "billing" && (
+                  <section className="panel sp-billing-weeks">
+                    <div className="sp-section-title"><div><h2>账期内周额度</h2><p>按额度周期精确统计，跨账期的周期仅计入本账期部分</p></div></div>
+                    {billingWeeks.error || weeklyRows.error ? (
+                      <div className="usage-error" role="alert">周额度聚合失败：{billingWeeks.error || friendlyError(weeklyRows.error)}</div>
+                    ) : weeklyRows.isFetching ? <p className="muted">正在汇总周额度…</p> : !weeklyRows.data?.length ? <p className="muted">当前账期暂无已开始的额度周期</p> : (
+                      <div className="sp-billing-week-list">{weeklyRows.data.map((row) => (
+                        <div className="sp-billing-week-row" key={row.cycleStart.toISOString()}>
+                          <div><strong>{display(row.start)} — {display(row.end)}</strong><small>{row.start.getTime() !== row.cycleStart.getTime() || row.end.getTime() !== row.cycleEnd.getTime() ? "账期内部分周期" : "完整额度周期"}</small></div>
+                          <div><strong>{formatTokens(row.usage.totalTokens)}</strong><small>Token</small></div>
+                          <div><strong>{formatMoney(row.usage.costUsd)}</strong><small>估算费用</small></div>
+                          <div><strong>{row.usage.requests.toLocaleString()}</strong><small>请求</small></div>
+                        </div>
+                      ))}</div>
+                    )}
+                    <p className="hint">按当前订阅的额度规则统计；规则存在空档时，周周期之和可能小于账期总量。远端数据以最近同步快照为准。</p>
+                  </section>
+                )}
                 <section className="panel sp-chart">
                   <div className="sp-section-title">
                     <div>
@@ -919,7 +984,7 @@ export function SubscriptionWorkspace() {
                   {data.data?.lastScanAt
                     ? `最近本机扫描：${new Date(data.data.lastScanAt).toLocaleString("zh-CN", { hour12: false })}。`
                     : "本次启动后尚无扫描时间。"}
-                  统计所选 Agent 的本机全部来源；{mode === "week" ? "周周期按订阅有效期裁剪。" : "最近天数不按订阅有效期裁剪。"}同一 Agent
+                  统计所选 Agent 的{deviceScope === "all" ? "本机及已配对设备" : "本机"}用量；{mode === "week" ? "周周期按订阅有效期裁剪。" : mode === "billing" ? "账期按订阅设置及有效期计算。" : "最近天数不按订阅有效期裁剪。"}同一 Agent
                   的多个订阅暂不能按账号区分；官方剩余额度和百分比请以服务商页面为准。
                 </p>
               </main>

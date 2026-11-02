@@ -370,3 +370,14 @@
     border-top: 1px solid var(--line);
   }
 }
+
+#observatory-root .sp-cycle-nav button:disabled {
+  cursor: not-allowed;
+}
+#observatory-root .sp-billing-weeks { margin-top: 16px; padding: 20px; }
+#observatory-root .sp-billing-week-list { margin-top: 10px; }
+#observatory-root .sp-billing-week-row { display:grid; grid-template-columns:minmax(220px,2fr) repeat(3,minmax(75px,1fr)); gap:12px; padding:12px 0; border-top:1px solid var(--line); }
+#observatory-root .sp-billing-week-row > div { display:flex; flex-direction:column; gap:3px; min-width:0; }
+#observatory-root .sp-billing-week-row strong { font-size:12px; font-variant-numeric:tabular-nums; }
+#observatory-root .sp-billing-week-row small { color:var(--muted); font-size:11px; }
+@media (max-width: 700px) { #observatory-root .sp-billing-week-row { grid-template-columns:repeat(3,1fr); } #observatory-root .sp-billing-week-row > div:first-child { grid-column:1/-1; } }

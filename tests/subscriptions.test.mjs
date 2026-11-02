@@ -17,6 +17,8 @@ async function loadModule(relativePath) {
 
 const {
   weeklyCycle,
+  currentBillingPeriod,
+  billingQuotaWindows,
   activeSubscription,
   localDate,
   coveringLocalDates,
@@ -252,4 +254,46 @@ test('an invalid window does not restrict navigation', () => {
   const clamped = clampCycleToWindow(cycle, {startDate: '', endDate: ''});
   assert.equal(clamped.start.getTime(), cycle.start.getTime());
   assert.equal(clamped.end.getTime(), cycle.end.getTime());
+});
+
+
+test('current billing period handles month-end anchors and subscription boundaries', () => {
+  const item={enabled:true,startDate:'2026-01-31',endDate:'2026-05-15',billing:'月'};
+  const feb=currentBillingPeriod(item,new Date(2026,1,28,12));
+  assert.equal(localDate(feb.start),'2026-02-28');
+  assert.equal(localDate(feb.end),'2026-03-31');
+  const apr=currentBillingPeriod(item,new Date(2026,4,1,12));
+  assert.equal(localDate(apr.start),'2026-04-30');
+  assert.equal(localDate(apr.end),'2026-05-15');
+  assert.equal(localDate(currentBillingPeriod(item,new Date(2026,4,15,12)).start),'2026-04-30');
+  assert.equal(localDate(currentBillingPeriod({...item,enabled:false},new Date(2026,2,1)).start),'2026-02-28');
+  assert.equal(currentBillingPeriod(item,new Date(2026,0,1)),null);
+});
+
+test('current billing period supports annual and custom-day plans', () => {
+  const annual=currentBillingPeriod({enabled:true,startDate:'2024-02-29',endDate:'2028-03-01',billing:'年'},new Date(2025,2,1));
+  assert.equal(localDate(annual.start),'2025-02-28');
+  assert.equal(localDate(annual.end),'2026-02-28');
+  const custom=currentBillingPeriod({enabled:true,startDate:'2026-01-01',endDate:'2026-04-01',billing:'期',customIntervalDays:14},new Date(2026,0,20));
+  assert.equal(localDate(custom.start),'2026-01-15');
+  assert.equal(localDate(custom.end),'2026-01-29');
+});
+
+
+test('billing quota windows clip both edges without double counting', () => {
+ const rule={startDay:4,startTime:'19:00:00',endDay:4,endTime:'19:00:00'};
+ const start=new Date(2026,10,1), now=new Date(2026,10,10,15), end=new Date(2026,11,1);
+ const rows=billingQuotaWindows(rule,{start,end},now);
+ assert.equal(rows.length,2);
+ assert.equal(rows[0].start.getTime(),start.getTime());
+ assert.equal(rows[0].end.getTime(),rows[1].start.getTime());
+ assert.equal(rows[1].end.getTime(),now.getTime());
+ assert.ok(rows[0].cycleStart<start);
+ assert.ok(rows[1].cycleEnd>now);
+});
+test('billing quota windows preserve gaps in the configured rule', () => {
+ const rule={startDay:1,startTime:'00:00:00',endDay:3,endTime:'00:00:00'};
+ const rows=billingQuotaWindows(rule,{start:new Date(2026,10,1),end:new Date(2026,11,1)},new Date(2026,10,15));
+ assert.equal(rows.length,2);
+ assert.ok(rows[0].end<rows[1].start);
 });
