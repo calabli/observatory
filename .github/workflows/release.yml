@@ -36,7 +36,7 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: '观测台 v__VERSION__'
-          releaseBody: '周额度遇到历史日汇总时统一按自然日归属并标注，避免相邻周期重复计算；更新确认界面不再重复显示安装按钮。macOS 构建未公证。'
+          releaseBody: '用量汇总新增 byModel=true：同一自然窗口的按模型拆分，含当天的实时明细；用量组件的模型构成改走自然窗口，与订阅账期无关，订阅到期日当天也能看到当天的模型数据；修复周期序列等测试对「今天星期几」的依赖。macOS 构建未公证。'
           releaseDraft: true
           prerelease: false
           assetNamePattern: 'Observatory-[version]-[platform]-[arch][setup][ext]'

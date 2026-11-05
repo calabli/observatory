@@ -1,4 +1,4 @@
-use chrono::{Duration, Local, NaiveDate, TimeZone};
+use chrono::{Datelike, Duration, Local, NaiveDate, TimeZone};
 use observatory_usage_core::{
     database::Database,
     lan_usage::{identity, public_api, server},
@@ -911,6 +911,9 @@ async fn http_cycle_endpoint_matches_the_summary_contract() {
 async fn http_cycle_endpoint_clamps_to_the_subscription_window() {
     let db = Arc::new(Database::memory().unwrap());
     seed(&db);
+    // 种子的「昨天」日汇总会让秒级窗口恰好切在昨天时返回 422（周五运行时命中）；
+    // 这里只关心窗口收敛，不需要日汇总数据。
+    db.execute_batch("DELETE FROM usage_daily_rollups").unwrap();
     // 有效期只有今天前后一天，周期会被收窄。
     let start = today().pred_opt().unwrap().format("%Y-%m-%d").to_string();
     let end = today().succ_opt().unwrap().format("%Y-%m-%d").to_string();
@@ -932,8 +935,9 @@ async fn http_cycle_endpoint_clamps_to_the_subscription_window() {
         .send()
         .await
         .unwrap();
-    assert!(response.status().is_success());
+    let status = response.status();
     let body: Value = response.json().await.unwrap();
+    assert!(status.is_success(), "status {status} body {body}");
     let range_start =
         chrono::DateTime::parse_from_rfc3339(body["range"]["start"].as_str().unwrap()).unwrap();
     let range_end =
@@ -973,6 +977,8 @@ async fn http_cycle_endpoint_clamps_to_the_subscription_window() {
 async fn http_cycle_endpoint_walks_back_and_forward() {
     let db = Arc::new(Database::memory().unwrap());
     seed(&db);
+    // 同上：日汇总的日期若落在秒级窗口的部分边界上会 422，这里用不到它。
+    db.execute_batch("DELETE FROM usage_daily_rollups").unwrap();
     let (start, end) = year_window();
     let rule_value = json!({"startDay":4,"startTime":"19:00:00","endDay":4,"endTime":"19:00:00"});
     save_subscription(&db, "claude", &start, &end, rule_value.clone());
@@ -1289,13 +1295,17 @@ async fn http_cycle_series_returns_a_series_of_cycles() {
         &end,
         json!({"startDay":4,"startTime":"00:00:00","endDay":4,"endTime":"00:00:00"}),
     );
-    // 今天往前 10 天，每天一条明细，落满两个周期。
+    // 从本周期开始的周四 00:00 往前铺满两个整周期、往后铺到今天：每天一条明细。
+    // 断言按当前周期里实际落进的天数计算，与「今天星期几」无关。
     let today = today();
-    for offset in 0..10 {
-        let date = today - chrono::Duration::days(offset);
+    let into_cycle = (today.weekday().num_days_from_monday() + 4) % 7; // 距本周四 00:00 的天数（u32）
+    let cycle_start = today - chrono::Duration::days(into_cycle as i64);
+    let mut day = cycle_start - chrono::Duration::days(14);
+    let mut seeded = 0u64;
+    while day <= today {
         insert_detail(
             &db,
-            &format!("d{offset}"),
+            &format!("d{seeded}"),
             "claude",
             "m",
             None,
@@ -1304,8 +1314,10 @@ async fn http_cycle_series_returns_a_series_of_cycles() {
             0,
             0,
             "1.00",
-            local_ts(date, 0, 1),
+            local_ts(day, 0, 1),
         );
+        day += chrono::Duration::days(1);
+        seeded += 1;
     }
 
     let handle = server::start(db.clone(), 0).await.unwrap();
@@ -1347,12 +1359,13 @@ async fn http_cycle_series_returns_a_series_of_cycles() {
         let last = NaiveDate::parse_from_str(cycle["endDate"].as_str().unwrap(), "%Y-%m-%d").unwrap();
         assert_eq!((last - first).num_days(), 6, "周期应覆盖 7 个自然日");
     }
-    // 用量：最近两个周期各有明细（7 天 + 3 天）。
-    assert_eq!(cycles[0]["requests"], 5);
-    assert_eq!(cycles[1]["requests"], 5);
-    assert_eq!(cycles[2]["requests"], 0);
-    assert_eq!(cycles[0]["totalTokens"], 600);
-    assert_eq!(cycles[0]["costUsd"], 5.0);
+    // 用量：当前周期从周四起算，前两个周期都铺满了 7 天。
+    let in_current = u64::from(into_cycle) + 1;
+    assert_eq!(cycles[0]["requests"], in_current);
+    assert_eq!(cycles[1]["requests"], 7);
+    assert_eq!(cycles[2]["requests"], 7);
+    assert_eq!(cycles[0]["totalTokens"], in_current * 120);
+    assert_eq!(cycles[0]["costUsd"], in_current as f64);
     // 当前周期还没结束。
     assert_eq!(cycles[0]["complete"], false);
     assert_eq!(cycles[1]["complete"], true);
@@ -2152,5 +2165,65 @@ async fn summary_all_time_prefix_accepts_long_history_and_preserves_defaults() {
     assert_eq!(call("allTime=true&days=7").await.unwrap().status(),400);
     assert_eq!(call("modelPrefix=deepseek&model=other").await.unwrap().status(),400);
     assert_eq!(call("modelPrefix=").await.unwrap().status(),400);
+    handle.stop();
+}
+
+/// byModel=true：按模型拆分与顶层同一窗口、同一口径，条目形状对齐 byAppAndModel。
+#[test]
+fn by_model_returns_per_model_breakdown_over_the_same_window() {
+    let db = Database::memory().unwrap();
+    let today = today();
+    insert_detail(&db, "a", "claude", "claude-opus", None, 100, 20, 0, 0, "1.00", local_ts(today, 1, 0));
+    insert_detail(&db, "b", "claude", "claude-sonnet", None, 50, 10, 0, 0, "0.50", local_ts(today, 2, 0));
+    insert_detail(&db, "c", "codex", "gpt-6", None, 10, 2, 0, 0, "0.10", local_ts(today, 3, 0));
+    insert_rollup(&db, today.pred_opt().unwrap(), "claude", "claude-opus", 1, 7, 3, "0.07");
+
+    let result = public_api::summary(&db, public_api::SummaryQuery { days: Some(3), by_model: Some(true), ..Default::default() }).unwrap();
+    let items = result["models"].as_array().expect("响应应有 models 数组");
+    let ranked: Vec<(String, u64)> = items.iter()
+        .map(|m| (m["model"].as_str().unwrap().to_owned(), m["usage"]["totalTokens"].as_u64().unwrap()))
+        .collect();
+    // 按 Token 降序；昨天日汇总的 10 个 Token 计入 claude-opus
+    assert_eq!(ranked, vec![("claude-opus".into(), 130), ("claude-sonnet".into(), 60), ("gpt-6".into(), 12)]);
+    assert_eq!(result["totalTokens"], 202);
+    // 每项带 appType，usage.daily 覆盖同一 3 天窗口（空日补零），当天来自实时明细
+    let opus = items.iter().find(|m| m["model"] == "claude-opus").unwrap();
+    assert_eq!(opus["appType"], "claude");
+    let daily = opus["usage"]["daily"].as_array().unwrap();
+    assert_eq!(daily.len(), 3);
+    assert_eq!(daily.last().unwrap()["date"].as_str().unwrap(), today.to_string());
+    assert_eq!(daily.last().unwrap()["totalTokens"].as_u64().unwrap(), 120);
+    // model 筛选对拆分同样生效
+    let filtered = public_api::summary(&db, public_api::SummaryQuery {
+        days: Some(3), by_model: Some(true), model: Some("claude-sonnet".into()), ..Default::default()
+    }).unwrap();
+    let filtered_models: Vec<&str> = filtered["models"].as_array().unwrap().iter().map(|m| m["model"].as_str().unwrap()).collect();
+    assert_eq!(filtered_models, vec!["claude-sonnet"]);
+    // 默认不返回 models
+    assert!(public_api::summary(&db, query(3, None, None)).unwrap().get("models").is_none());
+}
+
+#[test]
+fn by_model_conflicts_with_all_time() {
+    let db = Database::memory().unwrap();
+    let error = public_api::summary(&db, public_api::SummaryQuery { all_time: Some(true), by_model: Some(true), ..Default::default() }).unwrap_err();
+    assert_eq!(error.status, 400);
+}
+
+#[tokio::test]
+async fn http_by_model_query_param_parses_and_returns_models() {
+    let db = Arc::new(Database::memory().unwrap());
+    let now = Local::now().timestamp();
+    insert_detail(&db, "a", "claude", "claude-opus", None, 100, 20, 0, 0, "1.00", now - 60);
+    insert_detail(&db, "b", "claude", "claude-sonnet", None, 50, 10, 0, 0, "0.50", now - 30);
+    let handle = server::start(db.clone(), 0).await.unwrap();
+    let key = public_api::rotate_key(&db).unwrap();
+    let url = format!("http://127.0.0.1:{}/api/v1/usage/summary", handle.port);
+    let http = reqwest::Client::builder().no_proxy().build().unwrap();
+    let ok: Value = http.get(&url).query(&[("days", "2"), ("appType", "claude"), ("byModel", "true")]).header("X-API-Key", &key).send().await.unwrap().json().await.unwrap();
+    let models: Vec<&str> = ok["models"].as_array().unwrap().iter().map(|m| m["model"].as_str().unwrap()).collect();
+    assert_eq!(models, vec!["claude-opus", "claude-sonnet"]);
+    let bad = http.get(&url).query(&[("days", "2"), ("byModel", "yes")]).header("X-API-Key", &key).send().await.unwrap();
+    assert_eq!(bad.status(), 400);
     handle.stop();
 }

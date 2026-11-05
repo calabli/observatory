@@ -48,6 +48,7 @@
 | `model` | 字符串 | 无 | 多个有效计价模型 ID 以逗号分隔，作为所选平台共用的筛选集合 |
 | `modelsByApp` | JSON 字符串 | 无 | 按平台分别指定模型 ID 数组，须同时提供 `appType`，不能与 `model` 同时使用 |
 | `groupBy` | 枚举字符串 | `day` | `day`、`week`、`month` |
+| `byModel` | 布尔 | `false` | `true` 时响应额外返回 `models`：同一窗口的按模型拆分，不能与 `allTime` 同时使用 |
 
 不填 `appType` 时合计所有允许共享的应用。指定未共享应用返回 403；未支持的应用标识返回 400。未知参数、重复参数、空筛选值、非法日期、不支持的分组方式返回 400。
 
@@ -76,6 +77,18 @@ GET /api/v1/usage/summary?startTime=2026-10-29T19:00:00%2B08:00&appType=claude
 | `month` | 每月 1 日午夜至次月 1 日午夜 | `2026-11` |
 
 ISO 周编号使用该周所属年份，跨年周不会拼错日历年。只返回与查询范围相交的周期；bucket 的 `start`、`endExclusive` 是自然周期与查询区间的交集。空周期补零，按开始时间升序。
+
+### 按模型拆分（`byModel=true`）
+
+带上 `byModel=true` 时，响应额外多一个 `models` 数组：同一窗口内每个模型的合计和 `daily`，窗口、统计口径与顶层完全一致（含当天的实时明细）。每项的形状与 `/dashboard/usage` 的 `byAppAndModel` 条目相同，按 `usage.totalTokens` 降序：
+
+```json
+{"appType": "claude", "model": "claude-opus-5-5",
+ "usage": {"totalTokens": 123456, "costUsd": 1.25, "requests": 42,
+           "daily": [{"date": "2026-11-05", "totalTokens": 123456, "...": "…"}]}}
+```
+
+`model` / `modelsByApp` / `modelPrefix` 的筛选对 `models` 同样生效。不能与 `allTime` 同时使用（返回 400）。需要「今日 / 本周 / 本月」这类与订阅账期无关的模型构成时用这个参数；`/dashboard/usage` 的按模型数据锚定在第一个平台的订阅账期上，订阅到期日当天不包含当天数据，不要用它做自然日口径。
 
 ## 当前周期用量
 

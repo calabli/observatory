@@ -170,6 +170,11 @@ pub struct SummaryQuery {
     pub models_by_app: Option<String>,
     /// 分组方式：`day`（默认）、`week`、`month`。
     pub group_by: Option<String>,
+    /// 同时返回 `models`：与顶层同一窗口的按模型拆分。每项 `{"appType","model","usage"}`
+    /// 与 `/dashboard/usage` 的 `byAppAndModel` 条目同形（`usage.daily` 覆盖同一窗口，
+    /// 含当天的实时明细），调用方无需再依赖订阅账期即可得到自然窗口的模型构成。
+    /// 不能与 `allTime` 同时使用。
+    pub by_model: Option<bool>,
     /// 设备集合，逗号分隔。默认只查本机。
     ///
     /// `local` 指本机；其余填配对设备的 `deviceId`。不填时等价于 `local`。
@@ -1089,6 +1094,11 @@ fn summary_inner(db: &Database, mut query: SummaryQuery, enforce_share: bool) ->
     if query.all_time == Some(true) && (query.days.is_some() || query.start_date.is_some() || query.end_date.is_some() || query.start_time.is_some() || query.end_time.is_some()) {
         return Err(ApiError::conflicting("allTime 不能与其他时间参数混用"));
     }
+    // allTime 的窗口可能是几年，逐模型的 daily 会把响应撑得不可用。
+    let want_models = query.by_model.unwrap_or(false);
+    if want_models && query.all_time == Some(true) {
+        return Err(ApiError::conflicting("byModel 不能与 allTime 同时使用"));
+    }
     let devices = parse_device_selection(db, query.devices.as_deref())?;
     let projection = if devices.is_local_only() { None } else if devices.local {
         Some(super::projection::database_for_peers(db, &devices.peers)?)
@@ -1256,6 +1266,33 @@ fn summary_inner(db: &Database, mut query: SummaryQuery, enforce_share: bool) ->
     result["updatedAt"] = json!(chrono::Utc::now().to_rfc3339());
     result["lastScanAt"] = json!(crate::services::session_usage::last_sync_completed_at());
     result["buckets"] = json!(buckets);
+    // 按模型拆分（byModel=true）：每个模型重复一次顶层查询，窗口与口径完全一致，
+    // 含当天的实时明细。模型清单来自区间内的明细统计，model / modelsByApp / modelPrefix
+    // 的筛选在这里同样生效。
+    if want_models {
+        let window_start = to_rfc3339(local_datetime(start_ts));
+        let window_end = to_rfc3339(local_datetime(end_ts));
+        let mut by_model_items: Vec<Value> = Vec::new();
+        for app in &apps {
+            let candidates = source.get_model_stats(Some(start_ts), Some(end_ts - 1), Some(app), None, None)?;
+            for candidate in candidates {
+                let model = candidate.model;
+                if models.as_ref().is_some_and(|list| !list.contains(&model)) { continue; }
+                if models_by_app.as_ref().and_then(|map| map.get(app)).is_some_and(|list| !list.contains(&model)) { continue; }
+                let usage = summary_inner(db, SummaryQuery {
+                    app_type: Some(app.clone()),
+                    model: Some(model.clone()),
+                    devices: query.devices.clone(),
+                    start_time: Some(window_start.clone()),
+                    end_time: Some(window_end.clone()),
+                    ..Default::default()
+                }, true)?;
+                by_model_items.push(json!({"appType":app,"model":model,"usage":usage}));
+            }
+        }
+        by_model_items.sort_by(|a, b| b["usage"]["totalTokens"].as_u64().cmp(&a["usage"]["totalTokens"].as_u64()));
+        result["models"] = json!(by_model_items);
+    }
     result["daily"] = json!(daily);
     Ok(result)
 }
