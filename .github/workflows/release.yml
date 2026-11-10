@@ -29,7 +29,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NOTES: "First release of Observatory: local AI usage statistics (tokens, cost and requests per tool, provider and model), multi-device LAN pairing and sync, and an activity log of scans, LAN calls, syncs and key actions. The macOS build is not notarized."
+          NOTES: 'The installer, install folder, shortcuts and the process name are now in English (Observatory / Observatory.exe) instead of 观测台. Data stays in ~/.observatory and is unaffected. The macOS build is not notarized.'
         run: |
           set -euo pipefail
           version=$(node -p "require('./package.json').version")
