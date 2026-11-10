@@ -2,17 +2,21 @@ name: Build release
 on:
   workflow_dispatch:
   push:
-    tags: ['v*']
+    tags: ["v*"]
 permissions:
   contents: write
+# Never let two runs for the same tag publish into the same release at once.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  CARGO_TERM_COLOR: always
+  # Incremental artifacts are useless in CI and bloat the cache.
+  CARGO_INCREMENTAL: 0
 jobs:
-  # Create (or reuse) a single draft release first, then let each platform build
-  # upload its assets to that same release ID.
-  # Previously every platform's tauri-action looked up / created the release by
-  # tag on its own; when both of them started at the same time neither found an
-  # existing release, so each one created a draft with the same name, the
-  # installers ended up scattered, and the manifest job only saw one of them and
-  # failed (that is exactly what happened in v0.1.47).
+  # Create (or reuse) one draft release up front; every platform build uploads
+  # to that release ID. Letting each tauri-action look up / create the release
+  # by tag raced and produced duplicate drafts.
   release:
     runs-on: ubuntu-latest
     outputs:
@@ -25,11 +29,15 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NOTES: 'New "Activity Log" page (top navigation): records the files read by local scans (one row per file, with path, size, modification time, the bytes read and the read offset for this round, the number of new rows and the tokens), the external calls made to the local LAN service (caller, status code, duration, response size), the device sync results, and key actions such as scanning, syncing, connecting a device, and changing settings and prices; click a row to see the details. Pairing codes, tokens and API keys are never written to the log, which is stored locally and kept for 7 days. Fix: paired devices no longer keep re-downloading the full data of each other forever (in v0.1.46 every sync round re-downloaded and rewrote all of the data of the peer). Performance: repeated dashboard requests with the same filters return the cached result directly; rebuilding the multi-device aggregate no longer holds the write lock, so scans and settings saves no longer stall during a rebuild; with no filters the dashboard performs two fewer full-table aggregations. The macOS build is not notarized.'
+          NOTES: "First release of Observatory: local AI usage statistics (tokens, cost and requests per tool, provider and model), multi-device LAN pairing and sync, and an activity log of scans, LAN calls, syncs and key actions. The macOS build is not notarized."
         run: |
           set -euo pipefail
           version=$(node -p "require('./package.json').version")
           tag="v$version"
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ] && [ "$GITHUB_REF_NAME" != "$tag" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $version"
+            exit 1
+          fi
           # Reuse the release that already exists for this tag (drafts included)
           # when the workflow is re-run, instead of creating another one.
           ids=$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate \
@@ -51,6 +59,47 @@ jobs:
           fi
           echo "id=$id" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  # Lint and tests run beside the release builds instead of in front of them;
+  # the release is only published (manifest job) when they pass.
+  check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native -> target
+      - run: npm ci
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run format:check
+      - name: Check Rust formatting
+        run: |
+          cargo fmt --manifest-path native/Cargo.toml --check
+          cargo fmt --manifest-path src-tauri/Cargo.toml --check
+      # One cargo invocation so the library and the test binaries compile once.
+      - name: Run usage-core tests
+        run: cargo test --manifest-path native/Cargo.toml --locked --lib --test pairing_codes --test scan_jobs --test lan_pair_scan --test lan_storage --test usage_http_api --test subscriptions --test write_epoch --test lan_hardening --test lan_sync_loop --test activity_log
+
+  check-macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native -> target
+      - name: Verify macOS network snapshot, tray totals and projections
+        run: cargo test --manifest-path native/Cargo.toml --locked --test usage_integration -- network_snapshot_exposes_valid_local_interface_data tray_summary_counts_only_local_today peer_snapshots_support_filters_replace_and_disabled_devices
+
   build:
     needs: release
     strategy:
@@ -62,48 +111,39 @@ jobs:
           - os: macos-15
             args: --target aarch64-apple-darwin --bundles app,dmg
     runs-on: ${{ matrix.os }}
+    env:
+      HAS_SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: "22"
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
         with:
-          components: rustfmt
+          workspaces: src-tauri -> target
       - run: npm ci
-      - run: npm test
-      - run: npm run typecheck
-      - run: npm run lint
-      - run: npm run format:check
-      - name: Check Rust formatting
+      # Without the updater signing key the build would fail outright; build
+      # the installers without updater artifacts instead and say so.
+      - name: Disable updater artifacts when no signing key is configured
+        if: env.HAS_SIGNING_KEY != 'true'
+        shell: bash
         run: |
-          cargo fmt --manifest-path native/Cargo.toml --check
-          cargo fmt --manifest-path src-tauri/Cargo.toml --check
-      - name: Run usage-core unit tests
-        run: cargo test --manifest-path native/Cargo.toml --lib --locked
-      - name: Verify pairing and multi-device scans
-        run: cargo test --manifest-path native/Cargo.toml --test pairing_codes --test scan_jobs --test lan_pair_scan --test lan_storage --test usage_http_api --test subscriptions --test write_epoch --test lan_hardening --test lan_sync_loop --test activity_log --locked
+          echo "::warning::TAURI_SIGNING_PRIVATE_KEY is not set; building without in-app update packages"
+          node -e "const f='src-tauri/tauri.conf.json',fs=require('fs'),c=JSON.parse(fs.readFileSync(f,'utf8'));c.bundle.createUpdaterArtifacts=false;fs.writeFileSync(f,JSON.stringify(c,null,2))"
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          # Upload to the single release created by the release job; no longer
-          # look up / create a release by tag for every platform separately.
           releaseId: ${{ needs.release.outputs.id }}
-          assetNamePattern: 'Observatory-[version]-[platform]-[arch][setup][ext]'
+          # The manifest job writes latest.json once both platforms are done.
+          includeUpdaterJson: false
+          retryAttempts: 2
+          assetNamePattern: "Observatory-[version]-[platform]-[arch][setup][ext]"
           args: ${{ matrix.args }}
-      - name: Verify macOS network snapshot
-        if: runner.os == 'macOS'
-        run: cargo test --manifest-path native/Cargo.toml --test usage_integration network_snapshot_exposes_valid_local_interface_data
-      - name: Verify macOS tray usage totals
-        if: runner.os == 'macOS'
-        run: cargo test --manifest-path native/Cargo.toml --test usage_integration tray_summary_counts_only_local_today
-      - name: Verify macOS peer and aggregate projections
-        if: runner.os == 'macOS'
-        run: cargo test --manifest-path native/Cargo.toml --test usage_integration peer_snapshots_support_filters_replace_and_disabled_devices
       - name: Verify macOS code signature and disk image
         if: runner.os == 'macOS'
         shell: bash
@@ -113,7 +153,6 @@ jobs:
           app=$(find "$bundle/macos" -maxdepth 1 -name '*.app' -type d -print -quit)
           test -n "$app"
           codesign --verify --deep --strict --verbose=4 "$app"
-          codesign --display --verbose=4 "$app"
           dmg=$(find "$bundle/dmg" -maxdepth 1 -name '*.dmg' -print -quit)
           test -n "$dmg"
           hdiutil verify "$dmg"
@@ -128,9 +167,10 @@ jobs:
           Copy-Item src-tauri/target/x86_64-pc-windows-msvc/release/observatory.exe $portable
           gh release upload "${{ needs.release.outputs.tag }}" $portable --clobber
           if ($LASTEXITCODE -ne 0) { throw 'Failed to upload portable executable' }
+
   manifest:
-    needs: [release, build]
-    runs-on: windows-latest
+    needs: [release, check, check-macos, build]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Publish update manifest and release
@@ -141,17 +181,23 @@ jobs:
           $version = (Get-Content package.json | ConvertFrom-Json).version
           $tag = "${{ needs.release.outputs.tag }}"
           $release = gh release view $tag --json assets | ConvertFrom-Json
-          $win = $release.assets | Where-Object { $_.name -like '*x64-setup.exe' } | Select-Object -First 1
+          $setup = $release.assets | Where-Object { $_.name -like '*x64-setup.exe' } | Select-Object -First 1
+          $dmg = $release.assets | Where-Object { $_.name -like '*.dmg' } | Select-Object -First 1
+          if (!$setup -or !$dmg) { throw 'Missing installers' }
+          $win = $release.assets | Where-Object { $_.name -eq ($setup.name + '.sig') } | Select-Object -First 1
           $mac = $release.assets | Where-Object { $_.name -like '*.app.tar.gz' } | Select-Object -First 1
-          if (!$win -or !$mac) { throw 'Missing update packages' }
-          gh release download $tag --pattern '*.sig' --dir signatures
-          if ($LASTEXITCODE -ne 0) { throw 'Failed to download signatures' }
-          $manifest = @{ version=$version; notes="Observatory $tag"; platforms=@{
-            'windows-x86_64'=@{ signature=(Get-Content -Raw (Join-Path signatures ($win.name + '.sig'))).Trim(); url="https://github.com/${{ github.repository }}/releases/download/$tag/$($win.name)" }
-            'darwin-aarch64'=@{ signature=(Get-Content -Raw (Join-Path signatures ($mac.name + '.sig'))).Trim(); url="https://github.com/${{ github.repository }}/releases/download/$tag/$($mac.name)" }
-          }}
-          $manifest | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8NoBOM latest.json
-          gh release upload $tag latest.json --clobber
-          if ($LASTEXITCODE -ne 0) { throw 'Failed to upload update manifest' }
-          gh release edit $tag --draft=false
+          if ($win -and $mac) {
+            gh release download $tag --pattern '*.sig' --dir signatures
+            if ($LASTEXITCODE -ne 0) { throw 'Failed to download signatures' }
+            $manifest = @{ version=$version; notes="Observatory $tag"; platforms=@{
+              'windows-x86_64'=@{ signature=(Get-Content -Raw (Join-Path signatures ($setup.name + '.sig'))).Trim(); url="https://github.com/${{ github.repository }}/releases/download/$tag/$($setup.name)" }
+              'darwin-aarch64'=@{ signature=(Get-Content -Raw (Join-Path signatures ($mac.name + '.sig'))).Trim(); url="https://github.com/${{ github.repository }}/releases/download/$tag/$($mac.name)" }
+            }}
+            $manifest | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8NoBOM latest.json
+            gh release upload $tag latest.json --clobber
+            if ($LASTEXITCODE -ne 0) { throw 'Failed to upload update manifest' }
+          } else {
+            Write-Output '::warning::No signed update packages; publishing without latest.json (in-app update disabled for this release)'
+          }
+          gh release edit $tag --draft=false --latest
           if ($LASTEXITCODE -ne 0) { throw 'Failed to publish release' }
