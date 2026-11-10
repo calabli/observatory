@@ -1,0 +1,26 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+native/target/
+src-tauri/target/
+.local-data/
+target/
+desktop-dist/
+
+# Local databases, credentials and keys
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Local build artifacts and verification screenshots
+Observatory-*-Windows-x64-portable.exe
+.ui-shots/

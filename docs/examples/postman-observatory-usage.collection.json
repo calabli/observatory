@@ -1,0 +1,2138 @@
+{
+  "info": {
+    "_postman_id": "b7f3c1a2-9d64-4e58-8c21-5a0f3d6e8c17",
+    "name": "Observatory · Read-only Usage HTTP API",
+    "description": "Observatory read-only usage query API.\n\n## How to use\n\n1. Enable \"LAN sharing\" in the app first and generate a read-only API key under \"AI Usage → Manage Devices → Read-only Usage HTTP API\".\n2. Import the environment file `postman-observatory-usage.environment.json` from the same directory and replace `apiKey` with your key.\n3. When you access it from another device, change `baseUrl` to the LAN IP of the server (for example `http://192.168.1.20:17891`).\n\n## Conventions\n\n- Ranges are always left-closed and right-open: `[start, endExclusive)`.\n- The top level is the total of the selected range; `daily` and `buckets` are two groupings of the same data and all three add up consistently.\n- `model` matches on the effective pricing model, with the same basis as the page (`modelFilterBasis=effectivePricingModel`).\n- When history only has daily rollups, a second-level range that cuts a day returns 422 instead of a truncated number.\n\nThe endpoint documentation lives in `docs/read-only-usage-http-api.md` and the design draft in `docs/ai-usage-query-api-design.md`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Overview",
+      "item": [
+        {
+          "name": "Today · Claude Code",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=1&appType=claude",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "1"
+                },
+                {
+                  "key": "appType",
+                  "value": "claude"
+                }
+              ]
+            },
+            "description": "Claude Code usage of the most recent calendar day. `appType=claude` covers Claude Code only and never mixes in Claude Desktop."
+          },
+          "response": [
+            {
+              "name": "200 · Single-day summary",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "key": "Cache-Control",
+                  "value": "no-store"
+                }
+              ],
+              "cookie": [],
+              "body": {
+                "mode": "raw",
+                "raw": "{\n  \"requests\": 1,\n  \"inputTokens\": 100,\n  \"outputTokens\": 20,\n  \"cacheReadTokens\": 300,\n  \"cacheWriteTokens\": 10,\n  \"totalTokens\": 430,\n  \"costUsd\": 1.25,\n  \"scope\": \"local\",\n  \"appType\": [\n    \"claude\"\n  ],\n  \"apps\": [\n    \"claude\"\n  ],\n  \"model\": null,\n  \"modelFilterBasis\": \"effectivePricingModel\",\n  \"days\": 1,\n  \"startDate\": \"2026-11-01\",\n  \"endDate\": \"2026-11-01\",\n  \"range\": {\n    \"start\": \"2026-11-01T00:00:00+08:00\",\n    \"endExclusive\": \"2026-11-02T00:00:00+08:00\",\n    \"timezone\": \"server-local\"\n  },\n  \"groupBy\": \"day\",\n  \"currency\": \"USD\",\n  \"inputTokenSemantics\": \"fresh\",\n  \"updatedAt\": \"2026-11-01T13:42:11Z\",\n  \"lastScanAt\": null,\n  \"buckets\": [\n    {\n      \"requests\": 1,\n      \"inputTokens\": 100,\n      \"outputTokens\": 20,\n      \"cacheReadTokens\": 300,\n      \"cacheWriteTokens\": 10,\n      \"totalTokens\": 430,\n      \"costUsd\": 1.25,\n      \"period\": \"2026-11-01\",\n      \"start\": \"2026-11-01T00:00:00+08:00\",\n      \"endExclusive\": \"2026-11-02T00:00:00+08:00\"\n    }\n  ],\n  \"daily\": [\n    {\n      \"requests\": 1,\n      \"inputTokens\": 100,\n      \"outputTokens\": 20,\n      \"cacheReadTokens\": 300,\n      \"cacheWriteTokens\": 10,\n      \"totalTokens\": 430,\n      \"costUsd\": 1.25,\n      \"date\": \"2026-11-01\"\n    }\n  ],\n  \"devices\": [\n    \"local\"\n  ]\n}"
+              },
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Last 7 days · All apps",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=7",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "7"
+                }
+              ]
+            },
+            "description": "Without `appType`, every app that is **allowed to be shared** is aggregated; apps that are not checked for sharing do not show up in the results."
+          }
+        },
+        {
+          "name": "Last 30 days · Grouped by day",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=30&groupBy=day",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "30"
+                },
+                {
+                  "key": "groupBy",
+                  "value": "day",
+                  "description": "day | week | month"
+                }
+              ]
+            },
+            "description": "`groupBy` only changes `buckets`; it does not change the top-level totals or `daily`."
+          }
+        },
+        {
+          "name": "Current cycle · Claude Code",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/cycle?appType=claude",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "cycle"
+              ],
+              "query": [
+                {
+                  "key": "appType",
+                  "value": "claude"
+                }
+              ]
+            },
+            "description": "Usage within the current quota cycle of that Agent platform. The server computes the range from the cycle rules of the subscription and the response body is exactly the same as summary; the cycle boundaries are in range.start and range.endExclusive."
+          },
+          "response": [
+            {
+              "name": "200 · Current cycle summary",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "key": "Cache-Control",
+                  "value": "no-store"
+                }
+              ],
+              "cookie": [],
+              "body": {
+                "mode": "raw",
+                "raw": "{\n  \"scope\": \"local\",\n  \"appType\": [\n    \"claude\"\n  ],\n  \"apps\": [\n    \"claude\"\n  ],\n  \"model\": null,\n  \"modelFilterBasis\": \"effectivePricingModel\",\n  \"days\": 5,\n  \"startDate\": \"2026-10-29\",\n  \"endDate\": \"2026-11-02\",\n  \"range\": {\n    \"start\": \"2026-10-29T19:00:00+08:00\",\n    \"endExclusive\": \"2026-11-02T05:12:00+08:00\",\n    \"timezone\": \"server-local\"\n  },\n  \"groupBy\": \"day\",\n  \"currency\": \"USD\",\n  \"inputTokenSemantics\": \"fresh\",\n  \"requests\": 128,\n  \"inputTokens\": 2068,\n  \"outputTokens\": 1367239,\n  \"cacheReadTokens\": 429848775,\n  \"cacheWriteTokens\": 3755596,\n  \"totalTokens\": 434973678,\n  \"costUsd\": 143.367575,\n  \"updatedAt\": \"2026-11-02T04:56:12.881734500+00:00\",\n  \"lastScanAt\": 1793561400000,\n  \"buckets\": [],\n  \"daily\": [],\n  \"devices\": [\n    \"local\"\n  ]\n}"
+              }
+            },
+            {
+              "name": "404 · No subscription record",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-API-Key",
+                    "value": "{{apiKey}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/usage/cycle?appType=codex",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "usage",
+                    "cycle"
+                  ],
+                  "query": [
+                    {
+                      "key": "appType",
+                      "value": "codex"
+                    }
+                  ]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": {
+                "mode": "raw",
+                "raw": "{\n  \"error\": \"该应用没有订阅记录，无法确定额度周期: codex\",\n  \"code\": \"SUBSCRIPTION_NOT_FOUND\",\n  \"devices\": [\n    \"local\"\n  ]\n}"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Multiple platforms combined · Claude Code + Codex",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=1&appType=claude,codex",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "1"
+                },
+                {
+                  "key": "appType",
+                  "value": "claude,codex"
+                }
+              ]
+            },
+            "description": "appType separates several platforms with commas and the results are merged across the platforms. Repeated platforms are deduplicated and the order of the request is kept."
+          },
+          "response": [
+            {
+              "name": "200 · Two platforms combined",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "key": "Cache-Control",
+                  "value": "no-store"
+                }
+              ],
+              "cookie": [],
+              "body": {
+                "mode": "raw",
+                "raw": "{\n  \"scope\": \"local\",\n  \"appType\": [\n    \"claude\",\n    \"codex\"\n  ],\n  \"apps\": [\n    \"claude\",\n    \"codex\"\n  ],\n  \"model\": null,\n  \"modelFilterBasis\": \"effectivePricingModel\",\n  \"devices\": [\n    \"local\"\n  ],\n  \"days\": 1,\n  \"startDate\": \"2026-11-01\",\n  \"endDate\": \"2026-11-01\",\n  \"range\": {\n    \"start\": \"2026-11-01T00:00:00+08:00\",\n    \"endExclusive\": \"2026-11-02T00:00:00+08:00\",\n    \"timezone\": \"server-local\"\n  },\n  \"groupBy\": \"day\",\n  \"currency\": \"USD\",\n  \"inputTokenSemantics\": \"fresh\",\n  \"requests\": 2,\n  \"inputTokens\": 600,\n  \"outputTokens\": 20,\n  \"cacheReadTokens\": 300,\n  \"cacheWriteTokens\": 10,\n  \"totalTokens\": 930,\n  \"costUsd\": 6.25,\n  \"updatedAt\": \"2026-11-02T05:14:12.881734500+00:00\",\n  \"lastScanAt\": 1793561400000,\n  \"buckets\": [],\n  \"daily\": []\n}"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Last 8 weeks of usage · Claude Code",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/cycles?appType=claude&count=8",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "cycles"
+              ],
+              "query": [
+                {
+                  "key": "appType",
+                  "value": "claude"
+                },
+                {
+                  "key": "count",
+                  "value": "8"
+                }
+              ]
+            },
+            "description": "The usage series of the current cycle plus the previous 7 cycles, used by dashboards for trend bar charts. The attribution is per calendar day, so a cycle boundary that cuts into an archived day does not lead to a 422."
+          },
+          "response": [
+            {
+              "name": "200 · Cycle series",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "key": "Cache-Control",
+                  "value": "no-store"
+                }
+              ],
+              "cookie": [],
+              "body": {
+                "mode": "raw",
+                "raw": "{\n  \"scope\": \"local\",\n  \"devices\": [\n    \"local\"\n  ],\n  \"appType\": [\n    \"claude\"\n  ],\n  \"apps\": [\n    \"claude\"\n  ],\n  \"model\": null,\n  \"modelsByApp\": null,\n  \"granularity\": \"day\",\n  \"subscription\": {\n    \"name\": \"Claude Max\",\n    \"rule\": {\n      \"startDay\": 4,\n      \"startTime\": \"19:00:00\",\n      \"endDay\": 4,\n      \"endTime\": \"19:00:00\"\n    },\n    \"startDate\": \"2025-11-02\",\n    \"endDate\": \"2027-11-02\"\n  },\n  \"cycles\": [\n    {\n      \"requests\": 4,\n      \"inputTokens\": 400,\n      \"outputTokens\": 80,\n      \"cacheReadTokens\": 0,\n      \"cacheWriteTokens\": 0,\n      \"totalTokens\": 480,\n      \"costUsd\": 4,\n      \"index\": 0,\n      \"start\": \"2026-10-29T19:00:00+08:00\",\n      \"end\": \"2026-11-05T19:00:00+08:00\",\n      \"startDate\": \"2026-10-30\",\n      \"endDate\": \"2026-11-05\",\n      \"complete\": false\n    },\n    {\n      \"requests\": 7,\n      \"inputTokens\": 700,\n      \"outputTokens\": 140,\n      \"cacheReadTokens\": 0,\n      \"cacheWriteTokens\": 0,\n      \"totalTokens\": 840,\n      \"costUsd\": 7,\n      \"index\": -1,\n      \"start\": \"2026-10-22T19:00:00+08:00\",\n      \"end\": \"2026-10-29T19:00:00+08:00\",\n      \"startDate\": \"2026-10-23\",\n      \"endDate\": \"2026-10-29\",\n      \"complete\": true\n    }\n  ],\n  \"updatedAt\": \"2026-11-02T09:32:29.824459800+08:00\",\n  \"lastScanAt\": null\n}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Time ranges",
+      "item": [
+        {
+          "name": "Explicit date range · Grouped by week",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?startDate={{startDate}}&endDate={{endDate}}&appType=claude&groupBy=week",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "{{startDate}}",
+                  "description": "YYYY-MM-DD, inclusive of that day"
+                },
+                {
+                  "key": "endDate",
+                  "value": "{{endDate}}",
+                  "description": "YYYY-MM-DD, inclusive of that day, must not be later than the server's today"
+                },
+                {
+                  "key": "appType",
+                  "value": "claude"
+                },
+                {
+                  "key": "groupBy",
+                  "value": "week"
+                }
+              ]
+            },
+            "description": "Both end dates are inclusive. ISO week numbers use the year the week belongs to, so a week across the year boundary never gets the wrong calendar year (for example `2026-W01` may start on 2025-12-29)."
+          }
+        },
+        {
+          "name": "Explicit date range · Grouped by month",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?startDate={{startDate}}&endDate={{endDate}}&groupBy=month",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "{{startDate}}"
+                },
+                {
+                  "key": "endDate",
+                  "value": "{{endDate}}"
+                },
+                {
+                  "key": "groupBy",
+                  "value": "month"
+                }
+              ]
+            },
+            "description": "The `period` of a month grouping looks like `2026-11`; the first and last bucket are the intersection of the natural period with the queried range, and empty periods are zero-filled."
+          }
+        },
+        {
+          "name": "Second-level range",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?startTime={{startTime}}&endTime={{endTime}}&appType=claude&groupBy=day",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "startTime",
+                  "value": "{{startTime}}",
+                  "description": "RFC 3339, must carry a UTC offset, whole-second precision, inclusive"
+                },
+                {
+                  "key": "endTime",
+                  "value": "{{endTime}}",
+                  "description": "RFC 3339, exclusive"
+                },
+                {
+                  "key": "appType",
+                  "value": "claude"
+                },
+                {
+                  "key": "groupBy",
+                  "value": "day"
+                }
+              ]
+            },
+            "description": "`startTime` is required; when `endTime` is omitted the server's current time for this request is used (truncated to whole seconds), and it must not be mixed with `days`/`startDate`/`endDate`.\n\nNote: the `+` in the URL must be encoded as `%2B`. Postman encodes it automatically, but keep it in mind when copying the URL elsewhere.\n\nIf the range cuts a day in half and that day only has a daily rollup left (day granularity), the endpoint returns 422 instead of a truncated number."
+          }
+        },
+        {
+          "name": "Second-level range · Full day",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?startTime={{dayStart}}&endTime={{dayEnd}}&appType=claude",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "startTime",
+                  "value": "{{dayStart}}"
+                },
+                {
+                  "key": "endTime",
+                  "value": "{{dayEnd}}"
+                },
+                {
+                  "key": "appType",
+                  "value": "claude"
+                }
+              ]
+            },
+            "description": "When a whole calendar day is covered, the daily rollup can be counted in full and no 422 is triggered."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Filters",
+      "item": [
+        {
+          "name": "Filter by model",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=7&appType=claude&model={{model}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "7"
+                },
+                {
+                  "key": "appType",
+                  "value": "claude"
+                },
+                {
+                  "key": "model",
+                  "value": "{{model}}",
+                  "description": "Effective pricing model ID, exact match"
+                }
+              ]
+            },
+            "description": "The matching basis is `COALESCE(NULLIF(pricing_model,''), model)`, the same as the model filter of the page.\n\nA well-formed model without matching records returns 200 with zero values; that is not an error."
+          }
+        },
+        {
+          "name": "Range + model + weekly grouping",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?startDate={{startDate}}&endDate={{endDate}}&appType=claude&model={{model}}&groupBy=week",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "{{startDate}}"
+                },
+                {
+                  "key": "endDate",
+                  "value": "{{endDate}}"
+                },
+                {
+                  "key": "appType",
+                  "value": "claude"
+                },
+                {
+                  "key": "model",
+                  "value": "{{model}}"
+                },
+                {
+                  "key": "groupBy",
+                  "value": "week"
+                }
+              ]
+            },
+            "description": "The filter is applied to the base records first and the aggregation runs at every level; the top level, `daily`, and `buckets` add up consistently."
+          }
+        },
+        {
+          "name": "Claude Desktop (separate from Claude Code)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=7&appType=claude-desktop",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "7"
+                },
+                {
+                  "key": "appType",
+                  "value": "claude-desktop"
+                }
+              ]
+            },
+            "description": "`appType=claude` means Claude Code only; `claude-desktop` is queried separately."
+          }
+        },
+        {
+          "name": "Previous cycle · Claude Code",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/cycle?appType=claude&offset=-1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "cycle"
+              ],
+              "query": [
+                {
+                  "key": "appType",
+                  "value": "claude"
+                },
+                {
+                  "key": "offset",
+                  "value": "-1"
+                }
+              ]
+            },
+            "description": "offset=-1 means the previous quota cycle. The cycle boundaries are still computed by the server from the subscription rules."
+          },
+          "response": []
+        },
+        {
+          "name": "Multiple models · Two platforms",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=1&appType=claude,codex&model={{models}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "1"
+                },
+                {
+                  "key": "appType",
+                  "value": "claude,codex"
+                },
+                {
+                  "key": "model",
+                  "value": "{{models}}"
+                }
+              ]
+            },
+            "description": "model separates several models with commas and filters exactly by effective pricing model ID. Platforms and models can be specified at the same time."
+          },
+          "response": []
+        },
+        {
+          "name": "Explicit device set · Local machine",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=7&appType=claude&devices=local",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "7"
+                },
+                {
+                  "key": "appType",
+                  "value": "claude"
+                },
+                {
+                  "key": "devices",
+                  "value": "local"
+                }
+              ]
+            },
+            "description": "devices separates the set of devices with commas; by default only this machine is queried. local means this machine, the others take the deviceId of a paired device. After a paired device is named, scope becomes multi."
+          },
+          "response": []
+        },
+        {
+          "name": "Per-platform model selection",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=1&appType=claude,codex&modelsByApp={{modelsByApp}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "1"
+                },
+                {
+                  "key": "appType",
+                  "value": "claude,codex"
+                },
+                {
+                  "key": "modelsByApp",
+                  "value": "{{modelsByApp}}"
+                }
+              ]
+            },
+            "description": "modelsByApp is a JSON string, a map of platform → array of model IDs. Every platform of the map must appear in appType; when a selected platform is missing from the map, all of its models take part in the statistics."
+          },
+          "response": []
+        },
+        {
+          "name": "Current cycle · Grouped by week",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/cycle?appType=claude&groupBy=week",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "cycle"
+              ],
+              "query": [
+                {
+                  "key": "appType",
+                  "value": "claude"
+                },
+                {
+                  "key": "groupBy",
+                  "value": "week"
+                }
+              ]
+            },
+            "description": "The groupBy of the cycle endpoints only changes the grouping, not the cycle range or the totals."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Error scenarios",
+      "item": [
+        {
+          "name": "400 · days out of range",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "999"
+                }
+              ]
+            },
+            "description": "The valid range of `days` is 1–366."
+          },
+          "response": [
+            {
+              "name": "400 · INVALID_PARAMETERS",
+              "status": "Bad Request",
+              "code": 400,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": {
+                "mode": "raw",
+                "raw": "{\n  \"error\": \"days 必须为 1–366\",\n  \"code\": \"INVALID_PARAMETERS\",\n  \"devices\": [\n    \"local\"\n  ]\n}"
+              },
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "400 · Unknown parameter",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=7&unknown=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "7"
+                },
+                {
+                  "key": "unknown",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Unknown parameters are rejected outright."
+          },
+          "response": [
+            {
+              "name": "400 · INVALID_PARAMETERS",
+              "status": "Bad Request",
+              "code": 400,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": {
+                "mode": "raw",
+                "raw": "{\n  \"error\": \"查询参数无效\",\n  \"code\": \"INVALID_PARAMETERS\",\n  \"devices\": [\n    \"local\"\n  ]\n}"
+              },
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "400 · Duplicate parameter",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=7&days=8",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "7"
+                },
+                {
+                  "key": "days",
+                  "value": "8"
+                }
+              ]
+            },
+            "description": "Duplicate parameters are rejected before parsing (JSON deserialization only keeps the last value)."
+          },
+          "response": [
+            {
+              "name": "400 · INVALID_PARAMETERS",
+              "status": "Bad Request",
+              "code": 400,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": {
+                "mode": "raw",
+                "raw": "{\n  \"error\": \"参数重复: days\",\n  \"code\": \"INVALID_PARAMETERS\",\n  \"devices\": [\n    \"local\"\n  ]\n}"
+              },
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "400 · Unsupported groupBy",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=7&groupBy=year",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "7"
+                },
+                {
+                  "key": "groupBy",
+                  "value": "year"
+                }
+              ]
+            },
+            "description": "Only `day`, `week`, and `month` are supported."
+          },
+          "response": [
+            {
+              "name": "400 · UNSUPPORTED_GROUP_BY",
+              "status": "Bad Request",
+              "code": 400,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": {
+                "mode": "raw",
+                "raw": "{\n  \"error\": \"不支持的 groupBy: year\",\n  \"code\": \"UNSUPPORTED_GROUP_BY\",\n  \"devices\": [\n    \"local\"\n  ]\n}"
+              },
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "400 · Conflicting time parameters",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=7&startDate={{startDate}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "7"
+                },
+                {
+                  "key": "startDate",
+                  "value": "{{startDate}}"
+                }
+              ]
+            },
+            "description": "`days` and `startDate` cannot be used at the same time; a second-level range cannot be mixed with them either."
+          },
+          "response": [
+            {
+              "name": "400 · CONFLICTING_TIME_PARAMETERS",
+              "status": "Bad Request",
+              "code": 400,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": {
+                "mode": "raw",
+                "raw": "{\n  \"error\": \"startDate 不能与 days 同时使用\",\n  \"code\": \"CONFLICTING_TIME_PARAMETERS\",\n  \"devices\": [\n    \"local\"\n  ]\n}"
+              },
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "400 · Timestamp without a time zone",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?startTime={{startTimeNaive}}&endTime={{endTimeNaive}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "startTime",
+                  "value": "{{startTimeNaive}}",
+                  "description": "No UTC offset"
+                },
+                {
+                  "key": "endTime",
+                  "value": "{{endTimeNaive}}"
+                }
+              ]
+            },
+            "description": "A second-level range must carry a UTC offset or `Z` and has whole-second precision (fractional seconds are rejected)."
+          },
+          "response": [
+            {
+              "name": "400 · INVALID_PARAMETERS",
+              "status": "Bad Request",
+              "code": 400,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": {
+                "mode": "raw",
+                "raw": "{\n  \"error\": \"时间必须为带 UTC 偏移的 RFC 3339: 2026-10-31T09:00:00\",\n  \"code\": \"INVALID_PARAMETERS\",\n  \"devices\": [\n    \"local\"\n  ]\n}"
+              },
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "400 · Unsupported app identifier",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=7&appType=not-an-app",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "7"
+                },
+                {
+                  "key": "appType",
+                  "value": "not-an-app"
+                }
+              ]
+            },
+            "description": "The app identifier is not in the supported list."
+          },
+          "response": [
+            {
+              "name": "400 · UNSUPPORTED_APP_TYPE",
+              "status": "Bad Request",
+              "code": 400,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": {
+                "mode": "raw",
+                "raw": "{\n  \"error\": \"不支持的应用标识: not-an-app\",\n  \"code\": \"UNSUPPORTED_APP_TYPE\",\n  \"devices\": [\n    \"local\"\n  ]\n}"
+              },
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "403 · App not allowed to be shared",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=7&appType=hermes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "7"
+                },
+                {
+                  "key": "appType",
+                  "value": "hermes"
+                }
+              ]
+            },
+            "description": "The app identifier is supported, but it is not checked in \"Allowed shared apps\"."
+          },
+          "response": [
+            {
+              "name": "403 · APP_NOT_SHARED",
+              "status": "Forbidden",
+              "code": 403,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": {
+                "mode": "raw",
+                "raw": "{\n  \"error\": \"该应用未允许共享\",\n  \"code\": \"APP_NOT_SHARED\",\n  \"devices\": [\n    \"local\"\n  ]\n}"
+              },
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 · Second-level range truncates a daily rollup",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?startTime={{archivedStartTime}}&endTime={{archivedEndTime}}&appType=claude",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "startTime",
+                  "value": "{{archivedStartTime}}",
+                  "description": "Falls on a day that only has a daily rollup"
+                },
+                {
+                  "key": "endTime",
+                  "value": "{{archivedEndTime}}"
+                },
+                {
+                  "key": "appType",
+                  "value": "claude"
+                }
+              ]
+            },
+            "description": "When history only has daily rollups, a day can only be counted in full or excluded entirely. A range that cuts a day in half returns 422 and lists the affected dates.\n\nThe \"Second-level range · Full day\" request returns normally."
+          },
+          "response": [
+            {
+              "name": "422 · RANGE_PRECISION_UNAVAILABLE",
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": {
+                "mode": "raw",
+                "raw": "{\n  \"error\": \"查询区间截断了仅有日汇总的历史日期，请改用完整日期\",\n  \"code\": \"RANGE_PRECISION_UNAVAILABLE\",\n  \"details\": {\n    \"dates\": [\n      \"2026-10-01\"\n    ]\n  },\n  \"devices\": [\n    \"local\"\n  ]\n}"
+              },
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "401 · Missing or revoked key",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=7",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "7"
+                }
+              ]
+            },
+            "description": "No `X-API-Key` is sent. A paired device can use `x-observatory-device` + `x-observatory-token` instead."
+          },
+          "response": [
+            {
+              "name": "401 · INVALID_API_KEY",
+              "status": "Unauthorized",
+              "code": 401,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": {
+                "mode": "raw",
+                "raw": "{\n  \"error\": \"缺少有效的只读 API 密钥或配对凭证\",\n  \"code\": \"INVALID_API_KEY\",\n  \"devices\": [\n    \"local\"\n  ]\n}"
+              },
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "404 · App has no subscription record",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/cycle?appType=codex",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "cycle"
+              ],
+              "query": [
+                {
+                  "key": "appType",
+                  "value": "codex"
+                }
+              ]
+            },
+            "description": "The app has no subscription record, so the server cannot compute the quota cycle and returns 404."
+          },
+          "response": []
+        },
+        {
+          "name": "400 · Cycle endpoint missing appType",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/cycle",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "cycle"
+              ],
+              "query": []
+            },
+            "description": "The cycle endpoints require an Agent platform."
+          },
+          "response": []
+        },
+        {
+          "name": "404 · Next cycle has not started",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/cycle?appType=claude&offset=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "cycle"
+              ],
+              "query": [
+                {
+                  "key": "appType",
+                  "value": "claude"
+                },
+                {
+                  "key": "offset",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "offset=1 means the next quota cycle. A cycle that has not started yet returns 404 CYCLE_NOT_AVAILABLE — future usage does not exist yet."
+          },
+          "response": [
+            {
+              "name": "404 · Cycle has not started",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "X-API-Key",
+                    "value": "{{apiKey}}",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/usage/cycle?appType=claude&offset=1",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "usage",
+                    "cycle"
+                  ],
+                  "query": [
+                    {
+                      "key": "appType",
+                      "value": "claude"
+                    },
+                    {
+                      "key": "offset",
+                      "value": "1"
+                    }
+                  ]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": {
+                "mode": "raw",
+                "raw": "{\n  \"error\": \"该周期尚未开始: claude\",\n  \"code\": \"CYCLE_NOT_AVAILABLE\",\n  \"devices\": [\n    \"local\"\n  ]\n}"
+              }
+            }
+          ]
+        },
+        {
+          "name": "400 · Device does not exist or is not enabled",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=7&appType=claude&devices=not-a-paired-device",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "7"
+                },
+                {
+                  "key": "appType",
+                  "value": "claude"
+                },
+                {
+                  "key": "devices",
+                  "value": "not-a-paired-device"
+                }
+              ]
+            },
+            "description": "The device must be paired and enabled, otherwise its usage cannot be determined."
+          },
+          "response": []
+        },
+        {
+          "name": "400 · App list has an empty segment",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=7&appType=claude,",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "7"
+                },
+                {
+                  "key": "appType",
+                  "value": "claude,"
+                }
+              ]
+            },
+            "description": "A comma-separated list must not contain an empty segment; an empty segment is not treated as \"all apps\"."
+          },
+          "response": []
+        },
+        {
+          "name": "400 · modelsByApp requires appType",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=1&modelsByApp={{modelsByApp}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "1"
+                },
+                {
+                  "key": "modelsByApp",
+                  "value": "{{modelsByApp}}"
+                }
+              ]
+            },
+            "description": "modelsByApp must be used together with appType."
+          },
+          "response": []
+        },
+        {
+          "name": "400 · modelsByApp conflicts with model",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=1&appType=claude&model={{model}}&modelsByApp={{modelsByApp}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "1"
+                },
+                {
+                  "key": "appType",
+                  "value": "claude"
+                },
+                {
+                  "key": "model",
+                  "value": "{{model}}"
+                },
+                {
+                  "key": "modelsByApp",
+                  "value": "{{modelsByApp}}"
+                }
+              ]
+            },
+            "description": "model and modelsByApp cannot be used at the same time."
+          },
+          "response": []
+        },
+        {
+          "name": "400 · modelsByApp contains an unselected platform",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/summary?days=1&appType=claude&modelsByApp={\"codex\":[\"m\"]}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "1"
+                },
+                {
+                  "key": "appType",
+                  "value": "claude"
+                },
+                {
+                  "key": "modelsByApp",
+                  "value": "{\"codex\":[\"m\"]}"
+                }
+              ]
+            },
+            "description": "Every platform of the map must appear in appType."
+          },
+          "response": []
+        },
+        {
+          "name": "400 · cycles count out of range",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/cycles?appType=claude&count=0",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "cycles"
+              ],
+              "query": [
+                {
+                  "key": "appType",
+                  "value": "claude"
+                },
+                {
+                  "key": "count",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "count must be between 1 and 52."
+          },
+          "response": []
+        },
+        {
+          "name": "404 · cycles has no subscription",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/usage/cycles?appType=codex",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "cycles"
+              ],
+              "query": [
+                {
+                  "key": "appType",
+                  "value": "codex"
+                }
+              ]
+            },
+            "description": "The app has no subscription record, so the cycle rules cannot be computed."
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:17891",
+      "type": "string"
+    },
+    {
+      "key": "apiKey",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "startDate",
+      "value": "2026-10-01",
+      "type": "string"
+    },
+    {
+      "key": "endDate",
+      "value": "2026-10-31",
+      "type": "string"
+    },
+    {
+      "key": "startTime",
+      "value": "2026-11-01T09:00:00+08:00",
+      "type": "string"
+    },
+    {
+      "key": "endTime",
+      "value": "2026-11-01T18:00:00+08:00",
+      "type": "string"
+    },
+    {
+      "key": "archivedStartTime",
+      "value": "2026-10-31T09:00:00+08:00",
+      "type": "string"
+    },
+    {
+      "key": "archivedEndTime",
+      "value": "2026-10-31T18:00:00+08:00",
+      "type": "string"
+    },
+    {
+      "key": "startTimeNaive",
+      "value": "2026-10-31T09:00:00",
+      "type": "string"
+    },
+    {
+      "key": "endTimeNaive",
+      "value": "2026-10-31T18:00:00",
+      "type": "string"
+    },
+    {
+      "key": "dayStart",
+      "value": "2026-10-31T00:00:00+08:00",
+      "type": "string"
+    },
+    {
+      "key": "dayEnd",
+      "value": "2026-11-01T00:00:00+08:00",
+      "type": "string"
+    },
+    {
+      "key": "model",
+      "value": "claude-opus-5-5",
+      "type": "string"
+    }
+  ]
+}

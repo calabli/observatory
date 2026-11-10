@@ -1,0 +1,6 @@
+[
+  {"type":"metrics","title":"Claude Code Total Tokens","valuePath":"/totalTokens","format":"compact","color":"#D97757"},
+  {"type":"metrics","title":"Estimated Cost","valuePath":"/costUsd","decimals":4,"unit":" USD","color":"#34B399"},
+  {"type":"metrics","title":"Request Count","valuePath":"/requests","format":"compact","color":"#60A5FA"},
+  {"type":"area","title":"Daily Tokens","itemsPath":"/daily","xPath":"/date","yPath":"/totalTokens","format":"compact","limit":7,"color":"#D97757"}
+]

@@ -1,0 +1,116 @@
+#observatory-root .activity-log .panel-head {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+#observatory-root .activity-log .panel-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+#observatory-root .activity-routine {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+#observatory-root .activity-row {
+  cursor: pointer;
+}
+#observatory-root .activity-row td {
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+#observatory-root .activity-row.expanded td {
+  border-bottom-color: transparent;
+  background: var(--soft);
+}
+#observatory-root .activity-toggle {
+  width: 22px;
+  height: 22px;
+}
+#observatory-root .activity-brief {
+  white-space: normal;
+  min-width: 260px;
+  color: var(--muted);
+}
+#observatory-root .activity-detail td {
+  background: var(--soft);
+  padding: 4px 14px 16px 44px;
+  white-space: normal;
+}
+#observatory-root .activity-detail:hover {
+  background: transparent;
+}
+#observatory-root .activity-detail table {
+  background: var(--surface);
+  border-radius: 6px;
+}
+#observatory-root .activity-detail td td,
+#observatory-root .activity-detail td th {
+  padding: 7px 10px;
+  background: transparent;
+  white-space: nowrap;
+}
+#observatory-root .activity-detail td td.activity-path {
+  white-space: normal;
+}
+#observatory-root .activity-detail-body h4 {
+  font-size: 11px;
+  font-weight: 600;
+  margin: 14px 0 8px;
+}
+#observatory-root .activity-detail-body h4:first-child {
+  margin-top: 6px;
+}
+#observatory-root .activity-path {
+  white-space: normal;
+  word-break: break-all;
+  min-width: 280px;
+  max-width: 520px;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 10px;
+}
+#observatory-root .activity-kv {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 18px;
+  margin: 8px 0 0;
+  font-size: 11px;
+}
+#observatory-root .activity-kv dt {
+  color: var(--muted);
+}
+#observatory-root .activity-kv dd {
+  margin: 0;
+  word-break: break-all;
+}
+#observatory-root .activity-kv pre {
+  margin: 0;
+  font-size: 10px;
+  white-space: pre-wrap;
+  font-family: "Cascadia Code", Consolas, monospace;
+}
+#observatory-root .activity-errors {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 11px;
+  color: var(--warning);
+  word-break: break-all;
+}
+#observatory-root .activity-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+}
+#observatory-root .activity-empty {
+  padding: 24px 0 8px;
+  text-align: center;
+}
+@media (max-width: 720px) {
+  #observatory-root .activity-detail td {
+    padding-left: 12px;
+  }
+}

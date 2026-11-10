@@ -1,0 +1,1481 @@
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { createRoot } from "react-dom/client";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import {
+  Activity,
+  ArrowRight,
+  ArrowUpRight,
+  Boxes,
+  Check,
+  ChevronRight,
+  Clock3,
+  Cpu,
+  Info,
+  HardDrive,
+  Laptop,
+  ListTree,
+  MemoryStick,
+  Monitor,
+  Moon,
+  Network,
+  Radio,
+  Radar,
+  RefreshCw,
+  ScrollText,
+  Search,
+  ShieldCheck,
+  Sun,
+  Terminal,
+  Waypoints,
+  Wifi,
+  X,
+  type LucideIcon,
+} from "lucide-react";
+import {
+  cpuSeries,
+  deviceInfo,
+  downSeries,
+  memorySeries,
+  processes,
+  spans,
+  upSeries,
+  type DeviceId,
+  type Page,
+} from "./data";
+const IS_WINDOWS = /Windows/i.test(navigator.userAgent);
+import openai from "./assets/openai.svg";
+import claude from "./assets/claude.svg";
+import deepseek from "./assets/deepseek.svg";
+import zcode from "./assets/zcode.png";
+import "./styles.css";
+import "./usage/usage.css";
+import "./theme/ccSwitchTheme.css";
+import {
+  QueryClient,
+  QueryClientProvider,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { UsageWorkspace } from "./usage/UsageWorkspace";
+import { SubscriptionWorkspace } from "./subscriptions/SubscriptionWorkspace";
+import { DeviceManager } from "./usage/DeviceManager";
+import { TrayPanel } from "./tray/TrayPanel";
+import { NetworkOverview } from "./network/NetworkOverview";
+import { UpdateControl } from "./UpdateControl";
+import packageInfo from "../package.json";
+import { usageCall } from "./native/usageClient";
+import { ActivityLog } from "./activity/ActivityLog";
+import type { NativeStatus, Dashboard, LanStatus } from "./usage/types";
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
+});
+
+/** Return body of `tray_dashboard`: the dashboard summary, trends and the per-app grouping subset. */
+type OverviewUsage = Pick<Dashboard, "summary" | "trends" | "byApp">;
+type PreviewState = { page?: Page; device?: DeviceId };
+declare global {
+  interface Window {
+    openai?: {
+      widgetState?: { privateContent?: PreviewState };
+      setWidgetState?: (value: {
+        modelContent: PreviewState;
+        privateContent: PreviewState;
+      }) => Promise<void>;
+    };
+  }
+}
+const restored = window.openai?.widgetState?.privateContent;
+function remember(value: PreviewState) {
+  window.openai
+    ?.setWidgetState?.({ modelContent: value, privateContent: value })
+    .catch(() => {});
+}
+
+const brandIcons: Record<string, string> = {
+  codex: openai,
+  claude,
+  dsh: deepseek,
+  zcode,
+};
+const nav: { id: Page; label: string; icon: LucideIcon }[] = [
+  { id: "overview", label: "总览", icon: Radar },
+  { id: "usage", label: "AI 用量", icon: Boxes },
+  { id: "subscriptions", label: "订阅与额度", icon: Clock3 },
+  { id: "agents", label: "Agent 追踪", icon: ListTree },
+  { id: "performance", label: "设备性能", icon: Activity },
+  { id: "network", label: "网络诊断", icon: Network },
+  { id: "devices", label: "多设备", icon: Monitor },
+  { id: "activity", label: "活动日志", icon: ScrollText },
+];
+const titles: Record<Page, [string, string]> = {
+  overview: ["运行总览", "把 AI 调用、设备同步与网络状态放在一起看。"],
+  usage: ["AI 用量", "从一次调用到多设备汇总，费用与用量清晰可查。"],
+  subscriptions: [
+    "订阅与额度",
+    "管理订阅和额度周期，查看所选时间范围内的用量。",
+  ],
+  agents: [
+    "Agent 追踪",
+    "沿着任务调用链，查看模型、工具与子 Agent 的执行过程。",
+  ],
+  performance: ["设备性能", "观察资源变化，找到影响工作流的负载。"],
+  activity: [
+    "活动日志",
+    "扫描读取了哪些文件、谁调用了本机接口、设备同步与关键操作的记录。",
+  ],
+  network: ["网络诊断", "从地址、DNS 到连接，逐层查看网络状态。"],
+  devices: ["多设备", "选择观测设备，管理用量与指标的共享范围。"],
+};
+const money = (n: number) => "$" + n.toFixed(2);
+function BrandIcon({ id }: { id: string }) {
+  return (
+    <span className="brand-icon">
+      <img src={brandIcons[id]} alt="" />
+    </span>
+  );
+}
+function Badge({
+  children,
+  tone = "neutral",
+}: {
+  children: ReactNode;
+  tone?: "neutral" | "good" | "blue" | "warning";
+}) {
+  return <span className={"badge " + tone}>{children}</span>;
+}
+function Panel({
+  title,
+  sub,
+  actions,
+  children,
+  className = "",
+}: {
+  title: string;
+  sub?: string;
+  actions?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <section className={"panel " + className}>
+      <div className="panel-head">
+        <div>
+          <h2>{title}</h2>
+          {sub && <p>{sub}</p>}
+        </div>
+        <div className="panel-actions">{actions}</div>
+      </div>
+      {children}
+    </section>
+  );
+}
+function Spark({
+  values,
+  color = "var(--accent)",
+}: {
+  values: number[];
+  color?: string;
+}) {
+  const points = values
+    .map(
+      (v, i) =>
+        `${(i * 90) / (values.length - 1)},${34 - (v / Math.max(...values)) * 27}`,
+    )
+    .join(" ");
+  return (
+    <svg className="spark" viewBox="0 0 90 38" aria-hidden="true">
+      <polyline
+        points={points}
+        fill="none"
+        stroke={color}
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+function Stat({
+  label,
+  value,
+  unit,
+  detail,
+  icon: Icon,
+  values,
+  tone = "blue",
+}: {
+  label: string;
+  value: ReactNode;
+  unit?: string;
+  detail: ReactNode;
+  icon: LucideIcon;
+  values?: number[];
+  tone?: string;
+}) {
+  return (
+    <div className="stat">
+      <div className="stat-label">
+        {label}
+        <Icon size={15} />
+      </div>
+      <div className="stat-value">
+        {value}
+        {unit && <small>{unit}</small>}
+      </div>
+      <div className="stat-detail">{detail}</div>
+      {values && (
+        <Spark
+          values={values}
+          color={tone === "teal" ? "var(--teal)" : "var(--accent)"}
+        />
+      )}
+    </div>
+  );
+}
+function Segmented({
+  options,
+  value,
+  onChange,
+  label,
+}: {
+  options: { id: string; label: string }[];
+  value: string;
+  onChange: (s: string) => void;
+  label: string;
+}) {
+  return (
+    <div className="segmented" aria-label={label}>
+      {options.map((x) => (
+        <button
+          key={x.id}
+          aria-pressed={x.id === value}
+          onClick={() => onChange(x.id)}
+        >
+          {x.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+function Trend({
+  series,
+  max = 100,
+  unit = "%",
+  ticks = ["12:20", "12:25", "12:30", "12:35", "12:40"],
+  height = 156,
+}: {
+  series: { name: string; values: number[]; color: string }[];
+  max?: number;
+  unit?: string;
+  ticks?: string[];
+  height?: number;
+}) {
+  const [hover, setHover] = useState<number | null>(null);
+  const format = (v: number) =>
+    v === 0 ? "0" : v.toFixed(max <= 5 ? 1 : 0) + unit;
+  return (
+    <div className="trend">
+      <div className="legend">
+        {series.map((x) => (
+          <span key={x.name}>
+            <i style={{ background: x.color }} />
+            {x.name}
+          </span>
+        ))}
+      </div>
+      <div className="plot-row">
+        <div className="yaxis" style={{ height }}>
+          {[1, 0.75, 0.5, 0.25, 0].map((v) => (
+            <span key={v}>{format(max * v)}</span>
+          ))}
+        </div>
+        <div
+          className="plot"
+          style={{ height }}
+          onPointerMove={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            setHover(
+              Math.max(
+                0,
+                Math.min(23, Math.round(((e.clientX - r.left) / r.width) * 23)),
+              ),
+            );
+          }}
+          onPointerLeave={() => setHover(null)}
+        >
+          <svg
+            viewBox="0 0 1000 180"
+            preserveAspectRatio="none"
+            role="img"
+            aria-label={series.map((s) => s.name).join("、") + "变化趋势"}
+          >
+            {[8, 48, 88, 128, 168].map((y) => (
+              <line
+                key={y}
+                x1="0"
+                x2="1000"
+                y1={y}
+                y2={y}
+                className="chart-grid"
+              />
+            ))}
+            {series.map((s, i) => {
+              const pts = s.values
+                .map(
+                  (v, k) =>
+                    `${(k * 1000) / (s.values.length - 1)},${168 - (v / max) * 150}`,
+                )
+                .join(" ");
+              return (
+                <g key={s.name}>
+                  {i === 0 && (
+                    <polygon
+                      points={"0,168 " + pts + " 1000,168"}
+                      fill={s.color}
+                      opacity=".075"
+                    />
+                  )}
+                  <polyline
+                    points={pts}
+                    fill="none"
+                    stroke={s.color}
+                    strokeWidth="2"
+                    vectorEffect="non-scaling-stroke"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </g>
+              );
+            })}
+            {hover !== null && (
+              <line
+                x1={(hover * 1000) / 23}
+                x2={(hover * 1000) / 23}
+                y1="0"
+                y2="174"
+                stroke="var(--muted)"
+                strokeWidth="1"
+                vectorEffect="non-scaling-stroke"
+                strokeDasharray="3 4"
+              />
+            )}
+          </svg>
+          {hover !== null && (
+            <div
+              className="chart-tooltip"
+              style={{
+                left: `clamp(5px, ${(hover / 23) * 100 - 12}%, calc(100% - 148px))`,
+              }}
+            >
+              <small>采样点 {hover + 1}</small>
+              {series.map((s) => (
+                <span key={s.name}>
+                  <i style={{ background: s.color }} />
+                  {s.name}
+                  <b>
+                    {format(s.values[Math.min(hover, s.values.length - 1)])}
+                  </b>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="xaxis">
+        {ticks.map((t, i) => (
+          <span key={i}>{t}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+function KeyValues({ rows }: { rows: [string, ReactNode][] }) {
+  return (
+    <dl className="key-values">
+      {rows.map(([key, val]) => (
+        <div key={key}>
+          <dt>{key}</dt>
+          <dd>{val}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+function Dialog({
+  title,
+  children,
+  onClose,
+}: {
+  title: string;
+  children: ReactNode;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    ref.current?.showModal();
+  }, []);
+  return (
+    <dialog
+      ref={ref}
+      className="dialog"
+      onCancel={(e) => {
+        e.preventDefault();
+        onClose();
+      }}
+    >
+      <div className="dialog-head">
+        <h2>{title}</h2>
+        <button
+          className="icon-button"
+          aria-label="关闭对话框"
+          onClick={onClose}
+        >
+          <X size={17} />
+        </button>
+      </div>
+      {children}
+    </dialog>
+  );
+}
+
+function App() {
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const [updateTarget, setUpdateTarget] = useState<HTMLDivElement | null>(null);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [page, setPage] = useState<Page>(
+    nav.some((n) => n.id === restored?.page) ? restored!.page! : "overview",
+  );
+  const [device, setDevice] = useState<DeviceId>(
+    restored?.device === "mac" ? "mac" : "windows",
+  );
+  const [dark, setDark] = useState(
+    () => window.matchMedia("(prefers-color-scheme:dark)").matches,
+  );
+  useEffect(() => {
+    const apply = (event: Event) => {
+      const state = (event as CustomEvent).detail?.globals?.widgetState
+        ?.privateContent as PreviewState | undefined;
+      if (state?.page && nav.some((n) => n.id === state.page))
+        setPage(state.page);
+      if (state?.device === "mac" || state?.device === "windows")
+        setDevice(state.device);
+    };
+    window.addEventListener("openai:set_globals", apply);
+    return () => window.removeEventListener("openai:set_globals", apply);
+  }, []);
+  useEffect(() => {
+    const theme = dark ? "dark" : "light";
+    document.documentElement.style.colorScheme = theme;
+    try {
+      localStorage.setItem("observatory.color-scheme", theme);
+    } catch {
+      // In private mode or with storage disabled the theme is simply not
+      // remembered, which does not affect usage.
+    }
+    if (window.__TAURI_INTERNALS__) {
+      void getCurrentWindow()
+        .setTheme(theme)
+        .catch((error) => {
+          console.error("系统标题栏主题同步失败", error);
+        });
+    }
+  }, [dark]);
+  const [busy, setBusy] = useState(false);
+  const [updated, setUpdated] = useState(false);
+  const [notice, setNotice] = useState("");
+  const noticeTimer = useRef<ReturnType<typeof setTimeout>>();
+  const [range, setRange] = useState("15m");
+  const [perfTab, setPerfTab] = useState("overview");
+  const [query, setQuery] = useState("");
+  // The table and the empty state share the same filtered result, so do not
+  // run the filter twice per render.
+  const filteredProcesses = useMemo(
+    () =>
+      processes.filter((p) =>
+        p.name.toLowerCase().includes(query.toLowerCase()),
+      ),
+    [query],
+  );
+  const [selectedSpan, setSelectedSpan] = useState(2);
+
+  const [refreshInterval, setRefreshInterval] = useState("30");
+  const d = deviceInfo[device];
+  const qc = useQueryClient();
+  const usageRefresh = useRef<() => Promise<void>>(async () => {});
+  const registerRefresh = useCallback((fn: () => Promise<void>) => {
+    usageRefresh.current = fn;
+  }, []);
+  const [nativeStatus, setNativeStatus] = useState<NativeStatus | undefined>();
+  const nativeInfo = useQuery({
+    queryKey: ["usage", "status"],
+    queryFn: () => usageCall<NativeStatus>("status"),
+    enabled: page === "overview",
+    staleTime: 10000,
+  });
+  useEffect(() => {
+    if (nativeInfo.data) {
+      setNativeStatus(nativeInfo.data);
+      if (nativeInfo.data.refreshInterval)
+        setRefreshInterval(nativeInfo.data.refreshInterval);
+    }
+  }, [nativeInfo.data]);
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  // The overview only needs the summary, trends and per-app grouping: use
+  // the lightweight tray_dashboard so the backend does not also compute
+  // request pagination, provider/model stats with medians and the filter
+  // dropdowns.
+  const overviewUsage = useQuery({
+    queryKey: ["usage", "overview", todayStart.getTime()],
+    queryFn: () =>
+      usageCall<OverviewUsage>("tray_dashboard", {
+        startDate: Math.floor(todayStart.getTime() / 1000),
+        endDate: Math.floor(Date.now() / 1000),
+      }),
+    enabled: page === "overview",
+    staleTime: 30000,
+    refetchInterval:
+      refreshInterval === "manual" ? false : Number(refreshInterval) * 1000,
+  });
+  const overviewDevices = useQuery({
+    queryKey: ["usage", "lan"],
+    queryFn: () => usageCall<LanStatus>("lan_status"),
+    enabled: page === "overview",
+    staleTime: 10000,
+    refetchInterval: 30000,
+    retry: false,
+  });
+  const weekStart = new Date();
+  weekStart.setDate(weekStart.getDate() - 6);
+  weekStart.setHours(0, 0, 0, 0);
+  const overviewWeek = useQuery({
+    queryKey: ["usage", "overview-week", weekStart.getTime()],
+    queryFn: () =>
+      usageCall<OverviewUsage>("tray_dashboard", {
+        startDate: Math.floor(weekStart.getTime() / 1000),
+        endDate: Math.floor(Date.now() / 1000),
+      }),
+    enabled: page === "overview",
+    staleTime: 60000,
+  });
+  const overviewAllDevices = useQuery({
+    queryKey: ["usage", "overview-all", todayStart.getTime()],
+    queryFn: () =>
+      usageCall<Pick<Dashboard, "summary" | "trends">>("tray_dashboard", {
+        startDate: Math.floor(todayStart.getTime() / 1000),
+        endDate: Math.floor(Date.now() / 1000),
+        multiDevice: true,
+      }),
+    enabled: page === "overview",
+    staleTime: 30000,
+  });
+  // The overview uses a low-frequency passive snapshot (no forced metadata
+  // refresh); live rate sampling lives on the network page.
+  const overviewNet = useQuery({
+    queryKey: ["usage", "overview-net"],
+    queryFn: () =>
+      usageCall<{
+        interfaces: {
+          name: string;
+          defaultRoute: boolean;
+          state: string;
+          ipv4: string[];
+          gateways: string[];
+          dns: string[];
+        }[];
+      }>("network_snapshot", { refreshMetadata: false }),
+    enabled: page === "overview",
+    staleTime: 15000,
+    refetchInterval: 30000,
+    retry: false,
+  });
+  const toast = (message: string) => {
+    setNotice(message);
+    clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => setNotice(""), 3000);
+  };
+  const refresh = () => {
+    if (page === "usage") {
+      void usageRefresh.current().catch(() => {});
+      return;
+    }
+    if (page === "overview") {
+      setBusy(true);
+      void usageCall("sync")
+        .then(() => qc.invalidateQueries({ queryKey: ["usage"] }))
+        .then(() => {
+          setUpdated(true);
+          toast("AI 用量已更新");
+        })
+        .catch((e) => toast(e instanceof Error ? e.message : String(e)))
+        .finally(() => setBusy(false));
+      return;
+    }
+    setBusy(true);
+    setTimeout(() => {
+      setBusy(false);
+      setUpdated(true);
+      toast("该模块为规划预览");
+    }, 600);
+  };
+  const go = (p: Page) => {
+    setPage(p);
+    setQuery("");
+    remember({ page: p, device });
+  };
+  const perfFactor = range === "hour" ? 1.16 : range === "day" ? 0.82 : 1;
+  const cpu = cpuSeries.map((v) =>
+    Math.min(96, v * perfFactor * (device === "mac" ? 0.7 : 1)),
+  );
+  const performanceChart = (
+    <Trend
+      ticks={
+        range === "15m"
+          ? ["12:25", "12:29", "12:33", "12:37", "12:40"]
+          : range === "hour"
+            ? ["11:40", "11:55", "12:10", "12:25", "12:40"]
+            : ["昨天12:40", "18:40", "00:40", "06:40", "12:40"]
+      }
+      series={[
+        { name: "CPU 使用率", values: cpu, color: "var(--accent)" },
+        {
+          name: "内存使用率",
+          values: memorySeries.map(
+            (v) =>
+              (v * ((d.memory / d.memoryTotal) * 100)) / ((12.6 / 32) * 100),
+          ),
+          color: "var(--teal)",
+        },
+      ]}
+    />
+  );
+  const rangePicker = (
+    <Segmented
+      label="性能时间范围"
+      value={range}
+      onChange={setRange}
+      options={[
+        { id: "15m", label: "15 分钟" },
+        { id: "hour", label: "1 小时" },
+        { id: "day", label: "24 小时" },
+      ]}
+    />
+  );
+  const lanDevices = overviewDevices.data?.devices ?? [];
+  const activeDevices = lanDevices.filter((x) => x.enabled);
+  const errorDevices = lanDevices.filter((x) => x.lastError).length;
+  const latestSync = activeDevices.reduce<number | null>(
+    (acc, x) =>
+      x.lastSyncAt && (acc === null || x.lastSyncAt > acc) ? x.lastSyncAt : acc,
+    null,
+  );
+  const sources = nativeInfo.data?.sources ?? [];
+  const enabledSources = sources.filter((s) => s.enabled);
+  const netInterfaces = overviewNet.data?.interfaces ?? [];
+  const defaultInterface =
+    netInterfaces.find((x) => x.defaultRoute) ?? netInterfaces[0];
+  const clock = (seconds?: number) =>
+    seconds
+      ? new Date(seconds * 1000).toLocaleTimeString("zh-CN", {
+          hour12: false,
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : "尚未同步";
+  const weekTrends = overviewWeek.data?.trends ?? [];
+  const weekTokens = weekTrends.map((t) => t.totalTokens);
+  const overview = (
+    <>
+      <div className="stats-grid">
+        <Stat
+          label="本机今日 AI 费用"
+          value={
+            overviewUsage.data
+              ? "$" + Number(overviewUsage.data.summary.totalCost).toFixed(2)
+              : "—"
+          }
+          detail={
+            <>
+              <span className="positive">
+                {overviewUsage.data?.summary.totalRequests ?? "—"} 次调用
+              </span>{" "}
+              · 本机真实数据
+            </>
+          }
+          icon={Boxes}
+          values={overviewUsage.data?.trends.map((t) => Number(t.totalCost))}
+        />
+        <Stat
+          label="全部设备今日费用"
+          value={
+            overviewAllDevices.data
+              ? "$" +
+                Number(overviewAllDevices.data.summary.totalCost).toFixed(2)
+              : "—"
+          }
+          detail={
+            <>
+              <span className="positive">
+                {overviewAllDevices.data?.summary.totalRequests ?? "—"} 次
+              </span>{" "}
+              · 含已纳入设备的最近同步快照
+            </>
+          }
+          icon={Laptop}
+          tone="teal"
+          values={overviewAllDevices.data?.trends.map((t) =>
+            Number(t.totalCost),
+          )}
+        />
+        <Stat
+          label="采集健康"
+          value={`${enabledSources.length}/${sources.length}`}
+          unit="来源启用"
+          detail={
+            nativeInfo.data?.initialImportError ? (
+              <span className="negative">历史导入报错，见数据来源页</span>
+            ) : (
+              <>
+                最近本机扫描 {clock(nativeInfo.data?.lastScanAt ?? undefined)}
+              </>
+            )
+          }
+          icon={Radar}
+        />
+        <Stat
+          label="多设备同步"
+          value={activeDevices.length}
+          unit="台纳入汇总"
+          detail={
+            <>
+              最新同步 {clock(latestSync ?? undefined)}
+              {errorDevices > 0 ? (
+                <span className="negative"> · {errorDevices} 台报错</span>
+              ) : (
+                ""
+              )}
+            </>
+          }
+          icon={Radio}
+          tone="teal"
+        />
+      </div>
+      <div className="overview-grid">
+        <Panel title="近 7 天用量" sub="每日总 Token · 本机">
+          {weekTrends.length ? (
+            <Trend
+              series={[
+                {
+                  name: "总 Token",
+                  values: weekTokens,
+                  color: "var(--teal)",
+                },
+              ]}
+              max={Math.max(1, ...weekTokens)}
+              unit=""
+              ticks={weekTrends.map((t) => t.date.slice(5, 10))}
+            />
+          ) : (
+            <p className="hint">暂无用量数据；扫描与历史迁移后显示。</p>
+          )}
+          <div className="panel-foot">
+            <span className="muted">
+              共{" "}
+              <b className="foreground">
+                {weekTrends.reduce((acc, t) => acc + t.requestCount, 0)}
+              </b>{" "}
+              次请求
+            </span>
+            <button className="text-button" onClick={() => go("usage")}>
+              查看用量明细
+              <ArrowUpRight size={13} />
+            </button>
+          </div>
+        </Panel>
+        <Panel
+          title="网络状态"
+          actions={
+            defaultInterface ? (
+              <Badge
+                tone={defaultInterface.state === "up" ? "good" : "blue"}
+                key="netbadge"
+              >
+                <span className="status-dot" />
+                {defaultInterface.state === "up"
+                  ? "已连接"
+                  : defaultInterface.state}
+              </Badge>
+            ) : undefined
+          }
+        >
+          {defaultInterface ? (
+            <KeyValues
+              rows={[
+                [
+                  "接口",
+                  <span className="inline" key="if">
+                    <Wifi size={13} />
+                    {defaultInterface.name}
+                  </span>,
+                ],
+                [
+                  "IPv4",
+                  <code key="ip">{defaultInterface.ipv4[0] ?? "未获取"}</code>,
+                ],
+                [
+                  "网关",
+                  <code key="gw">
+                    {defaultInterface.gateways[0] ?? "未获取"}
+                  </code>,
+                ],
+                [
+                  "DNS",
+                  <code key="dns">
+                    {defaultInterface.dns.slice(0, 2).join(" / ") || "未获取"}
+                  </code>,
+                ],
+              ]}
+            />
+          ) : (
+            <p className="hint">正在读取网络信息…</p>
+          )}
+          <div className="panel-foot">
+            <span className="muted">实时速率、IP 与诊断见网络页</span>
+            <button className="text-button" onClick={() => go("network")}>
+              网络概况
+              <ArrowRight size={13} />
+            </button>
+          </div>
+        </Panel>
+      </div>
+      <div className="overview-grid bottom-grid">
+        <Panel
+          title="本机 AI 应用费用 · Top 4"
+          actions={
+            <button className="text-button" onClick={() => go("usage")}>
+              用量明细
+              <ArrowUpRight size={13} />
+            </button>
+          }
+        >
+          <div className="app-costs">
+            {overviewUsage.data?.byApp
+              .filter((a) => a.summary.totalRequests > 0)
+              .sort(
+                (a, b) =>
+                  Number(b.summary.totalCost) - Number(a.summary.totalCost),
+              )
+              .slice(0, 4)
+              .map((a) => (
+                <div key={a.appType}>
+                  <div className="app-cost-label">
+                    <span className="inline">
+                      {brandIcons[a.appType] && <BrandIcon id={a.appType} />}{" "}
+                      {nativeStatus?.sources.find((s) => s.id === a.appType)
+                        ?.name ?? a.appType}
+                    </span>
+                    <code>{money(Number(a.summary.totalCost))}</code>
+                  </div>
+                  <div className="meter">
+                    <span
+                      style={{
+                        width:
+                          Math.max(
+                            1,
+                            (Number(a.summary.totalCost) /
+                              Math.max(
+                                0.0001,
+                                Number(overviewUsage.data?.summary.totalCost),
+                              )) *
+                              100,
+                          ) + "%",
+                      }}
+                    />
+                  </div>
+                </div>
+              ))}
+            {!overviewUsage.data && (
+              <p className="hint">本地统计尚未连接，请打开 AI 用量页。</p>
+            )}
+          </div>
+        </Panel>
+        <Panel title="模块接入状态" sub="未接入的模块不显示演示数据">
+          <KeyValues
+            rows={[
+              [
+                "AI 用量",
+                <Badge tone="good" key="usage">
+                  真实数据
+                </Badge>,
+              ],
+              [
+                "多设备同步",
+                <Badge tone={lanDevices.length ? "good" : "blue"} key="lan">
+                  {lanDevices.length ? "真实数据" : "未配置设备"}
+                </Badge>,
+              ],
+              [
+                "网络概况",
+                <Badge tone="good" key="net">
+                  真实数据
+                </Badge>,
+              ],
+              [
+                "设备性能",
+                <Badge tone="blue" key="perf">
+                  规划中
+                </Badge>,
+              ],
+              [
+                "Agent 追踪",
+                <Badge tone="blue" key="trace">
+                  规划中
+                </Badge>,
+              ],
+            ]}
+          />
+          <div className="panel-foot">
+            <span className="muted">预览模块保留独立页面与说明</span>
+            <button className="text-button" onClick={() => go("agents")}>
+              Agent 追踪
+              <ArrowUpRight size={13} />
+            </button>
+          </div>
+        </Panel>
+      </div>
+    </>
+  );
+  const usage = (
+    <UsageWorkspace
+      interval={refreshInterval}
+      onRefreshReady={registerRefresh}
+      onBusy={setBusy}
+      onStatus={setNativeStatus}
+    />
+  );
+  const agentPage = (
+    <>
+      <div className="callout">
+        <ListTree size={16} />
+        <span>
+          调用栈设计预览：未来可关联任务、子
+          Agent、模型与工具调用。当前记录为演示数据。
+        </span>
+        <Badge tone="blue">规划中</Badge>
+      </div>
+      <div className="trace-summary">
+        <div>
+          <span className="eyebrow">任务 / TRACE</span>
+          <h2>定位网络请求超时</h2>
+          <p>Codex · Windows 工作站 · 今天 12:38:24</p>
+        </div>
+        <div className="trace-summary-stats">
+          <span>
+            总耗时<strong>8.24 s</strong>
+          </span>
+          <span>
+            总 Token<strong>32.8K</strong>
+          </span>
+          <span>
+            估算费用<strong>$0.048</strong>
+          </span>
+          <Badge tone="good">已完成</Badge>
+        </div>
+      </div>
+      <div className="trace-layout">
+        <Panel title="调用栈与执行时间线" sub="点击调用查看详情">
+          <div className="trace-axis">
+            <span>调用</span>
+            <div>
+              {["0 s", "2 s", "4 s", "6 s", "8 s"].map((t) => (
+                <span key={t}>{t}</span>
+              ))}
+            </div>
+          </div>
+          {spans.map((s) => (
+            <button
+              className={
+                "span-row " + (selectedSpan === s.id ? "selected" : "")
+              }
+              key={s.id}
+              onClick={() => setSelectedSpan(s.id)}
+            >
+              <span className="span-name" style={{ paddingLeft: s.depth * 14 }}>
+                {s.depth > 0 ? (
+                  <ChevronRight size={11} />
+                ) : (
+                  <Waypoints size={12} />
+                )}
+                <span>
+                  {s.name}
+                  <small>{s.type}</small>
+                </span>
+              </span>
+              <span className="span-lane">
+                <span
+                  className={
+                    "span-bar " + (s.type === "工具调用" ? "teal" : "")
+                  }
+                  style={{
+                    left: (s.start / 8.5) * 100 + "%",
+                    width: (s.duration / 8.5) * 100 + "%",
+                  }}
+                />
+              </span>
+              <span className="span-duration">{s.duration.toFixed(2)}s</span>
+            </button>
+          ))}
+        </Panel>
+        <Panel title="调用详情" actions={<Badge tone="good">已完成</Badge>}>
+          <div className="span-detail-title">
+            <Waypoints size={20} />
+            <strong>{spans[selectedSpan].name}</strong>
+          </div>
+          <KeyValues
+            rows={[
+              ["类型", spans[selectedSpan].type],
+              ["持续时间", spans[selectedSpan].duration.toFixed(2) + " 秒"],
+              ["Token", spans[selectedSpan].tokens],
+              ["费用", spans[selectedSpan].cost],
+              [
+                "父调用",
+                selectedSpan === 0
+                  ? "—"
+                  : selectedSpan === 3 || selectedSpan === 4
+                    ? "诊断 DNS 解析"
+                    : "定位网络请求超时",
+              ],
+              ["所属设备", d.name],
+            ]}
+          />
+          <p className="hint">
+            此处预留输入输出摘要、工具参数及错误信息的查看入口。
+          </p>
+        </Panel>
+      </div>
+    </>
+  );
+  const performance = (
+    <>
+      <div className="device-heading">
+        <div className="inline">
+          <span className="device-icon">
+            <Laptop size={24} />
+          </span>
+          <div>
+            <strong>{d.name}</strong>
+            <p>
+              {d.os} · {d.cpu} · {d.cores}
+            </p>
+          </div>
+        </div>
+        <span className="muted inline">
+          <Clock3 size={14} />
+          已运行 {d.uptime}
+        </span>
+      </div>
+      <div className="stats-grid">
+        <Stat
+          label="CPU 使用率"
+          value={d.cpuUsage}
+          unit="%"
+          detail="平均频率 3.2 GHz"
+          icon={Cpu}
+          values={cpu}
+        />
+        <Stat
+          label="内存使用"
+          value={d.memory}
+          unit={"/ " + d.memoryTotal + " GB"}
+          detail="内存压力正常"
+          icon={MemoryStick}
+          values={memorySeries}
+          tone="teal"
+        />
+        <Stat
+          label="磁盘已用"
+          value={d.disk}
+          unit={"/ " + d.diskTotal + " GB"}
+          detail={"使用率 " + Math.round((d.disk / d.diskTotal) * 100) + "%"}
+          icon={HardDrive}
+        />
+        <Stat
+          label="GPU 使用率"
+          value={12}
+          unit="%"
+          detail="显存 2.1 / 8 GB · 演示"
+          icon={Monitor}
+          values={cpuSeries.map((v) => v * 0.6)}
+        />
+      </div>
+      <div className="tabs">
+        {[
+          { id: "overview", label: "资源趋势" },
+          { id: "processes", label: "进程" },
+          { id: "disk", label: "磁盘与 I/O" },
+        ].map((t) => (
+          <button
+            key={t.id}
+            aria-pressed={perfTab === t.id}
+            onClick={() => setPerfTab(t.id)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {perfTab === "overview" ? (
+        <Panel title="CPU 与内存" actions={rangePicker}>
+          {performanceChart}
+        </Panel>
+      ) : perfTab === "disk" ? (
+        <Panel title="磁盘与 I/O">
+          <div className="disk-overview">
+            <span className="device-icon">
+              <HardDrive size={25} />
+            </span>
+            <div>
+              <h3>系统磁盘 · SSD</h3>
+              <p>
+                {d.disk} GB 已用 / {d.diskTotal} GB
+              </p>
+              <div className="meter">
+                <span style={{ width: (d.disk / d.diskTotal) * 100 + "%" }} />
+              </div>
+            </div>
+            <span>
+              读取<strong>18.4 MB/s</strong>
+            </span>
+            <span>
+              写入<strong>4.2 MB/s</strong>
+            </span>
+          </div>
+          <Trend
+            series={[
+              {
+                name: "读取",
+                values: downSeries.map((v) => v * 7),
+                color: "var(--accent)",
+              },
+              {
+                name: "写入",
+                values: upSeries.map((v) => v * 7),
+                color: "var(--teal)",
+              },
+            ]}
+            max={30}
+            unit=" MB/s"
+          />
+        </Panel>
+      ) : null}
+      <Panel
+        title="进程资源"
+        className="section-gap"
+        actions={
+          <label className="search">
+            <Search size={14} />
+            <input
+              aria-label="搜索进程"
+              placeholder="搜索进程"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </label>
+        }
+      >
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>进程</th>
+                <th>PID</th>
+                <th className="numeric">CPU ↓</th>
+                <th className="numeric">内存</th>
+                <th className="numeric">网络</th>
+                <th>类型</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredProcesses.map((p) => (
+                <tr key={p.pid}>
+                  <td className="inline">
+                    <span className="process-icon">
+                      <Terminal size={12} />
+                    </span>
+                    {p.name}
+                  </td>
+                  <td className="muted mono">{p.pid}</td>
+                  <td className="numeric">{p.cpu}%</td>
+                  <td className="numeric">{p.memory.toLocaleString()} MB</td>
+                  <td className="numeric">{p.network}</td>
+                  <td>
+                    <Badge>{p.role}</Badge>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {filteredProcesses.length === 0 && (
+          <div className="empty">没有匹配的进程</div>
+        )}
+      </Panel>
+    </>
+  );
+  const devices = <DeviceManager />;
+  return (
+    <div
+      className={`obs-shell${IS_WINDOWS ? " windows-polish" : ""}`}
+      style={{ colorScheme: dark ? "dark" : "light" }}
+    >
+      <header className="app-nav">
+        <button
+          className="brand"
+          onClick={() => go("overview")}
+          aria-label="观测台首页"
+        >
+          <span className="brand-mark">
+            <Radar size={24} />
+          </span>
+          <span>
+            观测台<small>OBSERVATORY</small>
+          </span>
+        </button>
+        <nav aria-label="主导航">
+          {nav.map((n) => (
+            <button
+              key={n.id}
+              aria-current={page === n.id ? "page" : undefined}
+              onClick={() => go(n.id)}
+            >
+              <n.icon size={15} />
+              {n.label}
+            </button>
+          ))}
+        </nav>
+        <button
+          className="icon-button"
+          aria-label="关于观测台"
+          title="关于观测台"
+          onClick={() => setAboutOpen(true)}
+        >
+          <Info size={17} />
+          {updateAvailable && (
+            <span className="about-update-dot" aria-label="有新版本" />
+          )}
+        </button>
+        <button
+          className="icon-button"
+          aria-label="切换明暗外观"
+          onClick={() => setDark(!dark)}
+        >
+          {dark ? <Sun size={17} /> : <Moon size={17} />}
+        </button>
+      </header>
+      {aboutOpen && (
+        <Dialog title="关于观测台" onClose={() => setAboutOpen(false)}>
+          <div className="about-details">
+            <div className="about-brand">
+              <Radar size={24} />
+              <strong>观测台 · Observatory</strong>
+            </div>
+            <p>AI 用量与设备观测工作台</p>
+            <dl>
+              <div>
+                <dt>软件版本</dt>
+                <dd>v{packageInfo.version}</dd>
+              </div>
+              <div>
+                <dt>构建时间</dt>
+                <dd>
+                  <time dateTime={__OBS_BUILD_TIME__}>
+                    {new Date(__OBS_BUILD_TIME__).toLocaleString("zh-CN", {
+                      dateStyle: "medium",
+                      timeStyle: "medium",
+                    })}
+                  </time>
+                </dd>
+              </div>
+            </dl>
+            <small>构建时间按当前设备的本地时区显示。</small>
+            <p className="hint">
+              关闭窗口后继续后台运行；可从系统托盘或菜单栏重新打开、查看本机今日用量或退出。
+            </p>
+            <div className="about-update" ref={setUpdateTarget} />
+          </div>
+        </Dialog>
+      )}
+      <UpdateControl target={updateTarget} onAvailable={setUpdateAvailable} />
+      <main>
+        <div className="page-heading">
+          <div>
+            <div className="eyebrow">
+              {page === "overview"
+                ? "WORKSPACE OVERVIEW"
+                : page === "network"
+                  ? "NETWORK OBSERVABILITY"
+                  : page === "performance"
+                    ? "DEVICE METRICS"
+                    : page === "agents"
+                      ? "AGENT TRACING"
+                      : page === "activity"
+                        ? "ACTIVITY LOG"
+                        : "OBSERVATORY"}
+            </div>
+            <h1>
+              {titles[page][0]}
+              {page === "agents" && <Badge tone="blue">规划预览</Badge>}
+              {page === "overview" && (
+                <Badge tone="blue">设备性能与 Agent 追踪为规划预览</Badge>
+              )}
+              {page === "performance" && <Badge>演示数据</Badge>}
+            </h1>
+            <p>{titles[page][1]}</p>
+          </div>
+          <div className="page-controls">
+            {page !== "usage" &&
+              page !== "subscriptions" &&
+              page !== "network" &&
+              page !== "activity" && (
+                <button
+                  className="icon-button"
+                  aria-label="刷新当前指标"
+                  onClick={refresh}
+                  disabled={busy}
+                >
+                  <RefreshCw size={15} className={busy ? "refreshing" : ""} />
+                </button>
+              )}
+          </div>
+        </div>
+        {page !== "network" &&
+          page !== "subscriptions" &&
+          page !== "activity" && (
+            <div className="context-bar">
+              {page === "usage" || page === "devices" ? (
+                <div className="inline">
+                  <span className="status-dot" />
+                  <span>
+                    {nativeStatus?.device.deviceName ?? "本机真实用量"}
+                  </span>
+                  <span className="separator" />
+                  <span>本机日志 · 只读历史导入</span>
+                </div>
+              ) : page === "overview" ? (
+                <div className="inline">
+                  <span className="status-dot" />
+                  <span>
+                    {overviewDevices.data?.local.deviceName ?? "本机"}
+                  </span>
+                  <span className="separator" />
+                  <span>
+                    {defaultInterface
+                      ? defaultInterface.name
+                      : "网络信息读取中"}
+                  </span>
+                  {defaultInterface?.ipv4[0] && (
+                    <>
+                      <span className="separator" />
+                      <code>{defaultInterface.ipv4[0]}</code>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="inline">
+                  <span className="status-dot" />
+                  <span>规划预览 · 演示数据</span>
+                </div>
+              )}
+              <div className="inline">
+                <span>
+                  {page === "usage" || page === "devices"
+                    ? nativeStatus?.lastScanAt
+                      ? "最近扫描 " +
+                        new Date(nativeStatus.lastScanAt).toLocaleTimeString(
+                          "zh-CN",
+                          { hour12: false },
+                        )
+                      : "等待本机扫描"
+                    : page === "overview"
+                      ? nativeInfo.data?.lastScanAt
+                        ? "最近扫描 " +
+                          new Date(
+                            nativeInfo.data.lastScanAt,
+                          ).toLocaleTimeString("zh-CN", { hour12: false })
+                        : "等待本机扫描"
+                      : updated
+                        ? "刚刚更新"
+                        : "规划预览"}
+                </span>
+                <select
+                  value={refreshInterval}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setRefreshInterval(value);
+                    void usageCall("preferences_save", {
+                      refreshInterval: value,
+                    })
+                      .then(() =>
+                        qc.invalidateQueries({ queryKey: ["usage", "status"] }),
+                      )
+                      .catch((error) => toast(String(error)));
+                  }}
+                  aria-label="自动刷新间隔"
+                >
+                  <option value="30">每 30 秒</option>
+                  <option value="60">每 60 秒</option>
+                  <option value="manual">手动刷新</option>
+                </select>
+              </div>
+            </div>
+          )}
+        {page === "overview" ? (
+          overview
+        ) : page === "usage" ? (
+          usage
+        ) : page === "subscriptions" ? (
+          <SubscriptionWorkspace />
+        ) : page === "agents" ? (
+          agentPage
+        ) : page === "performance" ? (
+          performance
+        ) : page === "network" ? (
+          <NetworkOverview />
+        ) : page === "activity" ? (
+          <ActivityLog />
+        ) : (
+          devices
+        )}
+        <footer className="app-footer">
+          <span className="inline">
+            <ShieldCheck size={13} />
+            指标本地采集 · 自主选择共享
+          </span>
+          <span>AI 用量与网络概况已接入 · 设备性能和 Agent 为预览</span>
+        </footer>
+      </main>
+      {notice && (
+        <div className="toast" role="status">
+          <Check size={15} />
+          {notice}
+        </div>
+      )}
+    </div>
+  );
+}
+const isTrayPanel =
+  new URLSearchParams(window.location.search).get("surface") === "tray";
+if (isTrayPanel) {
+  document.documentElement.classList.add("tray-window");
+  document.body.classList.add("tray-window");
+}
+createRoot(document.getElementById("observatory-root")!).render(
+  <QueryClientProvider client={queryClient}>
+    {isTrayPanel ? <TrayPanel /> : <App />}
+  </QueryClientProvider>,
+);

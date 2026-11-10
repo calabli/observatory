@@ -1,0 +1,5 @@
+# Pure formatting commits; use: git config blame.ignoreRevsFile .git-blame-ignore-revs
+# cargo fmt
+e4f4033fc3023e1cf0e0f67f62ba3893e090f4e6
+# prettier
+5245b5b5c180025ad6e6554d2bb3be1b860c1a37

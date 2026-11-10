@@ -1,0 +1,96 @@
+{
+  "id": "9c1d7e42-5b83-4f6a-9d27-3e8a1c6f0b54",
+  "name": "Observatory · Read-only Usage API (local)",
+  "values": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:17891",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "apiKey",
+      "value": "",
+      "type": "secret",
+      "enabled": true
+    },
+    {
+      "key": "startDate",
+      "value": "2026-10-01",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "endDate",
+      "value": "2026-10-31",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "startTime",
+      "value": "2026-11-01T09:00:00+08:00",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "endTime",
+      "value": "2026-11-01T18:00:00+08:00",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "archivedStartTime",
+      "value": "2026-10-31T09:00:00+08:00",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "archivedEndTime",
+      "value": "2026-10-31T18:00:00+08:00",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "startTimeNaive",
+      "value": "2026-10-31T09:00:00",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "endTimeNaive",
+      "value": "2026-10-31T18:00:00",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "dayStart",
+      "value": "2026-10-31T00:00:00+08:00",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "dayEnd",
+      "value": "2026-11-01T00:00:00+08:00",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "model",
+      "value": "claude-opus-5-5",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "models",
+      "value": "m,m2",
+      "type": "default"
+    },
+    {
+      "key": "modelsByApp",
+      "value": "{\"claude\":[\"m\"],\"codex\":[\"m\"]}",
+      "type": "default"
+    }
+  ],
+  "_postman_variable_scope": "environment",
+  "_postman_exported_using": "Observatory"
+}

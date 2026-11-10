@@ -1,0 +1,105 @@
+{
+  "requests": 1,
+  "inputTokens": 100,
+  "outputTokens": 20,
+  "cacheReadTokens": 300,
+  "cacheWriteTokens": 10,
+  "totalTokens": 430,
+  "costUsd": 1.25,
+  "scope": "local",
+  "appType": [
+    "claude"
+  ],
+  "apps": [
+    "claude"
+  ],
+  "model": null,
+  "modelFilterBasis": "effectivePricingModel",
+  "days": 3,
+  "startDate": "2026-10-30",
+  "endDate": "2026-11-01",
+  "range": {
+    "start": "2026-10-30T00:00:00+08:00",
+    "endExclusive": "2026-11-02T00:00:00+08:00",
+    "timezone": "server-local"
+  },
+  "groupBy": "day",
+  "currency": "USD",
+  "inputTokenSemantics": "fresh",
+  "updatedAt": "2026-11-01T13:42:11Z",
+  "lastScanAt": null,
+  "buckets": [
+    {
+      "requests": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 0,
+      "totalTokens": 0,
+      "costUsd": 0,
+      "period": "2026-10-30",
+      "start": "2026-10-30T00:00:00+08:00",
+      "endExclusive": "2026-10-31T00:00:00+08:00"
+    },
+    {
+      "requests": 1,
+      "inputTokens": 100,
+      "outputTokens": 20,
+      "cacheReadTokens": 300,
+      "cacheWriteTokens": 10,
+      "totalTokens": 430,
+      "costUsd": 1.25,
+      "period": "2026-10-31",
+      "start": "2026-10-31T00:00:00+08:00",
+      "endExclusive": "2026-11-01T00:00:00+08:00"
+    },
+    {
+      "requests": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 0,
+      "totalTokens": 0,
+      "costUsd": 0,
+      "period": "2026-11-01",
+      "start": "2026-11-01T00:00:00+08:00",
+      "endExclusive": "2026-11-02T00:00:00+08:00"
+    }
+  ],
+  "daily": [
+    {
+      "requests": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 0,
+      "totalTokens": 0,
+      "costUsd": 0,
+      "date": "2026-10-30"
+    },
+    {
+      "requests": 1,
+      "inputTokens": 100,
+      "outputTokens": 20,
+      "cacheReadTokens": 300,
+      "cacheWriteTokens": 10,
+      "totalTokens": 430,
+      "costUsd": 1.25,
+      "date": "2026-10-31"
+    },
+    {
+      "requests": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 0,
+      "totalTokens": 0,
+      "costUsd": 0,
+      "date": "2026-11-01"
+    }
+  ],
+  "devices": [
+    "local"
+  ],
+  "modelsByApp": null
+}

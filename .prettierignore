@@ -1,0 +1,9 @@
+dist/
+desktop-dist/
+node_modules/
+native/
+src-tauri/
+.local-data/
+.ui-shots/
+package-lock.json
+*.log
