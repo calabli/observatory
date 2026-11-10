@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Observatory 观测台</title>
+<meta name="description" content="Observatory（观测台）：本地 AI 用量统计桌面应用。汇总 Claude Code、Codex、Gemini CLI 等工具的 token、费用与请求，支持局域网多设备同步。数据只留在你的电脑上。" />
+<link rel="icon" type="image/png" href="data:image/png;base64,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" />
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --bg-soft: #f6f6f8;
+  --surface: #ffffff;
+  --text: #18181b;
+  --text-2: #52525b;
+  --muted: #71717a;
+  --line: #e4e4e9;
+  --action: #f97316;
+  --action-hover: #ea620a;
+  --accent: #c2410c;
+  --accent-soft: #fff1e6;
+  --chart: #0891b2;
+  --chart-2: #db2777;
+  --chart-grid: #ececf0;
+  --shadow: 0 1px 2px rgba(24, 24, 27, .04), 0 12px 32px rgba(24, 24, 27, .08);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #161618;
+    --bg-soft: #1c1c1f;
+    --surface: #232327;
+    --text: #e4e4e7;
+    --text-2: #ababb3;
+    --muted: #8e8e96;
+    --line: #34343b;
+    --action: #ea580c;
+    --action-hover: #f06d1f;
+    --accent: #fb923c;
+    --accent-soft: rgba(249, 115, 21, .12);
+    --chart: #38bdf8;
+    --chart-2: #f472b6;
+    --chart-grid: #2c2c31;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 16px 40px rgba(0, 0, 0, .35);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #161618; --bg-soft: #1c1c1f; --surface: #232327; --text: #e4e4e7; --text-2: #ababb3;
+  --muted: #8e8e96; --line: #34343b; --action: #ea580c; --action-hover: #f06d1f; --accent: #fb923c;
+  --accent-soft: rgba(249, 115, 21, .12); --chart: #38bdf8; --chart-2: #f472b6; --chart-grid: #2c2c31;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 16px 40px rgba(0, 0, 0, .35);
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: inherit; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+@media (max-width: 560px) { .wrap { padding: 0 16px; } }
+
+/* Nav */
+header.top {
+  position: sticky; top: 0; z-index: 10;
+  background: color-mix(in srgb, var(--bg) 85%, transparent);
+  backdrop-filter: saturate(1.4) blur(12px);
+  border-bottom: 1px solid var(--line);
+}
+header.top .wrap { display: flex; align-items: center; justify-content: space-between; height: 60px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 650; text-decoration: none; }
+.brand img { width: 28px; height: 28px; border-radius: 7px; }
+.brand small { color: var(--muted); font-weight: 500; font-size: 13px; }
+nav.links { display: flex; gap: 22px; font-size: 14px; color: var(--text-2); }
+nav.links a { text-decoration: none; }
+nav.links a:hover { color: var(--text); }
+@media (max-width: 720px) { nav.links .hide-sm { display: none; } }
+
+/* Hero */
+.hero { padding-top: 72px; padding-bottom: 40px; text-align: center; }
+.eyebrow {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 4px 12px; border-radius: 999px;
+  background: var(--accent-soft); color: var(--accent);
+  font-size: 13px; font-weight: 600;
+}
+.eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--action); }
+h1 {
+  margin: 20px auto 16px; max-width: 820px;
+  font-size: clamp(34px, 6vw, 58px); line-height: 1.12; letter-spacing: -.02em; font-weight: 750;
+  text-wrap: balance;
+}
+h1 .hl { color: var(--action); }
+.lede { margin: 0 auto; max-width: 640px; color: var(--text-2); font-size: clamp(16px, 2.2vw, 19px); text-wrap: pretty; }
+.cta { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; margin: 32px 0 12px; }
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 46px; padding: 0 22px; border-radius: 10px;
+  font-size: 15px; font-weight: 600; text-decoration: none;
+  border: 1px solid var(--line); background: var(--surface); color: var(--text);
+  transition: background .15s, border-color .15s, transform .15s;
+}
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--action); border-color: var(--action); color: #fff; }
+.btn.primary:hover { background: var(--action-hover); border-color: var(--action-hover); }
+.btn svg { width: 18px; height: 18px; flex: none; }
+.meta { color: var(--muted); font-size: 13px; }
+
+/* Mock window */
+.shot { margin: 48px auto 0; max-width: 980px; }
+.win {
+  border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
+  background: var(--bg-soft); box-shadow: var(--shadow); text-align: left;
+}
+.win-bar { display: flex; align-items: center; gap: 16px; height: 44px; padding: 0 16px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.win-bar .lights { display: flex; gap: 6px; }
+.win-bar .lights i { width: 10px; height: 10px; border-radius: 50%; background: var(--line); }
+.win-bar .tabs { display: flex; gap: 4px; font-size: 13px; color: var(--muted); overflow: hidden; }
+.win-bar .tabs span { padding: 4px 10px; border-radius: 6px; white-space: nowrap; }
+.win-bar .tabs .on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.win-body { padding: 20px; display: grid; gap: 16px; }
+.kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.kpi { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+.kpi .k { font-size: 12px; color: var(--muted); }
+.kpi .v { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.kpi .d { font-size: 12px; color: var(--chart); }
+.kpi.on { border-color: var(--action); box-shadow: inset 0 0 0 1px var(--action); }
+.panels { display: grid; grid-template-columns: 1.7fr 1fr; gap: 12px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+.panel h4 { margin: 0 0 10px; font-size: 13px; font-weight: 600; color: var(--text-2); }
+.chart { width: 100%; height: 160px; display: block; }
+.chart .grid { stroke: var(--chart-grid); stroke-width: 1; }
+.chart .bar { fill: var(--chart); }
+.chart .bar.dim { fill: color-mix(in srgb, var(--chart) 35%, transparent); }
+.rank { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; font-size: 13px; }
+.rank li { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; align-items: center; }
+.rank .bar { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: var(--chart-grid); overflow: hidden; }
+.rank .bar i { display: block; height: 100%; background: var(--chart); border-radius: 3px; }
+.rank b { font-weight: 600; font-variant-numeric: tabular-nums; }
+@media (max-width: 760px) {
+  .kpis { grid-template-columns: repeat(2, 1fr); }
+  .panels { grid-template-columns: 1fr; }
+  .win-bar .tabs span:nth-child(n+4) { display: none; }
+}
+
+/* Sections */
+section { padding: 88px 0; }
+section.alt { background: var(--bg-soft); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.sec-head { max-width: 640px; margin-bottom: 40px; }
+.sec-head .tag { color: var(--accent); font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+h2 { margin: 8px 0 12px; font-size: clamp(26px, 4vw, 36px); line-height: 1.2; letter-spacing: -.01em; text-wrap: balance; }
+.sec-head p { margin: 0; color: var(--text-2); }
+
+.features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.feature { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 24px; }
+.feature .ic {
+  width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center;
+  background: var(--accent-soft); color: var(--accent); margin-bottom: 16px;
+}
+.feature .ic svg { width: 20px; height: 20px; }
+.feature h3 { margin: 0 0 8px; font-size: 17px; }
+.feature p { margin: 0; color: var(--text-2); font-size: 15px; }
+@media (max-width: 900px) { .features { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 600px) { .features { grid-template-columns: 1fr; } }
+
+.tools { display: flex; flex-wrap: wrap; gap: 10px; }
+.tools span {
+  padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--surface); font-size: 14px; font-weight: 500;
+}
+.tools span.soft { color: var(--muted); border-style: dashed; }
+.note { margin-top: 16px; color: var(--muted); font-size: 14px; }
+
+.privacy { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: start; }
+.checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 16px; }
+.checks li { display: grid; grid-template-columns: 24px 1fr; gap: 12px; }
+.checks svg { width: 20px; height: 20px; color: var(--chart); margin-top: 3px; }
+.checks b { display: block; }
+.checks span { color: var(--text-2); font-size: 15px; }
+@media (max-width: 800px) { .privacy { grid-template-columns: 1fr; gap: 24px; } }
+
+.downloads { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.dl {
+  display: flex; flex-direction: column; gap: 6px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 22px;
+  text-decoration: none; transition: border-color .15s, transform .15s;
+}
+.dl:hover { border-color: var(--action); transform: translateY(-2px); }
+.dl .os { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 17px; }
+.dl .os svg { width: 22px; height: 22px; }
+.dl .what { color: var(--text-2); font-size: 14px; }
+.dl .file { margin-top: 8px; color: var(--muted); font-size: 12px; font-family: ui-monospace, "SF Mono", Consolas, monospace; overflow-wrap: anywhere; }
+@media (max-width: 800px) { .downloads { grid-template-columns: 1fr; } }
+
+footer { padding: 40px 0 56px; color: var(--muted); font-size: 14px; }
+footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+footer a { text-decoration: none; }
+footer a:hover { color: var(--text); }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#">
+      <img src="data:image/png;base64,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" alt="" />
+      Observatory <small>观测台</small>
+    </a>
+    <nav class="links">
+      <a href="#features">功能</a>
+      <a class="hide-sm" href="#tools">支持的工具</a>
+      <a class="hide-sm" href="#privacy">隐私</a>
+      <a href="#download">下载</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap hero">
+    <span class="eyebrow"><span class="dot"></span><span id="ver">免费 · 开源 · Windows / macOS</span></span>
+    <h1>你的 AI 编程助手<br />每天花了<span class="hl">多少钱</span>，一眼看清</h1>
+    <p class="lede">Observatory 读取 Claude Code、Codex、Gemini CLI 等工具的本地日志，把 token、费用、请求和缓存命中率汇总成一张看板。家里和公司的电脑可以通过局域网合并统计。数据只留在你的电脑上。</p>
+    <div class="cta">
+      <a class="btn primary" id="primary-dl" href="https://github.com/calabli/observatory/releases/latest">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+        <span id="primary-label">免费下载</span>
+      </a>
+      <a class="btn" href="https://github.com/calabli/observatory">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.52 2.34 1.08 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02a9.5 9.5 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.69-4.57 4.93.36.31.68.92.68 1.85v2.75c0 .27.18.58.69.48A10 10 0 0 0 12 2Z"/></svg>
+        GitHub
+      </a>
+    </div>
+    <div class="meta" id="primary-meta">Windows 10/11 x64 · macOS Apple Silicon</div>
+
+    <div class="shot" aria-hidden="true">
+      <div class="win">
+        <div class="win-bar">
+          <div class="lights"><i></i><i></i><i></i></div>
+          <div class="tabs"><span class="on">AI 用量</span><span>多设备</span><span>活动日志</span><span>网络概览</span><span>设备性能</span></div>
+        </div>
+        <div class="win-body">
+          <div class="kpis">
+            <div class="kpi on"><div class="k">今日费用</div><div class="v">$12.48</div><div class="d">较昨日 −18%</div></div>
+            <div class="kpi"><div class="k">请求数</div><div class="v">1,326</div><div class="d">成功率 99.2%</div></div>
+            <div class="kpi"><div class="k">Tokens</div><div class="v">48.6M</div><div class="d">输出 1.9M</div></div>
+            <div class="kpi"><div class="k">缓存命中率</div><div class="v">91.4%</div><div class="d">节省约 $63</div></div>
+          </div>
+          <div class="panels">
+            <div class="panel">
+              <h4>最近 14 天费用</h4>
+              <svg class="chart" viewBox="0 0 560 160" preserveAspectRatio="none">
+                <line class="grid" x1="0" y1="40" x2="560" y2="40" /><line class="grid" x1="0" y1="80" x2="560" y2="80" /><line class="grid" x1="0" y1="120" x2="560" y2="120" /><line class="grid" x1="0" y1="159" x2="560" y2="159" />
+                <g id="bars"></g>
+              </svg>
+            </div>
+            <div class="panel">
+              <h4>按应用</h4>
+              <ul class="rank">
+                <li>Claude Code <b>$7.92</b><span class="bar"><i style="width:100%"></i></span></li>
+                <li>Codex <b>$2.61</b><span class="bar"><i style="width:33%"></i></span></li>
+                <li>Gemini CLI <b>$1.14</b><span class="bar"><i style="width:14%"></i></span></li>
+                <li>OpenCode <b>$0.81</b><span class="bar"><i style="width:10%"></i></span></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <section id="features" class="alt">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="tag">功能</div>
+        <h2>装上就能用，不用改任何配置</h2>
+        <p>不代理请求，也不需要 API 密钥。Observatory 直接读取各工具写在本机的日志，增量扫描，重复扫描不会重复计数。</p>
+      </div>
+      <div class="features">
+        <div class="feature">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></div>
+          <h3>完整的用量看板</h3>
+          <p>费用、请求、四类 token、缓存命中率和趋势，可按时间、应用、服务商、模型筛选，请求明细支持导出 CSV。</p>
+        </div>
+        <div class="feature">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="9" height="7" rx="1.5"/><rect x="13" y="13" width="9" height="7" rx="1.5"/><path d="M6.5 11v4a2 2 0 0 0 2 2H13"/></svg></div>
+          <h3>多设备合并统计</h3>
+          <p>局域网自动发现其他电脑，用 6 位配对码连接，按应用选择共享内容，在一张看板里看所有设备的总用量。</p>
+        </div>
+        <div class="feature">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v4"/><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2"/></svg></div>
+          <h3>托盘快捷面板</h3>
+          <p>点一下任务栏或菜单栏图标，就能看到今日和最近 7 天的费用、请求和各应用用量，不用打开主窗口。</p>
+        </div>
+        <div class="feature">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v6"/><path d="M5 8h14l-1 13H6Z"/><path d="M9 12v5M15 12v5"/></svg></div>
+          <h3>价格可自己维护</h3>
+          <p>四类 token 单价都能编辑，可从 models.dev 一键导入并定期同步；改了价格还能回填历史费用。</p>
+        </div>
+        <div class="feature">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg></div>
+          <h3>活动日志</h3>
+          <p>每次扫描读了哪些文件、读到第几行、新增多少 token，局域网谁来访问过、同步结果如何，都有据可查。</p>
+        </div>
+        <div class="feature">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><path d="M12 20h.01"/></svg></div>
+          <h3>本地网络概览</h3>
+          <p>网卡、IP、网关、DNS 和实时收发速率一目了然；出口 IP 只在你点击时查询。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="tools">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="tag">支持的工具</div>
+        <h2>主流 AI 编程工具都能统计</h2>
+        <p>按各工具的默认日志位置读取，也会遵循它们自己的环境变量（如 <code>CODEX_HOME</code>）。</p>
+      </div>
+      <div class="tools">
+        <span>Claude Code</span><span>Codex</span><span>Gemini CLI</span><span>Grok Build</span><span>OpenCode</span><span>Pi</span><span>MiniMax Code</span><span>Antigravity</span><span>Kimi Code</span><span>DeepSeek Harness</span><span>ZCode</span>
+        <span class="soft">Claude Desktop</span><span class="soft">Hermes</span><span class="soft">OpenClaw</span>
+      </div>
+      <p class="note">虚线标注的工具暂时通过 CC Switch 历史导入或设备共享接入。已在用 CC Switch？首次启动会自动只读导入它的历史统计。</p>
+    </div>
+  </section>
+
+  <section id="privacy" class="alt">
+    <div class="wrap privacy">
+      <div class="sec-head" style="margin-bottom:0">
+        <div class="tag">隐私</div>
+        <h2>你的数据，只在你的电脑上</h2>
+        <p>Observatory 没有账号，没有云端，也不上传任何统计。所有数据存放在本机的 <code>~/.observatory</code> 目录中。</p>
+      </div>
+      <ul class="checks">
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><div><b>只读日志，不碰对话</b><span>只解析用量字段，不导入对话正文、API 密钥或服务商配置。</span></div></li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><div><b>局域网共享默认关闭</b><span>开启后必须用一次性配对码配对，随时可以撤销授权。</span></div></li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><div><b>更新包经过签名</b><span>应用内更新会校验签名，签名不符的安装包会被拒绝。</span></div></li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><div><b>开源可审查</b><span>全部源代码公开在 GitHub 上。</span></div></li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="download">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="tag">下载</div>
+        <h2>免费下载 Observatory</h2>
+        <p id="dl-sub">安装后会自动检查更新。</p>
+      </div>
+      <div class="downloads">
+        <a class="dl" id="dl-setup" href="https://github.com/calabli/observatory/releases/latest">
+          <span class="os"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 5.5 10.5 4.5v7H3Zm0 13 7.5 1v-7H3Zm8.5 1.1L21 21v-8.5h-9.5Zm0-15.2v7.1H21V3Z"/></svg>Windows 安装版</span>
+          <span class="what">推荐。带开始菜单快捷方式，支持应用内自动更新。</span>
+          <span class="file" data-file>Observatory-版本号-windows-x64-setup.exe</span>
+        </a>
+        <a class="dl" id="dl-portable" href="https://github.com/calabli/observatory/releases/latest">
+          <span class="os"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 5.5 10.5 4.5v7H3Zm0 13 7.5 1v-7H3Zm8.5 1.1L21 21v-8.5h-9.5Zm0-15.2v7.1H21V3Z"/></svg>Windows 便携版</span>
+          <span class="what">单个 exe，不用安装，双击即可运行。</span>
+          <span class="file" data-file>Observatory-版本号-Windows-x64-portable.exe</span>
+        </a>
+        <a class="dl" id="dl-mac" href="https://github.com/calabli/observatory/releases/latest">
+          <span class="os"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.4 12.6c0-2.5 2-3.7 2.1-3.8-1.2-1.7-3-1.9-3.6-2-1.5-.2-3 .9-3.8.9-.8 0-2-.9-3.3-.9-1.7 0-3.3 1-4.2 2.5-1.8 3.1-.5 7.7 1.3 10.2.8 1.2 1.8 2.6 3.1 2.6 1.3-.1 1.7-.8 3.2-.8s1.9.8 3.2.8c1.4 0 2.2-1.2 3-2.5 1-1.4 1.4-2.8 1.4-2.9-.1 0-2.4-.9-2.4-4.1ZM14 5.2c.7-.8 1.1-1.9 1-3.1-1 0-2.2.7-2.9 1.5-.6.7-1.2 1.9-1 3 1.1.1 2.2-.6 2.9-1.4Z"/></svg>macOS</span>
+          <span class="what">Apple Silicon（M 系列）。首次打开如被拦截，请在“系统设置 → 隐私与安全性”中允许。</span>
+          <span class="file" data-file>Observatory-版本号-darwin-aarch64.dmg</span>
+        </a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Observatory 观测台 · 开源软件</span>
+    <span><a href="https://github.com/calabli/observatory">GitHub</a> · <a href="https://github.com/calabli/observatory/releases">全部版本</a></span>
+  </div>
+</footer>
+
+<script>
+(function () {
+  // Mock chart bars.
+  var data = [6.2, 8.1, 5.4, 9.8, 11.2, 7.6, 4.1, 10.4, 13.1, 9.2, 12.6, 15.2, 10.8, 12.5];
+  var g = document.getElementById("bars"), max = 16, w = 560 / data.length;
+  data.forEach(function (v, i) {
+    var h = (v / max) * 150, r = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    r.setAttribute("x", (i * w + w * 0.22).toFixed(1));
+    r.setAttribute("y", (159 - h).toFixed(1));
+    r.setAttribute("width", (w * 0.56).toFixed(1));
+    r.setAttribute("height", h.toFixed(1));
+    r.setAttribute("rx", "3");
+    r.setAttribute("class", i === data.length - 1 ? "bar" : "bar dim");
+    g.appendChild(r);
+  });
+
+  // Point the download buttons at the latest release's files.
+  var isMac = /Mac/i.test(navigator.platform || navigator.userAgent);
+  fetch("https://api.github.com/repos/calabli/observatory/releases/latest")
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+    .then(function (rel) {
+      var find = function (re) { return (rel.assets || []).filter(function (a) { return re.test(a.name); })[0]; };
+      var setup = find(/x64-setup\.exe$/), portable = find(/portable\.exe$/), dmg = find(/\.dmg$/);
+      var mb = function (a) { return (a.size / 1048576).toFixed(1) + " MB"; };
+      [["dl-setup", setup], ["dl-portable", portable], ["dl-mac", dmg]].forEach(function (p) {
+        var el = document.getElementById(p[0]);
+        if (!p[1] || !el) return;
+        el.href = p[1].browser_download_url;
+        el.querySelector("[data-file]").textContent = p[1].name + " · " + mb(p[1]);
+      });
+      var tag = rel.tag_name || "";
+      document.getElementById("ver").textContent = "最新版本 " + tag + " · 免费开源";
+      var pick = isMac ? dmg : setup;
+      if (pick) {
+        document.getElementById("primary-dl").href = pick.browser_download_url;
+        document.getElementById("primary-label").textContent = isMac ? "下载 macOS 版" : "下载 Windows 版";
+        document.getElementById("primary-meta").textContent = tag + " · " + mb(pick) + (isMac ? " · Apple Silicon" : " · Windows 10/11 x64");
+      }
+      if (rel.published_at) {
+        document.getElementById("dl-sub").textContent = tag + " 发布于 " + new Date(rel.published_at).toLocaleDateString("zh-CN") + "。安装后会自动检查更新。";
+      }
+    })
+    .catch(function () { /* Keep the links to the releases page. */ });
+})();
+</script>
+</body>
+</html>
