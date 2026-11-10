@@ -47,7 +47,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDEyMzA4MjA5MkRFNDY5RkUKUldUK2FlUXRDWUl3RWxZeXg4M0NuRHlMQXlNbHR5d2o3aVYwdGRRUnZOSU5oa2lIbXVwb2YwUjgK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDlDNEE4QkNEMDVFRjNFNTEKUldSUlB1OEZ6WXRLbkJrVnViNm1NVWE4VlA2RGoyWUpKOTVnZndCVHpseXdOZGxweTErQVp6aUQK",
       "endpoints": ["https://github.com/calabli/observatory/releases/latest/download/latest.json"]
     }
   }
