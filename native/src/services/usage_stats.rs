@@ -349,6 +349,9 @@ pub struct RequestLogDetail {
     /// The model name that was actually used for the pricing at write time. None = the historical rows before v11, "" = an error row that was not priced.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pricing_model: Option<String>,
+    /// The model has no public price, so its cost is zero by design and not a missing price.
+    #[serde(default)]
+    pub not_billable: bool,
 }
 
 /// Map the result of the 26 column query to a `RequestLogDetail`.
@@ -364,12 +367,14 @@ pub struct RequestLogDetail {
 /// When the provider_name is not needed (for example the backfill) it is enough to select
 /// `NULL AS provider_name` as a placeholder.
 fn row_to_request_log_detail(row: &rusqlite::Row<'_>) -> rusqlite::Result<RequestLogDetail> {
+    let model: String = row.get(4)?;
+    let not_billable = crate::services::model_pricing::is_non_billable_model(&model);
     Ok(RequestLogDetail {
         request_id: row.get(0)?,
         provider_id: row.get(1)?,
         provider_name: row.get(2)?,
         app_type: row.get(3)?,
-        model: row.get(4)?,
+        model,
         request_model: row.get(5)?,
         cost_multiplier: row
             .get::<_, Option<String>>(6)?
@@ -393,6 +398,7 @@ fn row_to_request_log_detail(row: &rusqlite::Row<'_>) -> rusqlite::Result<Reques
         data_source: row.get(23)?,
         pricing_model: row.get(24)?,
         input_token_semantics: row.get::<_, i64>(25)?,
+        not_billable,
     })
 }
 
@@ -2919,6 +2925,12 @@ impl Database {
             return Ok(false);
         }
 
+        // A model without a public price is not a missing price: its cost is
+        // zero by design, and a backfill would never find anything for it.
+        if log.not_billable {
+            return Ok(false);
+        }
+
         let pricing = match Self::get_log_model_pricing_cached(conn, pricing_cache, log)? {
             Some(info) => info,
             None => return Ok(false),
@@ -3747,6 +3759,60 @@ mod tests {
         )?;
         Ok(())
     }
+
+    /// A model without a public price is not a missing price: the log is
+    /// marked as not billable, and the backfill leaves it alone even when a
+    /// price happens to exist for it.
+    #[test]
+    fn non_billable_models_are_marked_and_left_out_of_the_backfill() {
+        let db = Database::memory().unwrap();
+        {
+            let conn = db.conn.lock().expect("lock test database");
+            insert_usage_log(
+                &conn,
+                "auto-review",
+                "codex",
+                "_codex_session",
+                "codex-auto-review",
+                "codex_session",
+                1000,
+                100,
+                10,
+                500,
+                0,
+                200,
+                "0",
+            )
+            .unwrap();
+            // A price on purpose: a model without a public price stays free.
+            conn.execute(
+                "INSERT INTO model_pricing (model_id, display_name, input_cost_per_million,
+                     output_cost_per_million, cache_read_cost_per_million,
+                     cache_creation_cost_per_million)
+                 VALUES ('codex-auto-review', 'Codex Auto Review', '10', '20', '1', '2')",
+                [],
+            )
+            .unwrap();
+        }
+
+        let logs = db.get_request_logs(&LogFilters::default(), 0, 20).unwrap();
+        assert_eq!(logs.data.len(), 1);
+        assert!(logs.data[0].not_billable);
+        assert_eq!(logs.data[0].total_cost_usd, "0");
+
+        let updated = db.backfill_missing_usage_costs().unwrap();
+        assert_eq!(updated, 0, "a model without a public price must not be priced");
+        let conn = db.conn.lock().expect("lock test database");
+        let cost: String = conn
+            .query_row(
+                "SELECT total_cost_usd FROM proxy_request_logs WHERE request_id = ?1",
+                params!["auto-review"],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(cost, "0");
+    }
+
 
     fn create_legacy_nullable_logs_table(conn: &Connection) -> Result<(), AppError> {
         conn.execute(

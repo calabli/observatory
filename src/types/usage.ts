@@ -35,6 +35,8 @@ export interface RequestLog {
   errorMessage?: string;
   createdAt: number;
   dataSource?: string;
+  /** The model has no public price (internal or included in a subscription), so its cost is zero by design and not a missing price */
+  notBillable?: boolean;
 }
 
 export interface SessionSyncResult {
@@ -335,7 +337,7 @@ type UsageCostLog = Pick<
   | "totalCostUsd"
   | "statusCode"
 > &
-  Partial<Pick<RequestLog, "costMultiplier">>;
+  Partial<Pick<RequestLog, "costMultiplier" | "notBillable">>;
 
 export function hasUsageTokens(log: UsageCostLog): boolean {
   return (
@@ -346,7 +348,21 @@ export function hasUsageTokens(log: UsageCostLog): boolean {
   );
 }
 
+/**
+ * The model has no public price, so the cost is zero by design. This is a
+ * fact about the model, not a missing price that the user should fix.
+ */
+export function isNotBillableUsage(log: UsageCostLog): boolean {
+  return log.notBillable === true;
+}
+
+/**
+ * The request was billable and produced tokens, but no price was found for
+ * it. Unlike a model without a public price, this one is worth reporting:
+ * the price list is missing an entry.
+ */
 export function isUnpricedUsage(log: UsageCostLog): boolean {
+  if (isNotBillableUsage(log)) return false;
   const totalCost = Number.parseFloat(log.totalCostUsd);
   const multiplier =
     log.costMultiplier == null

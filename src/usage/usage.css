@@ -370,6 +370,10 @@
 #observatory-root .usage-unpriced {
   color: var(--warning);
 }
+/* A model without a public price: the zero is a fact, not a missing price. */
+#observatory-root .usage-not-billable {
+  color: var(--muted);
+}
 #observatory-root .usage-pagination {
   display: flex;
   justify-content: space-between;

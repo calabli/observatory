@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { usageCall } from "../native/usageClient";
 import type { RequestLog, ModelStats, ProviderStats } from "../types/usage";
-import { getFreshInputTokens, isUnpricedUsage } from "../types/usage";
+import { getFreshInputTokens, isNotBillableUsage, isUnpricedUsage } from "../types/usage";
 import type { Dashboard, LanStatus, NativeStatus, UsageFilters } from "./types";
 import { UsageDialog, formatMoney, formatTokens, friendlyError } from "./ui";
 import { PricingManager } from "./PricingManager";
@@ -186,8 +186,20 @@ const LogRow = memo(function LogRow({
       <td className="numeric">{formatTokens(log.outputTokens)}</td>
       <td className="numeric">{formatTokens(log.cacheReadTokens)}</td>
       <td className="numeric">
-        {isUnpricedUsage(log) ? (
-          <span className="usage-unpriced">未计价</span>
+        {isNotBillableUsage(log) ? (
+          <span
+            className="usage-not-billable"
+            title="该模型没有公开单价，用量计入套餐，本身不产生费用"
+          >
+            不计费
+          </span>
+        ) : isUnpricedUsage(log) ? (
+          <span
+            className="usage-unpriced"
+            title="价格表里还没有这个模型的价格，可以到「价格管理」里补上"
+          >
+            未计价
+          </span>
         ) : (
           formatMoney(log.totalCostUsd, 4)
         )}
@@ -1922,6 +1934,11 @@ function RequestDetail({
               </tbody>
             </table>
           </div>
+          {isNotBillableUsage(r) && (
+            <p className="hint">
+              该模型没有公开单价，用量计入套餐，本身不产生费用。
+            </p>
+          )}
           {r.errorMessage && <p className="usage-error">{r.errorMessage}</p>}
           <p className="hint usage-request-id">请求标识：{r.requestId}</p>
           <p className="hint">

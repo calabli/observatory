@@ -13,6 +13,19 @@ use std::sync::{Mutex, OnceLock};
 const MODEL_PRICING_FILE_NAME: &str = "model-pricing.json";
 const MODEL_PRICING_FILE_VERSION: u32 = 1;
 
+/// The models that have no public price.
+///
+/// They are internal or included in a subscription, so their usage counts
+/// but is not billed. Their cost is really zero, and it must not be reported
+/// as a missing price: that would point at a price the model never had.
+pub const NON_BILLABLE_MODELS: &[&str] = &["codex-auto-review"];
+
+/// Whether the model has no public price by design.
+pub fn is_non_billable_model(model_id: &str) -> bool {
+    let normalized = model_id.trim().to_ascii_lowercase();
+    NON_BILLABLE_MODELS.contains(&normalized.as_str())
+}
+
 static MODEL_PRICING_FILE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 fn file_lock() -> &'static Mutex<()> {
