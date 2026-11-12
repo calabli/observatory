@@ -25,7 +25,7 @@ Clicking the main window's close button hides the window and keeps the app runni
 - Request pagination, status code filtering, details, and CSV export of the current page; exact durations are distinguished from log-estimated durations.
 - An independent persistent database, collection cursors, and long-term deduplication records; repeated scans do not double count.
 - Detail records are kept for 30 days: older ones are automatically retained as daily rollups, while session-level details, exact durations, and output speed only cover the retention period; the deduplication ledger stays valid long term, so pruned entries are not double counted when logs are replayed.
-- Editing and deleting the four categories of model prices, backfilling missing costs, models.dev import, and automatic sync configuration. Checked at startup, with at least six hours between successful syncs.
+- Editing and deleting the four categories of model prices, backfilling missing costs, models.dev import, and automatic sync configuration. Checked at startup, with at least six hours between successful syncs. A manual recalculation reports its scope first and then recomputes the records that have no cost yet; records that already carry a cost are left alone. A model without a public price is shown as not billable rather than as unpriced.
 - LAN device discovery, manual connection, per-application sharing, snapshot replacement, keeping the cache for disabled devices, and deleting the copy on disconnect. Remote costs are not recomputed with local prices.
 
 ### Data Sources

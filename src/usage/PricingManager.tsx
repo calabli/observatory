@@ -109,6 +109,32 @@ export function PricingManager({ close }: { close: () => void }) {
     mutationFn: (modelId: string) => usageCall("pricing_delete", { modelId }),
     onSuccess: changed,
   });
+  // Recompute the history that has no cost yet: the rows that were imported
+  // before their model had a price, and the rows of a model whose price was
+  // missing when it was written. The first call only reports the scope, so
+  // the user sees what the recalculation would touch before it runs.
+  const [backfillScope, setBackfillScope] = useState<number | null>(null);
+  const backfill = useMutation({
+    mutationFn: (preview: boolean) =>
+      usageCall<number>("pricing_backfill", { preview }),
+    onSuccess: async (result, preview) => {
+      if (preview) {
+        if (result > 0) {
+          setBackfillScope(result);
+        } else {
+          setMessage("没有需要重新计算的历史记录。");
+        }
+        return;
+      }
+      setBackfillScope(null);
+      setMessage(
+        result > 0
+          ? `已重新计算 ${result} 条历史记录的费用。`
+          : "没有需要重新计算的历史记录。",
+      );
+      await changed();
+    },
+  });
   const error =
     prices.error ||
     config.error ||
@@ -117,6 +143,7 @@ export function PricingManager({ close }: { close: () => void }) {
     updateConfig.error ||
     sync.error ||
     importPrice.error ||
+    backfill.error ||
     remove.error;
   const rows =
     prices.data?.filter((p) =>
@@ -131,15 +158,42 @@ export function PricingManager({ close }: { close: () => void }) {
           <strong>models.dev 自动同步</strong>
           <p>启动时检查，距离上次成功同步满 6 小时才再次拉取。</p>
         </div>
-        <button
-          className="button"
-          onClick={() => sync.mutate()}
-          disabled={sync.isPending || !config.data}
-        >
-          <RefreshCw size={13} />
-          {sync.isPending ? "同步中…" : "立即同步"}
-        </button>
+        <div className="price-sync-actions">
+          <button
+            className="button"
+            onClick={() => backfill.mutate(backfillScope === null)}
+            disabled={backfill.isPending}
+            title={
+              backfillScope === null
+                ? "查看还有多少条历史记录没有费用"
+                : "按当前价格重新计算这些历史记录"
+            }
+          >
+            <RefreshCw size={13} />
+            {backfill.isPending
+              ? "计算中…"
+              : backfillScope === null
+                ? "重新计算历史费用"
+                : `确认重算 ${backfillScope} 条`}
+          </button>
+          <button
+            className="button"
+            onClick={() => sync.mutate()}
+            disabled={sync.isPending || !config.data}
+          >
+            <RefreshCw size={13} />
+            {sync.isPending ? "同步中…" : "立即同步"}
+          </button>
+        </div>
       </div>
+      {backfillScope !== null && (
+        <div className="usage-note">
+          将按当前价格重新计算这 {backfillScope} 条没有费用的历史记录；已有费用的记录不会被改动，仍然找不到价格的会保持为 0。
+          <button className="text-button" onClick={() => setBackfillScope(null)}>
+            取消
+          </button>
+        </div>
+      )}
       {config.data && (
         <div className="usage-switches">
           <label>
@@ -185,7 +239,7 @@ export function PricingManager({ close }: { close: () => void }) {
       )}
       <div className="usage-note">
         单位：USD / 百万
-        Token。手动价格若仍参与自动同步，后续同步可能覆盖它。已有非零历史费用不会整体重算。
+        Token。手动价格若仍参与自动同步，后续同步可能覆盖它。已有非零历史费用不会整体重算；需要时可点「重新计算历史费用」，只补齐还没有费用的记录。
       </div>
       {message && (
         <div className="usage-success" role="status">

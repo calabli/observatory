@@ -422,6 +422,12 @@
   font-size: 11px;
   margin: 5px 0;
 }
+#observatory-root .price-sync-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 #observatory-root .usage-switches {
   display: flex;
   align-items: center;

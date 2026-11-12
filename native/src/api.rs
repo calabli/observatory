@@ -755,6 +755,24 @@ impl UsageBackend {
                 })
                 .await
             }
+            "pricing_backfill" => {
+                // Recompute the historical costs that have no price yet. It is a
+                // full-table scan plus a batch update, so it has to leave the
+                // async thread. The preview reports the scope first, so the
+                // user can see what the recalculation would touch.
+                let preview = args
+                    .get("preview")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                self.call_blocking(move |db| {
+                    if preview {
+                        to_json(db.pending_backfill_count()?)
+                    } else {
+                        to_json(db.backfill_missing_usage_costs()?)
+                    }
+                })
+                .await
+            }
             "modelsdev_config_get" => {
                 self.call_blocking(|db| to_json(model_pricing::get_models_dev_sync_state(db)?))
                     .await

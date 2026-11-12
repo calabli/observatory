@@ -2847,6 +2847,37 @@ impl Database {
         Self::backfill_missing_usage_costs_on_conn(&conn, Some(model_id))
     }
 
+    /// How many rows a backfill would still recalculate.
+    ///
+    /// The rows of a model without a public price are left alone by the
+    /// backfill, so they are not part of its scope.
+    pub fn pending_backfill_count(&self) -> Result<u64, AppError> {
+        let conn = lock_conn!(self.conn);
+        let mut sql = String::from(
+            "SELECT COUNT(*) FROM proxy_request_logs
+             WHERE CAST(total_cost_usd AS REAL) <= 0
+               AND (input_tokens > 0 OR output_tokens > 0
+                    OR cache_read_tokens > 0 OR cache_creation_tokens > 0)",
+        );
+        let mut params: Vec<String> = Vec::new();
+        if !crate::services::model_pricing::NON_BILLABLE_MODELS.is_empty() {
+            let placeholders = crate::services::model_pricing::NON_BILLABLE_MODELS
+                .iter()
+                .map(|_| "?")
+                .collect::<Vec<_>>()
+                .join(", ");
+            sql.push_str(&format!(" AND LOWER(model) NOT IN ({placeholders})"));
+            params = crate::services::model_pricing::NON_BILLABLE_MODELS
+                .iter()
+                .map(|model| model.to_ascii_lowercase())
+                .collect();
+        }
+        let count: i64 = conn.query_row(&sql, rusqlite::params_from_iter(params), |row| {
+            row.get(0)
+        })?;
+        Ok(count.max(0) as u64)
+    }
+
     pub(crate) fn backfill_missing_usage_costs_on_conn(
         conn: &Connection,
         only_model_id: Option<&str>,

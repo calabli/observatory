@@ -67,7 +67,11 @@ fn sync_from_database(
         };
         let native_cost: Option<f64> = row.get(9)?;
         let cost = match native_cost {
-            Some(cost) if cost.is_finite() && cost >= 0.0 => cost.to_string(),
+            // The runtime records a native cost only when it has one. A zero
+            // means "not recorded": the price list decides, like for every
+            // other session source. Accepting the zero here would leave every
+            // imported record free until the next backfill.
+            Some(cost) if cost.is_finite() && cost > 0.0 => cost.to_string(),
             _ => pricing_cache
                 .get(&tx, model)
                 .map(|pricing| {
@@ -346,7 +350,7 @@ mod tests {
     }
 
     #[test]
-    fn mcode_usage_preserves_native_zero_cost_and_does_not_reimport_pruned_rows() {
+    fn mcode_usage_without_a_price_stays_free_and_does_not_reimport_pruned_rows() {
         let source = rusqlite::Connection::open_in_memory().unwrap();
         source.execute_batch("CREATE TABLE local_runtime_token_usage (
             id INTEGER PRIMARY KEY,session_id TEXT,model TEXT,ts INTEGER,input_tokens INTEGER,
@@ -387,6 +391,93 @@ mod tests {
                 .imported,
             1
         );
+    }
+
+    /// The runtime records no cost of its own, so the price list has to decide.
+    /// A record that is left free until the next backfill is a record the user
+    /// sees as "unpriced".
+    #[test]
+    fn mcode_usage_uses_the_price_list_when_the_runtime_has_no_cost() {
+        let source = rusqlite::Connection::open_in_memory().unwrap();
+        source
+            .execute_batch(
+                "CREATE TABLE local_runtime_token_usage (
+                    id INTEGER PRIMARY KEY,session_id TEXT,model TEXT,ts INTEGER,input_tokens INTEGER,
+                    output_tokens INTEGER,reasoning_tokens INTEGER,cache_read_tokens INTEGER,
+                    cache_write_tokens INTEGER,cost_usd REAL);
+                INSERT INTO local_runtime_token_usage VALUES (1,'s1','test-priced-model',100000,10,20,3,40,5,0);",
+            )
+            .unwrap();
+        let db = Database::memory().unwrap();
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute(
+                "INSERT INTO model_pricing (model_id, display_name, input_cost_per_million,
+                     output_cost_per_million, cache_read_cost_per_million,
+                     cache_creation_cost_per_million)
+                 VALUES ('test-priced-model', 'Test Priced Model', '1', '2', '0.1', '0.5')",
+                [],
+            )
+            .unwrap();
+        }
+        assert_eq!(
+            sync_from_database(&db, &source, "mcode-test")
+                .unwrap()
+                .imported,
+            1
+        );
+        let conn = db.conn.lock().unwrap();
+        let cost: String = conn
+            .query_row(
+                "SELECT total_cost_usd FROM proxy_request_logs WHERE app_type='mcode'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let cost = cost.parse::<f64>().unwrap();
+        assert!(cost > 0.0, "the price list must decide, got {cost}");
+    }
+
+    /// A cost that the runtime really reports wins over the price list.
+    #[test]
+    fn mcode_usage_keeps_the_native_cost_when_the_runtime_reports_one() {
+        let source = rusqlite::Connection::open_in_memory().unwrap();
+        source
+            .execute_batch(
+                "CREATE TABLE local_runtime_token_usage (
+                    id INTEGER PRIMARY KEY,session_id TEXT,model TEXT,ts INTEGER,input_tokens INTEGER,
+                    output_tokens INTEGER,reasoning_tokens INTEGER,cache_read_tokens INTEGER,
+                    cache_write_tokens INTEGER,cost_usd REAL);
+                INSERT INTO local_runtime_token_usage VALUES (1,'s1','test-priced-model',100000,10,20,3,40,5,0.25);",
+            )
+            .unwrap();
+        let db = Database::memory().unwrap();
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute(
+                "INSERT INTO model_pricing (model_id, display_name, input_cost_per_million,
+                     output_cost_per_million, cache_read_cost_per_million,
+                     cache_creation_cost_per_million)
+                 VALUES ('test-priced-model', 'Test Priced Model', '1', '2', '0.1', '0.5')",
+                [],
+            )
+            .unwrap();
+        }
+        assert_eq!(
+            sync_from_database(&db, &source, "mcode-test")
+                .unwrap()
+                .imported,
+            1
+        );
+        let conn = db.conn.lock().unwrap();
+        let cost: String = conn
+            .query_row(
+                "SELECT total_cost_usd FROM proxy_request_logs WHERE app_type='mcode'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(cost, "0.25");
     }
 }
 
