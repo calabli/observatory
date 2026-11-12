@@ -301,7 +301,8 @@ impl Database {
                 rusqlite::params![model_id, row.1, row.2, row.3, row.4, row.5],
             )?;
         }
-        transaction.execute_batch("ALTER TABLE model_pricing_case_migrated RENAME TO model_pricing;")?;
+        transaction
+            .execute_batch("ALTER TABLE model_pricing_case_migrated RENAME TO model_pricing;")?;
         transaction.commit()?;
 
         if duplicates > 0 {

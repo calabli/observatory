@@ -29,7 +29,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NOTES: 'The installer, install folder, shortcuts and the process name are now in English (Observatory / Observatory.exe) instead of 观测台. Data stays in ~/.observatory and is unaffected. The macOS build is not notarized.'
+          NOTES: 'The cost of MiniMax Code records is fixed: they were stored as zero until the next price backfill, and the price manager now offers a manual recalculation that reports its scope first. The model pricing table treats model ids case-insensitively, so one model no longer shows up twice under different spellings, and a model without a public price is shown as not billable instead of unpriced. The tray quick panel is hidden rather than destroyed when it is closed. The macOS build is not notarized.'
         run: |
           set -euo pipefail
           version=$(node -p "require('./package.json').version")
@@ -87,7 +87,11 @@ jobs:
           cargo fmt --manifest-path src-tauri/Cargo.toml --check
       # One cargo invocation so the library and the test binaries compile once.
       - name: Run usage-core tests
-        run: cargo test --manifest-path native/Cargo.toml --locked --lib --test pairing_codes --test scan_jobs --test lan_pair_scan --test lan_storage --test usage_http_api --test subscriptions --test write_epoch --test lan_hardening --test lan_sync_loop --test activity_log
+        run: cargo test --manifest-path native/Cargo.toml --locked --lib --test pairing_codes --test scan_jobs --test lan_pair_scan --test lan_storage --test usage_http_api --test subscriptions --test write_epoch --test lan_hardening --test lan_sync_loop --test activity_log --test rollup_prune --test pricing_case --test pricing_backfill_scope
+      # The shell has its own tests for the window behaviour; they are cheap
+      # but the shell pulls in the whole Tauri dependency tree.
+      - name: Run desktop shell tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
 
   check-macos:
     runs-on: macos-15

@@ -2872,9 +2872,8 @@ impl Database {
                 .map(|model| model.to_ascii_lowercase())
                 .collect();
         }
-        let count: i64 = conn.query_row(&sql, rusqlite::params_from_iter(params), |row| {
-            row.get(0)
-        })?;
+        let count: i64 =
+            conn.query_row(&sql, rusqlite::params_from_iter(params), |row| row.get(0))?;
         Ok(count.max(0) as u64)
     }
 
@@ -3832,7 +3831,10 @@ mod tests {
         assert_eq!(logs.data[0].total_cost_usd, "0");
 
         let updated = db.backfill_missing_usage_costs().unwrap();
-        assert_eq!(updated, 0, "a model without a public price must not be priced");
+        assert_eq!(
+            updated, 0,
+            "a model without a public price must not be priced"
+        );
         let conn = db.conn.lock().expect("lock test database");
         let cost: String = conn
             .query_row(
@@ -3843,7 +3845,6 @@ mod tests {
             .unwrap();
         assert_eq!(cost, "0");
     }
-
 
     fn create_legacy_nullable_logs_table(conn: &Connection) -> Result<(), AppError> {
         conn.execute(

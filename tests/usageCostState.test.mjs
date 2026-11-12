@@ -48,7 +48,12 @@ test("a priced request is neither unpriced nor not billable", () => {
 test("a failed request without tokens is not unpriced", () => {
   assert.equal(
     isUnpricedUsage(
-      usage({ statusCode: 500, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 }),
+      usage({
+        statusCode: 500,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+      }),
     ),
     false,
   );

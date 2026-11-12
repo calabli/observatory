@@ -18,7 +18,11 @@ import {
 } from "lucide-react";
 import { usageCall } from "../native/usageClient";
 import type { RequestLog, ModelStats, ProviderStats } from "../types/usage";
-import { getFreshInputTokens, isNotBillableUsage, isUnpricedUsage } from "../types/usage";
+import {
+  getFreshInputTokens,
+  isNotBillableUsage,
+  isUnpricedUsage,
+} from "../types/usage";
 import type { Dashboard, LanStatus, NativeStatus, UsageFilters } from "./types";
 import { UsageDialog, formatMoney, formatTokens, friendlyError } from "./ui";
 import { PricingManager } from "./PricingManager";

@@ -188,8 +188,13 @@ export function PricingManager({ close }: { close: () => void }) {
       </div>
       {backfillScope !== null && (
         <div className="usage-note">
-          将按当前价格重新计算这 {backfillScope} 条没有费用的历史记录；已有费用的记录不会被改动，仍然找不到价格的会保持为 0。
-          <button className="text-button" onClick={() => setBackfillScope(null)}>
+          将按当前价格重新计算这 {backfillScope}{" "}
+          条没有费用的历史记录；已有费用的记录不会被改动，仍然找不到价格的会保持为
+          0。
+          <button
+            className="text-button"
+            onClick={() => setBackfillScope(null)}
+          >
             取消
           </button>
         </div>
