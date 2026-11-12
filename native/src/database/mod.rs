@@ -198,6 +198,7 @@ impl Database {
             )));
         }
         conn.execute_batch(include_str!("schema.sql"))?;
+        Self::migrate_model_pricing_case_insensitive(&conn)?;
         Self::create_lan_usage_tables(&conn)?;
         let db = Self::detached(conn);
         {
@@ -209,6 +210,104 @@ impl Database {
         db.ensure_model_pricing_seeded()?;
         lock_conn!(db.conn).execute_batch("PRAGMA user_version=1;")?;
         Ok(db)
+    }
+
+    /// The model pricing table treats the model id case-insensitively.
+    ///
+    /// The built-in prices, the ids models.dev publishes and the ids the user
+    /// types by hand spell the same model in different cases (`minimax-m3` and
+    /// `MiniMax-M3` are the same model). They have to address one row,
+    /// otherwise the price list shows the same model twice and an exact
+    /// lookup can hit an arbitrary one of them.
+    ///
+    /// Databases created before this were built with a case-sensitive primary
+    /// key and can hold several rows for the same model. The migration
+    /// rebuilds the table with a case-insensitive key and folds the duplicates
+    /// together. It runs before the seed is applied, so the seed cannot add
+    /// a second variant of a model that is already there.
+    fn migrate_model_pricing_case_insensitive(conn: &Connection) -> Result<usize, AppError> {
+        let table_sql: Option<String> = conn
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='model_pricing'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let Some(table_sql) = table_sql else {
+            return Ok(0);
+        };
+        if table_sql.to_ascii_lowercase().contains("collate nocase") {
+            return Ok(0);
+        }
+
+        type PricingRow = (String, String, String, String, String, String);
+        let mut statement = conn.prepare(
+            "SELECT model_id, display_name, input_cost_per_million, output_cost_per_million,
+                    cache_read_cost_per_million, cache_creation_cost_per_million
+             FROM model_pricing ORDER BY model_id",
+        )?;
+        let rows: Vec<PricingRow> = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        drop(statement);
+
+        // Fold the rows that only differ in case together. The canonical
+        // lower-case id wins; when several rows share it, the first one in the
+        // order above is kept. The prices of the local pricing file are
+        // written back afterwards and overwrite the result, so this only
+        // decides what happens to the rows the file does not cover.
+        let mut folded: std::collections::BTreeMap<String, PricingRow> =
+            std::collections::BTreeMap::new();
+        let mut folded_away = 0usize;
+        for row in rows {
+            let key = row.0.to_ascii_lowercase();
+            let keep_existing = folded.get(&key).is_some_and(|existing| {
+                // The canonical lower-case id wins over a mixed-case variant.
+                existing.0 == existing.0.to_ascii_lowercase()
+            });
+            if keep_existing {
+                folded_away += 1;
+                continue;
+            }
+            folded.insert(key, row);
+        }
+        let duplicates = folded_away;
+
+        let transaction = conn.unchecked_transaction()?;
+        transaction.execute_batch(
+            "CREATE TABLE model_pricing_case_migrated (
+                 model_id TEXT PRIMARY KEY COLLATE NOCASE, display_name TEXT NOT NULL,
+                 input_cost_per_million TEXT NOT NULL, output_cost_per_million TEXT NOT NULL,
+                 cache_read_cost_per_million TEXT NOT NULL DEFAULT '0',
+                 cache_creation_cost_per_million TEXT NOT NULL DEFAULT '0'
+             );
+             DROP TABLE model_pricing;",
+        )?;
+        for (model_id, row) in &folded {
+            transaction.execute(
+                "INSERT INTO model_pricing_case_migrated (
+                     model_id, display_name, input_cost_per_million, output_cost_per_million,
+                     cache_read_cost_per_million, cache_creation_cost_per_million
+                 ) VALUES (?1,?2,?3,?4,?5,?6)",
+                rusqlite::params![model_id, row.1, row.2, row.3, row.4, row.5],
+            )?;
+        }
+        transaction.execute_batch("ALTER TABLE model_pricing_case_migrated RENAME TO model_pricing;")?;
+        transaction.commit()?;
+
+        if duplicates > 0 {
+            log::info!("已合并 {duplicates} 条仅大小写不同的模型定价");
+        }
+        Ok(duplicates)
     }
     pub fn get_setting(&self, key: &str) -> Result<Option<String>, AppError> {
         Ok(lock_conn!(self.conn)
@@ -366,5 +465,83 @@ impl Database {
             conn.execute("INSERT INTO settings(key,value) VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [key, value])?;
             Ok(())
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The model id is a case-insensitive key. Databases created before that
+    /// were built with a case-sensitive primary key and can hold several rows
+    /// for the same model; opening them folds the duplicates together and
+    /// rebuilds the table with the case-insensitive key.
+    #[test]
+    fn opening_an_old_database_folds_the_case_duplicate_pricing_rows() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let previous = std::env::var_os("OBSERVATORY_TEST_HOME");
+        std::env::set_var("OBSERVATORY_TEST_HOME", temp.path());
+        let path = temp.path().join("observatory.db");
+        {
+            let conn = Connection::open(&path).expect("create database");
+            conn.execute_batch(
+                "CREATE TABLE model_pricing (
+                     model_id TEXT PRIMARY KEY, display_name TEXT NOT NULL,
+                     input_cost_per_million TEXT NOT NULL, output_cost_per_million TEXT NOT NULL,
+                     cache_read_cost_per_million TEXT NOT NULL DEFAULT '0',
+                     cache_creation_cost_per_million TEXT NOT NULL DEFAULT '0'
+                 );
+                 INSERT INTO model_pricing VALUES ('zz-case-test', 'ZZ Case Test', '1', '2', '0', '0');
+                 INSERT INTO model_pricing VALUES ('ZZ-CASE-TEST', 'ZZ Case Test', '3', '4', '0', '0');",
+            )
+            .expect("create the old pricing table");
+        }
+
+        let db = Database::open(&path).expect("open the migrated database");
+        {
+            let conn = db.conn.lock().expect("lock test database");
+            let rows: Vec<(String, String)> = conn
+                .prepare(
+                    "SELECT model_id, input_cost_per_million FROM model_pricing
+                     WHERE model_id = ?1 COLLATE NOCASE",
+                )
+                .expect("prepare query")
+                .query_map(rusqlite::params!["zz-case-test"], |row| {
+                    Ok((row.get(0)?, row.get(1)?))
+                })
+                .expect("query rows")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("collect rows");
+            assert_eq!(rows.len(), 1, "the case variants must share one row");
+            assert_eq!(rows[0].0, "zz-case-test");
+            // The canonical lower-case id wins, so its price is the one kept.
+            assert_eq!(rows[0].1, "1");
+
+            // The key is case-insensitive now: another spelling updates the
+            // same row instead of adding a second one.
+            conn.execute(
+                "INSERT INTO model_pricing (model_id, display_name, input_cost_per_million,
+                     output_cost_per_million, cache_read_cost_per_million,
+                     cache_creation_cost_per_million)
+                 VALUES ('ZZ-CASE-TEST', 'ZZ Case Test', '5', '6', '0', '0')
+                 ON CONFLICT(model_id) DO UPDATE SET
+                     input_cost_per_million = excluded.input_cost_per_million",
+                [],
+            )
+            .expect("insert a differently spelled id");
+            let count: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM model_pricing WHERE model_id = ?1 COLLATE NOCASE",
+                    rusqlite::params!["zz-case-test"],
+                    |row| row.get(0),
+                )
+                .expect("count rows");
+            assert_eq!(count, 1);
+        }
+
+        match previous {
+            Some(value) => std::env::set_var("OBSERVATORY_TEST_HOME", value),
+            None => std::env::remove_var("OBSERVATORY_TEST_HOME"),
+        }
     }
 }

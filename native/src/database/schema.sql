@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS usage_daily_rollups (
             );
 
 CREATE TABLE IF NOT EXISTS model_pricing (
-            model_id TEXT PRIMARY KEY, display_name TEXT NOT NULL,
+            model_id TEXT PRIMARY KEY COLLATE NOCASE, display_name TEXT NOT NULL,
             input_cost_per_million TEXT NOT NULL, output_cost_per_million TEXT NOT NULL,
             cache_read_cost_per_million TEXT NOT NULL DEFAULT '0',
             cache_creation_cost_per_million TEXT NOT NULL DEFAULT '0'

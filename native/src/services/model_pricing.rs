@@ -123,7 +123,11 @@ fn normalize_decimal(label: &str, value: &str) -> Result<String, AppError> {
 }
 
 fn normalize_pricing(entry: ModelPricingInfo) -> Result<ModelPricingInfo, AppError> {
-    let model_id = entry.model_id.trim().to_string();
+    // The model id is a key, not a display value: the built-in prices, the
+    // models.dev ids and the ids the user types by hand spell the same model
+    // in different cases. They all address one row, so the id is kept in the
+    // canonical lower-case form.
+    let model_id = entry.model_id.trim().to_ascii_lowercase();
     let display_name = entry.display_name.trim().to_string();
     if model_id.is_empty() {
         return Err(AppError::localized(
@@ -166,6 +170,18 @@ fn normalize_key_list(values: Vec<String>) -> Vec<String> {
         .collect()
 }
 
+/// The deletion list addresses the models by id, and the ids are matched
+/// case-insensitively, so they are stored in the canonical lower-case form.
+fn normalize_deleted_model_ids(values: Vec<String>) -> Vec<String> {
+    values
+        .into_iter()
+        .map(|value| value.trim().to_ascii_lowercase())
+        .filter(|value| !value.is_empty())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
 fn normalize_sync_config(mut config: ModelsDevSyncConfig) -> ModelsDevSyncConfig {
     config.selected_model_keys = normalize_key_list(config.selected_model_keys);
     config.excluded_common_model_keys = normalize_key_list(config.excluded_common_model_keys);
@@ -188,7 +204,7 @@ fn normalize_file(mut file: ModelPricingFile) -> Result<ModelPricingFile, AppErr
         )));
     }
 
-    let deleted = normalize_key_list(file.deleted_model_ids)
+    let deleted = normalize_deleted_model_ids(file.deleted_model_ids)
         .into_iter()
         .collect::<BTreeSet<_>>();
     let mut models = BTreeMap::new();
@@ -241,6 +257,10 @@ fn upsert_pricing(
     transaction: &Transaction<'_>,
     entry: &ModelPricingInfo,
 ) -> Result<usize, AppError> {
+    // This is the only path that writes the table, so the canonical id is
+    // enforced here: the key of the table is case-insensitive and the stored
+    // id is the lower-case form, so one model is one row.
+    let model_id = entry.model_id.trim().to_ascii_lowercase();
     transaction
         .execute(
             "INSERT INTO model_pricing (
@@ -259,7 +279,7 @@ fn upsert_pricing(
                OR cache_read_cost_per_million <> excluded.cache_read_cost_per_million
                OR cache_creation_cost_per_million <> excluded.cache_creation_cost_per_million",
             params![
-                entry.model_id,
+                model_id,
                 entry.display_name,
                 entry.input_cost_per_million,
                 entry.output_cost_per_million,
@@ -469,7 +489,9 @@ pub fn update_model_pricing_batch(
 }
 
 pub fn delete_model_pricing(db: &Database, model_id: &str) -> Result<(), AppError> {
-    let model_id = model_id.trim();
+    // The id is matched case-insensitively, so it is put into the canonical
+    // lower-case form before it is compared with the file and the table.
+    let model_id = model_id.trim().to_ascii_lowercase();
     if model_id.is_empty() {
         return Err(AppError::localized(
             "usage.modelIdRequired",
@@ -484,7 +506,7 @@ pub fn delete_model_pricing(db: &Database, model_id: &str) -> Result<(), AppErro
         .map_err(|error| AppError::Config(format!("模型定价文件锁失败: {error}")))?;
     let mut file = load_or_create_file_unlocked()?;
     file.models.retain(|entry| entry.model_id != model_id);
-    if !file.deleted_model_ids.iter().any(|entry| entry == model_id) {
+    if !file.deleted_model_ids.contains(&model_id) {
         file.deleted_model_ids.push(model_id.to_string());
         file.deleted_model_ids.sort();
     }
@@ -803,6 +825,94 @@ mod tests {
             let state = get_models_dev_sync_state(db).expect("read failure state");
             assert_eq!(state.config.last_sync_at, Some(456));
             assert_eq!(state.config.last_sync_error.as_deref(), Some("offline"));
+        });
+    }
+
+    /// The built-in prices, the models.dev ids and the ids the user types by
+    /// hand spell the same model in different cases. They all address one row.
+    #[test]
+    #[serial]
+    fn model_ids_are_case_insensitive_and_share_one_row() {
+        with_test_home(|db, _path| {
+            let mut mixed = sample_pricing();
+            mixed.model_id = "MiniMax-M3".to_string();
+            update_model_pricing(db, mixed).expect("save mixed case pricing");
+
+            let mut lower = sample_pricing();
+            lower.model_id = "minimax-m3".to_string();
+            lower.input_cost_per_million = "9".to_string();
+            update_model_pricing(db, lower).expect("save lower case pricing");
+
+            let conn = db.conn.lock().expect("lock test database");
+            let count: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM model_pricing WHERE model_id = ?1 COLLATE NOCASE",
+                    params!["minimax-m3"],
+                    |row| row.get(0),
+                )
+                .expect("count pricing rows");
+            assert_eq!(count, 1);
+
+            // The last write wins, and it is found under either spelling.
+            for spelling in ["MiniMax-M3", "minimax-m3", "MINIMAX-M3"] {
+                let input: String = conn
+                    .query_row(
+                        "SELECT input_cost_per_million FROM model_pricing
+                         WHERE model_id = ?1 COLLATE NOCASE",
+                        params![spelling],
+                        |row| row.get(0),
+                    )
+                    .expect("query pricing row");
+                assert_eq!(input, "9", "spelling {spelling} must find the row");
+            }
+        });
+    }
+
+    /// The local pricing file must not keep one entry per spelling.
+    #[test]
+    #[serial]
+    fn pricing_file_folds_case_variants_of_the_same_model() {
+        with_test_home(|db, path| {
+            let mut mixed = sample_pricing();
+            mixed.model_id = "MiniMax-M3".to_string();
+            update_model_pricing(db, mixed).expect("save mixed case pricing");
+
+            let mut lower = sample_pricing();
+            lower.model_id = "minimax-m3".to_string();
+            lower.input_cost_per_million = "9".to_string();
+            update_model_pricing(db, lower).expect("save lower case pricing");
+
+            let content = fs::read_to_string(path).expect("read pricing file");
+            let file: ModelPricingFile = serde_json::from_str(&content).expect("parse file");
+            let ids = file
+                .models
+                .iter()
+                .map(|entry| entry.model_id.clone())
+                .collect::<Vec<_>>();
+            assert_eq!(ids, vec!["minimax-m3".to_string()]);
+        });
+    }
+
+    /// A tombstone addresses the model by id, so it has to ignore the case too.
+    #[test]
+    #[serial]
+    fn deleting_a_price_ignores_the_case_of_the_model_id() {
+        with_test_home(|db, _path| {
+            let mut mixed = sample_pricing();
+            mixed.model_id = "MiniMax-M3".to_string();
+            update_model_pricing(db, mixed).expect("save pricing");
+
+            delete_model_pricing(db, "minimax-m3").expect("delete pricing");
+
+            let conn = db.conn.lock().expect("lock test database");
+            let count: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM model_pricing WHERE model_id = ?1 COLLATE NOCASE",
+                    params!["minimax-m3"],
+                    |row| row.get(0),
+                )
+                .expect("count pricing rows");
+            assert_eq!(count, 0);
         });
     }
 }
