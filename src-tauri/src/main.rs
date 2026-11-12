@@ -194,6 +194,20 @@ async fn usage_call(
         .map_err(|e| e.to_string())
 }
 
+/// Whether a window hides instead of closing when it is asked to close.
+///
+/// The main window stays in the tray, and the quick panel is only hidden: a
+/// destroyed panel cannot be opened again in this session, so the tray icon
+/// would fall back to the main window and the shortcut would be gone until
+/// the next launch.
+fn hides_on_close(label: &str, tray_ready: bool) -> bool {
+    match label {
+        "main" => tray_ready,
+        "tray-panel" => true,
+        _ => false,
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -225,8 +239,10 @@ fn main() {
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                if window.label() == "main" && window.state::<TrayReady>().0.load(Ordering::Acquire)
-                {
+                if hides_on_close(
+                    window.label(),
+                    window.state::<TrayReady>().0.load(Ordering::Acquire),
+                ) {
                     api.prevent_close();
                     let _ = window.hide();
                 }
@@ -235,4 +251,30 @@ fn main() {
         .invoke_handler(tauri::generate_handler![usage_call, tray_action])
         .run(tauri::generate_context!())
         .expect("Unable to start Observatory");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::hides_on_close;
+
+    #[test]
+    fn the_quick_panel_is_hidden_and_never_destroyed() {
+        // Alt+F4 on the panel sends a close request. Destroying it there
+        // would take the shortcut away for the rest of the session.
+        assert!(hides_on_close("tray-panel", false));
+        assert!(hides_on_close("tray-panel", true));
+    }
+
+    #[test]
+    fn the_main_window_only_hides_when_the_tray_is_ready() {
+        assert!(hides_on_close("main", true));
+        // Without the tray there is nowhere to hide to, so the main window
+        // has to close for real.
+        assert!(!hides_on_close("main", false));
+    }
+
+    #[test]
+    fn any_other_window_closes_normally() {
+        assert!(!hides_on_close("some-other-window", true));
+    }
 }
