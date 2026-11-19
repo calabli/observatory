@@ -1,0 +1,647 @@
+/* Observatory redesign: left sidebar shell and a quieter, denser visual system.
+   Loaded after styles.css, usage.css and ccSwitchTheme.css, so it only needs to
+   restate what changes. Colors are tokens; components read them through var(). */
+
+html,
+body {
+  background: light-dark(#f7f7f8, #111113);
+}
+
+#observatory-root .obs-shell,
+#observatory-root .obs-shell.windows-polish {
+  --bg: light-dark(#f7f7f8, #111113);
+  --surface: light-dark(#ffffff, #18181b);
+  --surface-raised: light-dark(#ffffff, #1e1e22);
+  --sidebar: light-dark(#fbfbfc, #0d0d0f);
+  --text: light-dark(#111114, #ececef);
+  --text-secondary: light-dark(#52525b, #a8a8b0);
+  --muted: light-dark(#85858e, #77777f);
+  --line: light-dark(#ebebef, #232328);
+  --line-soft: light-dark(#f2f2f5, #1c1c20);
+  --border-strong: light-dark(#dcdce2, #313137);
+  --soft: light-dark(#f3f3f5, #1d1d21);
+  --nav: var(--sidebar);
+  --selected: light-dark(#ededf1, #212126);
+  --action: light-dark(#f26b1d, #f0782f);
+  --action-hover: light-dark(#e05c10, #f58a47);
+  --accent: light-dark(#c2410c, #fb923c);
+  --accent-soft: light-dark(#fff3ea, rgba(249, 115, 21, 0.13));
+  --primary: var(--action);
+  --primary-text: #ffffff;
+  --good: light-dark(#0f7a3d, #4ade80);
+  --good-soft: light-dark(#e9f7ef, rgba(74, 222, 128, 0.1));
+  --warning: light-dark(#a64a00, #fcd34d);
+  --danger: light-dark(#c42b2b, #f87171);
+  --chart-usage: light-dark(#0891b2, #22d3ee);
+  --chart-output: light-dark(#db2777, #f472b6);
+  --chart-grid: light-dark(#efeff2, #222227);
+  --shadow: light-dark(#18182514, #0006);
+  --card-shadow: 0 1px 2px light-dark(#1818250a, transparent);
+  --radius-card: 12px;
+  --radius-control: 8px;
+  background: var(--bg);
+  color: var(--text);
+}
+/* Layout for the main window only; the tray panel shares .obs-shell tokens. */
+#observatory-root .obs-shell:not(.tray-shell) {
+  --sidebar-width: 224px;
+  --sidebar-collapsed: 60px;
+  display: flex;
+  align-items: stretch;
+  min-height: 100vh;
+  overflow: visible;
+}
+#observatory-root .obs-shell[data-sidebar="collapsed"] {
+  --sidebar-width: var(--sidebar-collapsed);
+}
+
+/* ---------- Sidebar ---------- */
+#observatory-root .app-sidebar {
+  position: sticky;
+  top: 0;
+  flex: none;
+  width: var(--sidebar-width);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 10px 10px;
+  background: var(--sidebar);
+  border-right: 1px solid var(--line);
+  transition: width 180ms ease;
+  z-index: 20;
+}
+#observatory-root .app-sidebar .brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 4px 6px 14px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: 0;
+  white-space: nowrap;
+  overflow: hidden;
+}
+#observatory-root .app-sidebar .brand-mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  color: #fff;
+  background: linear-gradient(145deg, #f7893f, #e2560c);
+  box-shadow:
+    0 1px 2px #e2560c40,
+    inset 0 1px 0 #ffffff40;
+}
+#observatory-root .app-sidebar .brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+  min-width: 0;
+}
+#observatory-root .app-sidebar .brand small {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+#observatory-root .app-sidebar nav {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+}
+#observatory-root .nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+#observatory-root .nav-group-label {
+  padding: 0 10px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+}
+#observatory-root .app-sidebar nav button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+  transition:
+    background-color 120ms,
+    color 120ms;
+}
+#observatory-root .app-sidebar nav button > svg {
+  flex: none;
+  color: var(--muted);
+  transition: color 120ms;
+}
+#observatory-root .app-sidebar nav button:hover {
+  background: var(--soft);
+  color: var(--text);
+}
+#observatory-root .app-sidebar nav button[aria-current="page"] {
+  background: var(--selected);
+  color: var(--text);
+  font-weight: 600;
+}
+#observatory-root .app-sidebar nav button[aria-current="page"] > svg {
+  color: var(--action);
+}
+#observatory-root .app-sidebar nav button[aria-current="page"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 9px;
+  bottom: 9px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--action);
+}
+#observatory-root .nav-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#observatory-root .nav-tag {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 16px;
+  font-weight: 500;
+  color: var(--muted);
+  background: var(--soft);
+  border: 1px solid var(--line);
+}
+#observatory-root .sidebar-foot {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+#observatory-root .sidebar-action {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+}
+#observatory-root .sidebar-action:hover {
+  background: var(--soft);
+  color: var(--text);
+}
+#observatory-root .sidebar-collapse {
+  margin-left: auto;
+}
+#observatory-root .sidebar-action .about-update-dot {
+  top: 6px;
+  right: 6px;
+  box-shadow: 0 0 0 2px var(--sidebar);
+}
+
+/* Collapsed rail: icons only, labels become thin dividers. */
+#observatory-root .obs-shell[data-sidebar="collapsed"] .app-sidebar {
+  padding-left: 8px;
+  padding-right: 8px;
+}
+#observatory-root
+  .obs-shell[data-sidebar="collapsed"]
+  .app-sidebar
+  :is(.brand-text, .nav-label, .nav-tag) {
+  display: none;
+}
+#observatory-root .obs-shell[data-sidebar="collapsed"] .app-sidebar .brand {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+#observatory-root .obs-shell[data-sidebar="collapsed"] .nav-group-label {
+  height: 1px;
+  margin: 2px 10px 6px;
+  padding: 0;
+  font-size: 0;
+  background: var(--line);
+}
+#observatory-root
+  .obs-shell[data-sidebar="collapsed"]
+  .nav-group:first-child
+  .nav-group-label {
+  display: none;
+}
+#observatory-root .obs-shell[data-sidebar="collapsed"] .app-sidebar nav button {
+  justify-content: center;
+  padding: 0;
+}
+#observatory-root .obs-shell[data-sidebar="collapsed"] .sidebar-foot {
+  flex-direction: column;
+}
+#observatory-root .obs-shell[data-sidebar="collapsed"] .sidebar-collapse {
+  margin-left: 0;
+}
+
+/* ---------- Main column ---------- */
+#observatory-root main {
+  flex: 1;
+  min-width: 0;
+  padding: 28px 32px 18px;
+}
+#observatory-root main > * {
+  max-width: 1480px;
+  margin-left: auto;
+  margin-right: auto;
+}
+#observatory-root .page-heading {
+  align-items: flex-end;
+  margin-bottom: 16px;
+}
+#observatory-root .page-heading h1 {
+  font-size: 22px;
+  line-height: 30px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  gap: 10px;
+}
+#observatory-root .page-heading p {
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--text-secondary);
+}
+#observatory-root .context-bar {
+  margin-bottom: 20px;
+  padding: 0 0 14px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+#observatory-root .context-bar code {
+  font-family: "Cascadia Mono", "SF Mono", Consolas, monospace;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--soft);
+  color: var(--text-secondary);
+}
+#observatory-root .context-bar select {
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--text-secondary);
+}
+#observatory-root .status-dot {
+  width: 7px;
+  height: 7px;
+  box-shadow: 0 0 0 3px var(--good-soft);
+}
+#observatory-root .app-footer {
+  margin-top: 28px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* ---------- Surfaces ---------- */
+#observatory-root .panel,
+#observatory-root .device-card,
+#observatory-root .stats-grid:not(.usage-metric-strip) .stat,
+#observatory-root .usage-metric-strip,
+#observatory-root .windows-polish .panel,
+#observatory-root .windows-polish .device-card,
+#observatory-root .windows-polish .stats-grid:not(.usage-metric-strip) .stat,
+#observatory-root .windows-polish .usage-metric-strip {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  box-shadow: var(--card-shadow);
+}
+#observatory-root .panel {
+  padding: 18px 20px;
+}
+#observatory-root .panel-head {
+  margin-bottom: 16px;
+}
+#observatory-root .panel-head h2 {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+#observatory-root .panel-head p {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+#observatory-root .overview-grid,
+#observatory-root .stats-grid {
+  gap: 14px;
+}
+
+/* KPI cards: big tabular numbers, quiet labels. */
+#observatory-root .stat {
+  padding: 16px 18px;
+}
+#observatory-root .stat-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+}
+#observatory-root .stat-value {
+  font-size: 28px;
+  line-height: 34px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+#observatory-root .stat-detail {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+#observatory-root .spark {
+  opacity: 0.4;
+}
+#observatory-root .usage-metric-strip > .stat {
+  min-height: 108px;
+  padding: 16px 18px;
+  border-right: 1px solid var(--line-soft);
+}
+#observatory-root .usage-metric-strip > .stat:last-child {
+  border-right: 0;
+}
+#observatory-root .usage-metric-strip > .stat:hover {
+  background: var(--soft);
+}
+#observatory-root .usage-metric-strip > .stat[aria-pressed="true"] {
+  box-shadow: inset 0 -2px 0 var(--action);
+}
+#observatory-root .usage-token-parts {
+  padding: 12px 4px;
+}
+
+/* ---------- Controls ---------- */
+#observatory-root .button,
+#observatory-root .icon-button,
+#observatory-root select,
+#observatory-root .device-picker,
+#observatory-root .app-select-trigger,
+#observatory-root .windows-polish .button,
+#observatory-root .windows-polish .icon-button,
+#observatory-root .windows-polish select,
+#observatory-root .windows-polish .app-select-trigger {
+  border-color: var(--border-strong);
+  border-radius: var(--radius-control);
+  box-shadow: 0 1px 1px light-dark(#1818250a, #0000);
+}
+#observatory-root .button {
+  min-height: 32px;
+  padding: 5px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+#observatory-root .button.primary {
+  background: var(--action);
+  border-color: var(--action);
+  color: #fff;
+  font-weight: 600;
+  box-shadow:
+    0 1px 2px light-dark(#e05c1033, #0000),
+    inset 0 1px 0 #ffffff26;
+}
+#observatory-root .button.primary:hover {
+  background: var(--action-hover);
+  border-color: var(--action-hover);
+  opacity: 1;
+}
+#observatory-root .icon-button {
+  width: 32px;
+  height: 32px;
+  color: var(--text-secondary);
+}
+#observatory-root .icon-button:hover,
+#observatory-root .button:not(.primary):hover {
+  background: var(--soft);
+  color: var(--text);
+}
+#observatory-root select,
+#observatory-root .usage-input,
+#observatory-root .search input {
+  min-height: 32px;
+  font-size: 13px;
+}
+#observatory-root .app-select-trigger[data-state="open"],
+#observatory-root button:focus-visible,
+#observatory-root select:focus-visible,
+#observatory-root input:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--action) 70%, transparent);
+  outline-offset: 2px;
+}
+#observatory-root .segmented {
+  padding: 2px;
+  gap: 2px;
+  border-radius: var(--radius-control);
+  background: var(--soft);
+  border: 1px solid var(--line);
+}
+#observatory-root .segmented button {
+  padding: 3px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+#observatory-root .segmented button[aria-pressed="true"] {
+  background: var(--surface-raised);
+  color: var(--text);
+  box-shadow:
+    0 1px 2px var(--shadow),
+    0 0 0 1px var(--line);
+}
+#observatory-root .tabs {
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+}
+#observatory-root .tabs button {
+  padding: 8px 12px 10px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  border-radius: 6px 6px 0 0;
+}
+#observatory-root .tabs button:hover {
+  color: var(--text);
+}
+#observatory-root .tabs button[aria-pressed="true"] {
+  color: var(--text);
+  font-weight: 600;
+}
+#observatory-root .tabs button[aria-pressed="true"]:after {
+  height: 2px;
+  border-radius: 2px;
+  background: var(--action);
+}
+#observatory-root .badge {
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 18px;
+}
+#observatory-root .page-heading .badge {
+  font-size: 11px;
+}
+
+/* ---------- Tables ---------- */
+#observatory-root .table-wrap {
+  border-radius: 10px;
+}
+#observatory-root th {
+  height: 36px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  background: transparent;
+  border-bottom: 1px solid var(--line);
+}
+#observatory-root td,
+#observatory-root .usage-request-table td {
+  padding: 9px 12px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--line-soft);
+}
+#observatory-root tbody tr {
+  transition: background-color 100ms;
+}
+#observatory-root tbody tr:hover {
+  background: var(--soft);
+}
+#observatory-root .usage-pagination {
+  background: transparent;
+}
+#observatory-root .app-glyph {
+  border-radius: 6px;
+  background: light-dark(#f4f4f6, #26262b);
+  color: var(--text-secondary);
+}
+
+/* ---------- Overlays ---------- */
+#observatory-root .dialog,
+#observatory-root .usage-dialog,
+#observatory-root .app-select-menu,
+#observatory-root .windows-polish .dialog,
+#observatory-root .windows-polish .usage-dialog,
+#observatory-root .windows-polish .app-select-menu {
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  background: var(--surface-raised);
+  box-shadow:
+    0 24px 60px light-dark(#18182529, #000a),
+    0 2px 6px light-dark(#1818251a, #0006);
+}
+#observatory-root .app-select-menu {
+  border-radius: 10px;
+}
+#observatory-root .app-select-item {
+  border-radius: 6px;
+}
+#observatory-root .toast {
+  border-radius: 10px;
+  box-shadow: 0 12px 32px light-dark(#18182526, #0009);
+}
+
+/* ---------- Tray panel: same brand tile as the sidebar ---------- */
+#observatory-root .tray-mark {
+  border-radius: 9px;
+  color: #fff;
+  background: linear-gradient(145deg, #f7893f, #e2560c);
+  box-shadow:
+    0 1px 2px #e2560c40,
+    inset 0 1px 0 #ffffff40;
+}
+
+/* ---------- Narrow windows: the sidebar becomes an icon rail ---------- */
+@media (max-width: 900px) {
+  #observatory-root .obs-shell:not(.tray-shell) {
+    --sidebar-width: var(--sidebar-collapsed);
+  }
+  #observatory-root .app-sidebar {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+  #observatory-root .app-sidebar :is(.brand-text, .nav-label, .nav-tag) {
+    display: none;
+  }
+  #observatory-root .app-sidebar .brand {
+    justify-content: center;
+    padding-left: 0;
+    padding-right: 0;
+  }
+  #observatory-root .nav-group-label {
+    height: 1px;
+    margin: 2px 10px 6px;
+    padding: 0;
+    font-size: 0;
+    background: var(--line);
+  }
+  #observatory-root .nav-group:first-child .nav-group-label {
+    display: none;
+  }
+  #observatory-root .app-sidebar nav button {
+    justify-content: center;
+    padding: 0;
+  }
+  #observatory-root .sidebar-foot {
+    flex-direction: column;
+  }
+  #observatory-root .sidebar-collapse {
+    display: none;
+  }
+  #observatory-root main {
+    padding: 22px 20px 16px;
+  }
+}
+@media (max-width: 560px) {
+  #observatory-root main {
+    padding: 18px 14px 14px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #observatory-root .app-sidebar,
+  #observatory-root .app-sidebar nav button,
+  #observatory-root tbody tr {
+    transition: none;
+  }
+}

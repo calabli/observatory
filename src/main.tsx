@@ -25,6 +25,8 @@ import {
   Monitor,
   Moon,
   Network,
+  PanelLeftClose,
+  PanelLeftOpen,
   Radio,
   Radar,
   RefreshCw,
@@ -57,6 +59,7 @@ import zcode from "./assets/zcode.png";
 import "./styles.css";
 import "./usage/usage.css";
 import "./theme/ccSwitchTheme.css";
+import "./theme/redesign.css";
 import {
   QueryClient,
   QueryClientProvider,
@@ -104,16 +107,44 @@ const brandIcons: Record<string, string> = {
   dsh: deepseek,
   zcode,
 };
-const nav: { id: Page; label: string; icon: LucideIcon }[] = [
-  { id: "overview", label: "总览", icon: Radar },
-  { id: "usage", label: "AI 用量", icon: Boxes },
-  { id: "subscriptions", label: "订阅与额度", icon: Clock3 },
-  { id: "agents", label: "Agent 追踪", icon: ListTree },
-  { id: "performance", label: "设备性能", icon: Activity },
-  { id: "network", label: "网络诊断", icon: Network },
-  { id: "devices", label: "多设备", icon: Monitor },
-  { id: "activity", label: "活动日志", icon: ScrollText },
+type NavItem = {
+  id: Page;
+  label: string;
+  icon: LucideIcon;
+  preview?: boolean;
+};
+const navGroups: { label: string; items: NavItem[] }[] = [
+  {
+    label: "用量",
+    items: [
+      { id: "overview", label: "总览", icon: Radar },
+      { id: "usage", label: "AI 用量", icon: Boxes },
+      { id: "subscriptions", label: "订阅与额度", icon: Clock3 },
+    ],
+  },
+  {
+    label: "设备",
+    items: [
+      { id: "devices", label: "多设备", icon: Monitor },
+      { id: "network", label: "网络诊断", icon: Network },
+      { id: "performance", label: "设备性能", icon: Activity, preview: true },
+      { id: "agents", label: "Agent 追踪", icon: ListTree, preview: true },
+    ],
+  },
+  {
+    label: "记录",
+    items: [{ id: "activity", label: "活动日志", icon: ScrollText }],
+  },
 ];
+const nav = navGroups.flatMap((group) => group.items);
+const SIDEBAR_KEY = "observatory.sidebar-collapsed";
+function readSidebarCollapsed() {
+  try {
+    return localStorage.getItem(SIDEBAR_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
 const titles: Record<Page, [string, string]> = {
   overview: ["运行总览", "把 AI 调用、设备同步与网络状态放在一起看。"],
   usage: ["AI 用量", "从一次调用到多设备汇总，费用与用量清晰可查。"],
@@ -457,6 +488,17 @@ function App() {
   const [dark, setDark] = useState(
     () => window.matchMedia("(prefers-color-scheme:dark)").matches,
   );
+  const [sidebarCollapsed, setSidebarCollapsed] =
+    useState(readSidebarCollapsed);
+  const toggleSidebar = () =>
+    setSidebarCollapsed((collapsed) => {
+      try {
+        localStorage.setItem(SIDEBAR_KEY, collapsed ? "0" : "1");
+      } catch {
+        // Not remembering the sidebar state is harmless.
+      }
+      return !collapsed;
+    });
   useEffect(() => {
     const apply = (event: Event) => {
       const state = (event as CustomEvent).detail?.globals?.widgetState
@@ -1231,52 +1273,77 @@ function App() {
   return (
     <div
       className={`obs-shell${IS_WINDOWS ? " windows-polish" : ""}`}
+      data-sidebar={sidebarCollapsed ? "collapsed" : "expanded"}
       style={{ colorScheme: dark ? "dark" : "light" }}
     >
-      <header className="app-nav">
+      <aside className="app-sidebar">
         <button
           className="brand"
           onClick={() => go("overview")}
           aria-label="观测台首页"
+          title="观测台"
         >
           <span className="brand-mark">
-            <Radar size={24} />
+            <Radar size={18} />
           </span>
-          <span>
-            观测台<small>OBSERVATORY</small>
+          <span className="brand-text">
+            观测台<small>Observatory</small>
           </span>
         </button>
         <nav aria-label="主导航">
-          {nav.map((n) => (
-            <button
-              key={n.id}
-              aria-current={page === n.id ? "page" : undefined}
-              onClick={() => go(n.id)}
-            >
-              <n.icon size={15} />
-              {n.label}
-            </button>
+          {navGroups.map((group) => (
+            <div className="nav-group" key={group.label}>
+              <div className="nav-group-label">{group.label}</div>
+              {group.items.map((n) => (
+                <button
+                  key={n.id}
+                  aria-current={page === n.id ? "page" : undefined}
+                  onClick={() => go(n.id)}
+                  title={n.label}
+                >
+                  <n.icon size={16} />
+                  <span className="nav-label">{n.label}</span>
+                  {n.preview && <span className="nav-tag">预览</span>}
+                </button>
+              ))}
+            </div>
           ))}
         </nav>
-        <button
-          className="icon-button"
-          aria-label="关于观测台"
-          title="关于观测台"
-          onClick={() => setAboutOpen(true)}
-        >
-          <Info size={17} />
-          {updateAvailable && (
-            <span className="about-update-dot" aria-label="有新版本" />
-          )}
-        </button>
-        <button
-          className="icon-button"
-          aria-label="切换明暗外观"
-          onClick={() => setDark(!dark)}
-        >
-          {dark ? <Sun size={17} /> : <Moon size={17} />}
-        </button>
-      </header>
+        <div className="sidebar-foot">
+          <button
+            className="sidebar-action"
+            aria-label="关于观测台"
+            title="关于观测台"
+            onClick={() => setAboutOpen(true)}
+          >
+            <Info size={16} />
+            {updateAvailable && (
+              <span className="about-update-dot" aria-label="有新版本" />
+            )}
+          </button>
+          <button
+            className="sidebar-action"
+            aria-label="切换明暗外观"
+            title={dark ? "切换为浅色" : "切换为深色"}
+            onClick={() => setDark(!dark)}
+          >
+            {dark ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
+          <button
+            className="sidebar-action sidebar-collapse"
+            aria-label={sidebarCollapsed ? "展开侧边栏" : "收起侧边栏"}
+            title={sidebarCollapsed ? "展开侧边栏" : "收起侧边栏"}
+            aria-expanded={!sidebarCollapsed}
+            onClick={toggleSidebar}
+          >
+            {sidebarCollapsed ? (
+              <PanelLeftOpen size={16} />
+            ) : (
+              <PanelLeftClose size={16} />
+            )}
+          </button>
+        </div>
+      </aside>
       {aboutOpen && (
         <Dialog title="关于观测台" onClose={() => setAboutOpen(false)}>
           <div className="about-details">
