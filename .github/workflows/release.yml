@@ -29,7 +29,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NOTES: 'The cost of MiniMax Code records is fixed: they were stored as zero until the next price backfill, and the price manager now offers a manual recalculation that reports its scope first. The model pricing table treats model ids case-insensitively, so one model no longer shows up twice under different spellings, and a model without a public price is shown as not billable instead of unpriced. The tray quick panel is hidden rather than destroyed when it is closed. The macOS build is not notarized.'
+          NOTES: 'New look: the top navigation is replaced by a grouped left sidebar (usage, devices, records) that can collapse to an icon rail and remembers its state; narrow windows switch to the rail automatically. Quieter colors in light and dark, larger KPI numbers, lighter tables and consistent buttons, menus and dialogs; the tray panel picks up the new logo tile. No data or behavior changes. The macOS build is not notarized.'
         run: |
           set -euo pipefail
           version=$(node -p "require('./package.json').version")
