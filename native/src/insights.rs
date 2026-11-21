@@ -183,26 +183,60 @@ pub fn query_insights_on_conn(
         Database::usage_summary_impl(conn, start_date, end_date, app_type, None, None, false)?;
     let actual_cost_usd = summary.total_cost.parse::<f64>().unwrap_or(0.0);
 
-    // Compute exact cache savings on detail rows using local model_pricing input price.
+    // Compute exact cache savings on detail rows using the same `find_model_pricing`
+    // candidate/prefix resolution as CostCalculator (handles tiered IDs like
+    // `gemini-3.8-flash-high`, dated Claude/Codex IDs, etc.).
     let savings_sql = format!(
         "SELECT
-            COALESCE(SUM(CAST(l.cache_read_cost_usd AS REAL)), 0.0),
+            COALESCE(NULLIF(l.pricing_model, ''), l.model) AS pricing_key,
+            COALESCE(SUM(CAST(l.cache_read_cost_usd AS REAL)), 0.0) AS cache_read_cost,
             COALESCE(SUM(
-                CASE WHEN l.cache_read_tokens > 0 AND mp.input_cost_per_million IS NOT NULL
-                THEN (l.cache_read_tokens * CAST(mp.input_cost_per_million AS REAL) / 1000000.0)
-                     * COALESCE(CAST(l.cost_multiplier AS REAL), 1.0)
-                ELSE 0.0 END
-            ), 0.0)
+                l.cache_read_tokens * CASE
+                    WHEN CAST(l.cost_multiplier AS REAL) > 0 THEN CAST(l.cost_multiplier AS REAL)
+                    ELSE 1.0
+                END
+            ), 0.0) AS weighted_cache_read_tokens
          FROM proxy_request_logs l
-         LEFT JOIN model_pricing mp
-           ON LOWER(mp.model_id) = LOWER(COALESCE(NULLIF(l.pricing_model, ''), l.model))
-         {where_sql}"
+         {where_sql}
+         GROUP BY pricing_key"
     );
-    let (cache_read_cost_usd, hypothetical_cache_as_input): (f64, f64) =
-        conn.query_row(&savings_sql, params_from_iter(params.iter()), |r| {
-            Ok((r.get(0)?, r.get(1)?))
-        })?;
-    let saved_usd = (hypothetical_cache_as_input - cache_read_cost_usd).max(0.0);
+    let mut cache_read_cost_usd = 0.0f64;
+    let mut saved_usd = 0.0f64;
+    {
+        let mut stmt = conn.prepare(&savings_sql)?;
+        let mut rows = stmt.query(params_from_iter(params.iter()))?;
+        while let Some(row) = rows.next()? {
+            let pricing_key: String = row.get(0)?;
+            let row_cache_cost: f64 = row.get(1)?;
+            let weighted_tokens: f64 = row.get(2)?;
+            cache_read_cost_usd += row_cache_cost;
+            if weighted_tokens > 0.0 {
+                if let Some(pricing) =
+                    crate::services::usage_stats::find_model_pricing(conn, &pricing_key)
+                {
+                    let input_per_m = pricing
+                        .input_cost_per_million
+                        .to_string()
+                        .parse::<f64>()
+                        .unwrap_or(0.0);
+                    let cache_per_m = pricing
+                        .cache_read_cost_per_million
+                        .to_string()
+                        .parse::<f64>()
+                        .unwrap_or(0.0);
+                    if input_per_m > cache_per_m {
+                        let hypothetical = (weighted_tokens / 1_000_000.0) * input_per_m;
+                        let actual_cache = if row_cache_cost > 0.0 {
+                            row_cache_cost
+                        } else {
+                            (weighted_tokens / 1_000_000.0) * cache_per_m
+                        };
+                        saved_usd += (hypothetical - actual_cache).max(0.0);
+                    }
+                }
+            }
+        }
+    }
     let context_sum = summary.total_input_tokens
         + summary.total_cache_read_tokens
         + summary.total_cache_creation_tokens;
@@ -249,9 +283,28 @@ pub fn query_insights_on_conn(
         .collect();
 
     // Forecast & period-over-period delta.
+    // Anchor the daily average to the later of `start_date` and the app's first usage date
+    // so unused days before the user started using a tool never dilute its burn rate.
+    let first_usage_ts = Database::first_usage_date_on_conn(conn, app_type, None, None)?
+        .as_deref()
+        .and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+        .and_then(|d| d.and_hms_opt(0, 0, 0))
+        .and_then(|dt| Local.from_local_datetime(&dt).earliest())
+        .map(|dt| dt.timestamp());
     let (elapsed_days, previous_cost_usd) = if let Some(s) = start_date {
         let span = (effective_end - s).max(3600);
-        let prev_start = s - span;
+        let span_days = ((span + 86_399) / 86_400).max(1);
+        let prev_start = Local
+            .timestamp_opt(s, 0)
+            .single()
+            .and_then(|dt| {
+                dt.date_naive()
+                    .checked_sub_days(chrono::Days::new(span_days as u64))
+            })
+            .and_then(|d| d.and_hms_opt(0, 0, 0))
+            .and_then(|dt| Local.from_local_datetime(&dt).earliest())
+            .map(|dt| dt.timestamp())
+            .unwrap_or(s - span_days * 86_400);
         let prev = Database::usage_summary_impl(
             conn,
             Some(prev_start),
@@ -264,13 +317,19 @@ pub fn query_insights_on_conn(
         .ok()
         .and_then(|u| u.total_cost.parse::<f64>().ok())
         .unwrap_or(0.0);
-        ((span as f64 / 86_400.0).max(1.0), prev)
+        let effective_start = first_usage_ts
+            .map(|f| s.max(f))
+            .unwrap_or(s)
+            .min(effective_end);
+        let active_span = (effective_end - effective_start).max(3600);
+        ((active_span as f64 / 86_400.0).max(1.0), prev)
     } else {
         let days = (trends.len() as f64).max(1.0);
         (days, 0.0)
     };
     let daily_avg_usd = actual_cost_usd / elapsed_days;
-    let projected_30d_usd = daily_avg_usd * 30.0;
+    // Never project below actual spend when the selected calendar month has 31 days.
+    let projected_30d_usd = daily_avg_usd * 30.0f64.max(elapsed_days);
     let delta_pct = (previous_cost_usd > 0.0001)
         .then(|| ((actual_cost_usd - previous_cost_usd) / previous_cost_usd) * 100.0);
     let forecast = CostForecast {
@@ -556,7 +615,7 @@ mod tests {
                 [],
             )
             .unwrap();
-            // 2 ok rows in session-a with cache reads (1M cache_read => $10 input vs $1 cache => $9 saved each)
+            // Use a tiered Antigravity model ID (`test-model-high`) while model_pricing only stores `test-model`
             for (idx, (latency, out, status)) in
                 [(4000, 400, 200), (8000, 600, 200), (2000, 50, 429)]
                     .iter()
@@ -569,7 +628,7 @@ mod tests {
                         input_cost_usd, output_cost_usd, cache_read_cost_usd, cache_creation_cost_usd, total_cost_usd,
                         latency_ms, first_token_ms, status_code, session_id, is_streaming, cost_multiplier,
                         created_at, data_source, input_token_semantics
-                    ) VALUES (?1, 'p1', 'agy', 'test-model', 'test-model',
+                    ) VALUES (?1, 'p1', 'agy', 'test-model-high', 'Test Model (High)',
                         1000, ?2, 1000000, 0,
                         '0.01', '0.01', '1.0', '0', '1.02',
                         ?3, 500, ?4, 'session-a', 1, '1',

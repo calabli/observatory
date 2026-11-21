@@ -157,6 +157,7 @@ export function InsightsWorkspace({
   const [app, setApp] = useState<string>("");
   const [heatMode, setHeatMode] = useState<HeatMode>("cost");
   const [stabMode, setStabMode] = useState<StabMode>("ttft");
+  const [stabTouched, setStabTouched] = useState(false);
   const [budget, setBudget] = useState<number>(readBudget);
   const [tip, setTip] = useState<{
     x: number;
@@ -247,6 +248,19 @@ export function InsightsWorkspace({
         ? "var(--accent-pink)"
         : "var(--accent-violet)";
 
+  const hasTtft = useMemo(
+    () => (data?.stability ?? []).some((m) => m.ttftP50Ms != null),
+    [data?.stability],
+  );
+  const hasSpeed = useMemo(
+    () => (data?.stability ?? []).some((m) => m.speedP50 != null),
+    [data?.stability],
+  );
+  const effectiveStabMode: StabMode =
+    !stabTouched && stabMode === "ttft" && !hasTtft && hasSpeed
+      ? "speed"
+      : stabMode;
+
   const cs = data?.cacheSavings;
   const fc = data?.forecast;
   const st = data?.status;
@@ -267,7 +281,10 @@ export function InsightsWorkspace({
           <button
             type="button"
             className={`insights-app-pill${app === "" ? " active" : ""}`}
-            onClick={() => setApp("")}
+            onClick={() => {
+              setApp("");
+              setStabTouched(false);
+            }}
           >
             <span className="app-glyph" aria-hidden="true">
               <Layers3 size={14} />
@@ -279,7 +296,10 @@ export function InsightsWorkspace({
               type="button"
               key={s.id}
               className={`insights-app-pill${app === s.id ? " active" : ""}`}
-              onClick={() => setApp(s.id)}
+              onClick={() => {
+                setApp(s.id);
+                setStabTouched(false);
+              }}
             >
               <AppGlyph app={s.id} />
               <span>{s.name}</span>
@@ -457,7 +477,8 @@ export function InsightsWorkspace({
           />
           <div className="insights-meta-row">
             <span>
-              日均 <strong>{fmtUsd(fc?.dailyAvgUsd ?? 0)}/天</strong>
+              有效 {Math.max(1, Math.round(fc?.elapsedDays ?? 1))} 天 · 日均{" "}
+              <strong>{fmtUsd(fc?.dailyAvgUsd ?? 0)}/天</strong>
             </span>
             <span>
               {overBudget ? "预计超出 " : "距预算余 "}
@@ -622,21 +643,30 @@ export function InsightsWorkspace({
             <div className="insights-pill-group subtle">
               <button
                 type="button"
-                className={`insights-pill-btn${stabMode === "ttft" ? " active" : ""}`}
-                onClick={() => setStabMode("ttft")}
+                className={`insights-pill-btn${effectiveStabMode === "ttft" ? " active" : ""}`}
+                onClick={() => {
+                  setStabTouched(true);
+                  setStabMode("ttft");
+                }}
               >
                 首字 P50–P95
               </button>
               <button
                 type="button"
-                className={`insights-pill-btn${stabMode === "speed" ? " active" : ""}`}
-                onClick={() => setStabMode("speed")}
+                className={`insights-pill-btn${effectiveStabMode === "speed" ? " active" : ""}`}
+                onClick={() => {
+                  setStabTouched(true);
+                  setStabMode("speed");
+                }}
               >
                 速度 P10–P50
               </button>
             </div>
           </div>
-          <StabilityDumbbell items={data?.stability ?? []} mode={stabMode} />
+          <StabilityDumbbell
+            items={data?.stability ?? []}
+            mode={effectiveStabMode}
+          />
         </div>
       </section>
 

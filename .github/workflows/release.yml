@@ -30,10 +30,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NOTES: |
-            - Added the new Insights page with cache savings, 30-day cost forecast & budget tracking, 7x24 coding rhythm heatmap, session health scatter plot, model P50-P95 stability dumbbells, token mix stacked area, and status health breakdown.
-            - Added estimated latency & output speed for Antigravity tool-calling steps, with streaming low-memory transcript parsing and one-time backfill.
-            - Fixed macOS fullscreen close leaving an empty black Space; closing now exits fullscreen before hiding to the menu bar.
-            - Updated app ordering, set the macOS Utility app category, and reduced background CPU/SQLite overhead in the tray and scan loops.
+            - Fixed Insights cache savings calculation for tiered and dated model IDs (such as Antigravity `gemini-*-high`/`medium`) by reusing `find_model_pricing` resolution.
+            - Fixed 30-day cost forecast burn rate to anchor on each platform's effective active span (never diluted by unused days before first usage) and aligned period-over-period delta boundaries to whole local days.
+            - Auto-selected output speed stability dumbbell on platforms without TTFT (such as Antigravity).
 
             The macOS build is not notarized.
         run: |
