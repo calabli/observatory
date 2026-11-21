@@ -46,7 +46,24 @@ fn tray_image(dark: bool) -> tauri::Result<tauri::image::Image<'static>> {
         include_bytes!("../icons/tray-dark.png").as_slice()
     })
 }
-fn dark_theme(app: &tauri::AppHandle) -> bool {
+#[cfg(target_os = "windows")]
+fn tray_is_dark(_app: &tauri::AppHandle) -> bool {
+    use winreg::{enums::HKEY_CURRENT_USER, RegKey};
+
+    // Windows lets the taskbar and apps use separate color modes.
+    let light_theme = RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")
+        .and_then(|key| key.get_value::<u32, _>("SystemUsesLightTheme"));
+    light_theme.unwrap_or(0) == 0
+}
+
+#[cfg(target_os = "macos")]
+fn tray_is_dark(_app: &tauri::AppHandle) -> bool {
+    false // Template images are tinted by macOS.
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn tray_is_dark(app: &tauri::AppHandle) -> bool {
     app.get_webview_window("main")
         .and_then(|window| window.theme().ok())
         .is_some_and(|theme| theme == tauri::Theme::Dark)
@@ -143,8 +160,9 @@ fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
             &open, &sep1, &heading, &cost, &requests, &tokens, &sep2, &quit,
         ],
     )?;
+    let dark = tray_is_dark(app.handle());
     let tray = TrayIconBuilder::with_id("observatory-tray")
-        .icon(tray_image(dark_theme(app.handle()))?)
+        .icon(tray_image(dark)?)
         .icon_as_template(cfg!(target_os = "macos"))
         .tooltip("观测台 · 本机今日用量")
         .menu(&menu)
@@ -168,7 +186,22 @@ fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
         .build(app)?;
     app.state::<TrayReady>().0.store(true, Ordering::Release);
     let handle = app.handle().clone();
+    #[cfg(target_os = "windows")]
+    let mut tray_dark = dark;
     std::thread::spawn(move || loop {
+        // Recheck on the tray's existing refresh cycle, even when only the
+        // Windows shell theme changes and no window theme event is emitted.
+        #[cfg(target_os = "windows")]
+        {
+            let dark = tray_is_dark(&handle);
+            if dark != tray_dark
+                && tray_image(dark)
+                    .and_then(|icon| tray.set_icon(Some(icon)))
+                    .is_ok()
+            {
+                tray_dark = dark;
+            }
+        }
         let backend = handle.state::<BackendState>().0.get().cloned();
         let ready = backend.is_some();
         match backend.map(|backend| backend.today_summary()) {
@@ -257,14 +290,13 @@ fn main() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
             if let tauri::WindowEvent::ThemeChanged(theme) = event {
-                if !cfg!(target_os = "macos") {
-                    if let (Some(tray), Ok(image)) = (
-                        window.app_handle().tray_by_id("observatory-tray"),
-                        tray_image(*theme == tauri::Theme::Dark),
-                    ) {
-                        let _ = tray.set_icon(Some(image));
-                    }
+                if let (Some(tray), Ok(image)) = (
+                    window.app_handle().tray_by_id("observatory-tray"),
+                    tray_image(*theme == tauri::Theme::Dark),
+                ) {
+                    let _ = tray.set_icon(Some(image));
                 }
             }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

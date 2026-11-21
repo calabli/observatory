@@ -54,6 +54,8 @@ type Props = {
   onStatus?: (status: NativeStatus) => void;
 };
 type Range = "today" | "week" | "month" | "all" | "custom";
+type UsageScope = "local" | "multi";
+type ScanFeedback = { notice: string; errors: string[] };
 let activeMultiScan = false;
 let latestMultiScan: ScanBatch | null = null;
 const multiScanEvent = "observatory-multi-scan-change";
@@ -300,7 +302,7 @@ function UsageWorkspaceImpl({
 }: Props) {
   const saved = useMemo(loadView, []);
   const qc = useQueryClient();
-  const [scope, setScope] = useState(
+  const [scope, setScope] = useState<UsageScope>(
     saved.scope === "multi" ? "multi" : "local",
   );
   const [selectedDevices, setSelectedDevices] = useState<string[] | null>(null);
@@ -322,7 +324,10 @@ function UsageWorkspaceImpl({
   const [detail, setDetail] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
   const [scanBusy, setScanBusy] = useState(false);
-  const [scanErrors, setScanErrors] = useState<string[]>([]);
+  const [scanFeedback, setScanFeedback] = useState<
+    Partial<Record<UsageScope, ScanFeedback>>
+  >({});
+  const currentScan = scanFeedback[scope];
   const [multiBatch, setMultiBatch] = useState<ScanBatch | null>(loadMultiScan);
   const [importPath, setImportPath] = useState("");
   const scanRef = useRef<Promise<void> | null>(null);
@@ -448,7 +453,7 @@ function UsageWorkspaceImpl({
               peers: { deviceId: string; error?: string }[];
             }>("sync", { automatic });
             if (mounted.current) {
-              setScanErrors([
+              const errors = [
                 ...r.scan.errors,
                 ...r.peers.flatMap((p) =>
                   p.error
@@ -457,23 +462,37 @@ function UsageWorkspaceImpl({
                       ]
                     : [],
                 ),
-              ]);
-              setNotice(
-                `本机扫描完成，新增或更新 ${r.scan.imported} 条记录；已同步 ${r.peers.filter((p) => !p.error).length}/${r.peers.length} 台设备。`,
-              );
+              ];
+              setScanFeedback((previous) => ({
+                ...previous,
+                multi: {
+                  errors,
+                  notice: `本机扫描完成，新增或更新 ${r.scan.imported} 条记录；已同步 ${r.peers.filter((p) => !p.error).length}/${r.peers.length} 台设备。`,
+                },
+              }));
             }
           } else {
             const r = await usageCall<{ imported: number; errors: string[] }>(
               "scan_local_only",
             );
             if (mounted.current) {
-              setScanErrors(r.errors);
-              setNotice(`本机扫描完成，新增或更新 ${r.imported} 条记录。`);
+              setScanFeedback((previous) => ({
+                ...previous,
+                local: {
+                  errors: r.errors,
+                  notice: `本机扫描完成，新增或更新 ${r.imported} 条记录。`,
+                },
+              }));
             }
           }
           await qc.invalidateQueries({ queryKey: ["usage"] });
         } catch (e) {
-          if (mounted.current) setNotice("扫描失败：" + friendlyError(e));
+          if (mounted.current) {
+            setScanFeedback((previous) => ({
+              ...previous,
+              [scope]: { notice: "扫描失败：" + friendlyError(e), errors: [] },
+            }));
+          }
           throw e;
         } finally {
           scanRef.current = null;
@@ -486,8 +505,6 @@ function UsageWorkspaceImpl({
     },
     [qc, onBusy, scope],
   );
-  // Errors from one scope's scan do not describe the other scope.
-  useEffect(() => setScanErrors([]), [scope]);
   const refreshMulti = async () => {
     if (scanRef.current || activeMultiScan || !status.data || !lan.data) return;
     activeMultiScan = true;
@@ -496,8 +513,7 @@ function UsageWorkspaceImpl({
     const task = (async () => {
       setScanBusy(true);
       onBusy?.(true);
-      setNotice("");
-      setScanErrors([]);
+      setScanFeedback((previous) => ({ ...previous, multi: undefined }));
       try {
         const coordinator = new MultiDeviceScanCoordinator(
           {
@@ -554,7 +570,12 @@ function UsageWorkspaceImpl({
         ]);
         await qc.invalidateQueries({ queryKey: ["usage"] });
       } catch (e) {
-        if (mounted.current) setNotice("更新失败：" + friendlyError(e));
+        if (mounted.current) {
+          setScanFeedback((previous) => ({
+            ...previous,
+            multi: { notice: "更新失败：" + friendlyError(e), errors: [] },
+          }));
+        }
       } finally {
         scanRef.current = null;
         activeMultiScan = false;
@@ -902,15 +923,20 @@ function UsageWorkspaceImpl({
           {notice}
         </div>
       )}
+      {currentScan?.notice && (
+        <div className="usage-note" role="status">
+          {currentScan.notice}
+        </div>
+      )}
       {scope === "multi" && multiBatch && (
         <MultiDeviceScanPanel batch={multiBatch} />
       )}
-      {scanErrors.length > 0 && (
+      {currentScan && currentScan.errors.length > 0 && (
         <details className="usage-error">
           <summary>
-            {scanErrors.length} 项来源暂未完成扫描或同步，已有记录保留
+            {currentScan.errors.length} 项来源暂未完成扫描或同步，已有记录保留
           </summary>
-          {scanErrors.map((e, i) => (
+          {currentScan.errors.map((e, i) => (
             <p key={i}>{e}</p>
           ))}
         </details>

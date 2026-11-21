@@ -18,7 +18,7 @@ body {
   --nav: var(--bg);
   --text: light-dark(#111113, #f5f5f7);
   --text-secondary: light-dark(#55555c, #a1a1a8);
-  --muted: light-dark(#86868b, #8e8e93);
+  --muted: light-dark(#6a6a70, #8e8e93);
   --line: light-dark(#e9e9ee, #38383a);
   --line-soft: light-dark(#f0f0f4, #2c2c2e);
   --border-strong: light-dark(#dcdce2, #48484a);
