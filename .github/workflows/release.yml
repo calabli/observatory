@@ -29,7 +29,13 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NOTES: 'New look: the top navigation is replaced by a grouped left sidebar (usage, devices, records) that can collapse to an icon rail and remembers its state; narrow windows switch to the rail automatically. Quieter colors in light and dark, larger KPI numbers, lighter tables and consistent buttons, menus and dialogs; the tray panel picks up the new logo tile. No data or behavior changes. The macOS build is not notarized.'
+          NOTES: |
+            - Refreshed the dashboard and usage views with widget-style cards, updated charts, and a new app icon.
+            - Added model output speed and first-token latency to the usage view.
+            - Local scans read this device only. Scan feedback stays with the local or multi-device view that started it.
+            - The Windows tray icon follows the taskbar color mode. Secondary text is easier to read in light mode.
+
+            The macOS build is not notarized.
         run: |
           set -euo pipefail
           version=$(node -p "require('./package.json').version")
