@@ -189,17 +189,6 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-#observatory-root .nav-tag {
-  flex: none;
-  padding: 0 5px;
-  border-radius: 4px;
-  font-size: 10px;
-  line-height: 16px;
-  font-weight: 500;
-  color: var(--muted);
-  background: var(--soft);
-  border: 1px solid var(--line);
-}
 #observatory-root .sidebar-foot {
   display: flex;
   align-items: center;
@@ -240,7 +229,7 @@ body {
 #observatory-root
   .obs-shell[data-sidebar="collapsed"]
   .app-sidebar
-  :is(.brand-text, .nav-label, .nav-tag) {
+  :is(.brand-text, .nav-label) {
   display: none;
 }
 #observatory-root .obs-shell[data-sidebar="collapsed"] .app-sidebar .brand {
@@ -415,7 +404,6 @@ body {
 #observatory-root .button,
 #observatory-root .icon-button,
 #observatory-root select,
-#observatory-root .device-picker,
 #observatory-root .app-select-trigger,
 #observatory-root .windows-polish .button,
 #observatory-root .windows-polish .icon-button,
@@ -601,7 +589,7 @@ body {
     padding-left: 8px;
     padding-right: 8px;
   }
-  #observatory-root .app-sidebar :is(.brand-text, .nav-label, .nav-tag) {
+  #observatory-root .app-sidebar :is(.brand-text, .nav-label) {
     display: none;
   }
   #observatory-root .app-sidebar .brand {

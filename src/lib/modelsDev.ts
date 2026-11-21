@@ -2,8 +2,6 @@
 // Price import for usage stats and model parameter completion in the provider
 // form share this single data set and query cache.
 
-export const MODELS_DEV_API_URL = "https://models.dev/api.json";
-
 export interface ModelsDevCost {
   input?: number;
   output?: number;

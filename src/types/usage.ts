@@ -1,12 +1,5 @@
 // Type definitions for usage statistics
 
-export interface TokenUsage {
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheCreationTokens: number;
-}
-
 export interface RequestLog {
   requestId: string;
   providerId: string;
@@ -37,21 +30,6 @@ export interface RequestLog {
   dataSource?: string;
   /** The model has no public price (internal or included in a subscription), so its cost is zero by design and not a missing price */
   notBillable?: boolean;
-}
-
-export interface SessionSyncResult {
-  imported: number;
-  skipped: number;
-  filesScanned: number;
-  suspectedDuplicates: number;
-  deferredFiles: number;
-  errors: string[];
-}
-
-export interface DataSourceSummary {
-  dataSource: string;
-  requestCount: number;
-  totalCostUsd: string;
 }
 
 export interface PaginatedLogs {
@@ -166,95 +144,6 @@ export interface LogFilters {
 }
 
 /**
- * Global filter dimensions in the dashboard top bar, applied to the hero,
- * trend chart and the three stats tabs.
- *
- * - `providerName` matches the display name exactly (same metric as the
- *   Provider stats list, including session placeholder names such as
- *   "Claude (Session)");
- * - `model` matches the effective pricing model (pricing_model first,
- *   falling back to model), consistent with the model stats grouping.
- */
-export interface UsageScopeFilters {
-  appType?: string;
-  providerName?: string;
-  model?: string;
-}
-
-export interface ProviderLimitStatus {
-  providerId: string;
-  dailyUsage: string;
-  dailyLimit?: string;
-  dailyExceeded: boolean;
-  monthlyUsage: string;
-  monthlyLimit?: string;
-  monthlyExceeded: boolean;
-}
-
-export type UsageRangePreset =
-  | "today"
-  | "1d"
-  | "7d"
-  | "14d"
-  | "30d"
-  | "all"
-  | "custom";
-
-export interface UsageRangeSelection {
-  preset: UsageRangePreset;
-  customStartDate?: number;
-  customEndDate?: number;
-  /** When true (custom mode only), endDate resolves to "now" instead of the
-   *  fixed customEndDate snapshot, and the end-time field becomes read-only. */
-  liveEndTime?: boolean;
-}
-
-/**
- * App types surfaced as dashboard filter buttons.
- *
- * `claude-desktop` is intentionally NOT listed: the Desktop gateway's proxy
- * traffic is still recorded under its own `app_type` (preserving route-takeover
- * billing audit — the request detail panel shows the real value), but the
- * dashboard folds it into `claude` for display. It is the embedded Claude Code
- * runtime running inside the Desktop shell, and Desktop *chat* usage never
- * passes through this app at all, so a separate "Claude Desktop" bucket would
- * only ever show a partial number and mislead users into reading it as the
- * Desktop's full usage. The backend collapses `claude-desktop → claude` in
- * every dashboard query (see `folded_app_type_sql`).
- * `opencode` and `pi` have no proxy handler; their usage reaches this
- * dashboard through session importers. `openclaw` / `hermes` appear only as
- * managed apps elsewhere.
- */
-export type AppType =
-  | "claude"
-  | "codex"
-  | "gemini"
-  | "grokbuild"
-  | "opencode"
-  | "pi"
-  | "mcode"
-  | "kimi"
-  | "agy"
-  | "dsh"
-  | "zcode";
-
-export type AppTypeFilter = "all" | AppType;
-
-export const KNOWN_APP_TYPES: ReadonlyArray<AppType> = [
-  "claude",
-  "codex",
-  "gemini",
-  "grokbuild",
-  "opencode",
-  "pi",
-  "mcode",
-  "dsh",
-  "zcode",
-  "kimi",
-  "agy",
-];
-
-/**
  * App types whose proxy uses an OpenAI-style protocol. Two consequences:
  *
  * 1. `inputTokens` already includes the cached portion (must subtract
@@ -271,32 +160,6 @@ export const CACHE_INCLUSIVE_APP_TYPES: ReadonlySet<string> = new Set([
   "gemini",
   "grokbuild",
 ]);
-
-// Pi sessions can mix Anthropic and OpenAI APIs, but the dashboard aggregates
-// only by app type. Treat cache-write coverage as partial without changing
-// Pi's fresh-input token semantics.
-const PARTIAL_CACHE_WRITE_APP_TYPES: ReadonlySet<string> = new Set([
-  "pi",
-  "mcode",
-  "dsh",
-  "kimi",
-]);
-
-export type CacheWriteAvailability = "ok" | "partial" | "na";
-
-export function getCacheWriteAvailability(
-  appTypes: readonly string[],
-): CacheWriteAvailability {
-  if (appTypes.length === 0) return "ok";
-  const unavailable = appTypes.filter((appType) =>
-    CACHE_INCLUSIVE_APP_TYPES.has(appType),
-  ).length;
-  if (unavailable === appTypes.length) return "na";
-  const partial = appTypes.some((appType) =>
-    PARTIAL_CACHE_WRITE_APP_TYPES.has(appType),
-  );
-  return unavailable === 0 && !partial ? "ok" : "partial";
-}
 
 /** Subset of request-log fields needed to derive cache-normalized input. */
 export interface CacheNormalizableLog {
@@ -376,10 +239,4 @@ export function isUnpricedUsage(log: UsageCostLog): boolean {
     (!Number.isFinite(multiplier) || multiplier !== 0) &&
     totalCost === 0
   );
-}
-
-export interface StatsFilters {
-  timeRange: UsageRangePreset;
-  providerId?: string;
-  appType?: string;
 }

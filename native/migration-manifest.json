@@ -6,61 +6,61 @@
       "path": "services/session_usage.rs",
       "sha256": "6110f26c5be8ee1e543e101619d2f42f6b3a3e54082bf7486e7a44922f986596",
       "upstreamPath": "src-tauri/src/services/session_usage.rs",
-      "currentSha256": "6110f26c5be8ee1e543e101619d2f42f6b3a3e54082bf7486e7a44922f986596"
+      "currentSha256": "795d5cff76d84f0103d7821c20ceb741925f4a2ee04c3f1951d414d0eed5bac2"
     },
     {
       "path": "services/session_usage_agy.rs",
       "sha256": "9529a2d5f10f39225e6dd80df2f15c5a7b8bfc95aa198cbfe551b12df80d578b",
       "upstreamPath": "src-tauri/src/services/session_usage_agy.rs",
-      "currentSha256": "9529a2d5f10f39225e6dd80df2f15c5a7b8bfc95aa198cbfe551b12df80d578b"
+      "currentSha256": "cbcfcdbb7e11c30bf4754f6361bb31aefd63fa4d98de26b70ac5a3fe4c972398"
     },
     {
       "path": "services/session_usage_codex.rs",
       "sha256": "ff871d2973b99c14f5ae92747a383cb68167e41472021a5ad2411f37c98ab87c",
       "upstreamPath": "src-tauri/src/services/session_usage_codex.rs",
-      "currentSha256": "ff871d2973b99c14f5ae92747a383cb68167e41472021a5ad2411f37c98ab87c"
+      "currentSha256": "b09f2cf6f6afd12f87f00f45b8a4d91d1c4d7ae10ae396c6644bb5c7d04eab1a"
     },
     {
       "path": "services/session_usage_dsh.rs",
       "sha256": "7f8ef800bfdf4c684c47eddaf78f98cf05a1b15ebeea4412da805724c3d8bbd4",
       "upstreamPath": "src-tauri/src/services/session_usage_dsh.rs",
-      "currentSha256": "7f8ef800bfdf4c684c47eddaf78f98cf05a1b15ebeea4412da805724c3d8bbd4"
+      "currentSha256": "354a7b3d64a46c3baf4fd2dac3d72d92c3d0038e3ee4e30444777d2b255628a5"
     },
     {
       "path": "services/session_usage_gemini.rs",
       "sha256": "9992b41fd74edcfc4f2c58891eaef3aabfee0fe478addef0bd6355f99177f1a1",
       "upstreamPath": "src-tauri/src/services/session_usage_gemini.rs",
-      "currentSha256": "9992b41fd74edcfc4f2c58891eaef3aabfee0fe478addef0bd6355f99177f1a1"
+      "currentSha256": "eb8857fff74317ef7e673e7dbf069590f6a371bd55217a11955c9a75e3c4c27a"
     },
     {
       "path": "services/session_usage_grokbuild.rs",
       "sha256": "cde7db1b98032f559546e37f9c9b5f29777a20fee436b0eaee8a642e38837099",
       "upstreamPath": "src-tauri/src/services/session_usage_grokbuild.rs",
-      "currentSha256": "cde7db1b98032f559546e37f9c9b5f29777a20fee436b0eaee8a642e38837099"
+      "currentSha256": "f6a614c7b15f1ab43b98009dc3a1c63bf0180b788e2e505c4e47cf3072e0ef33"
     },
     {
       "path": "services/session_usage_kimi.rs",
       "sha256": "43470f3c3f1de816d9da3bd6befb66f9ee207d6f8f1177481541a0da84e80fd2",
       "upstreamPath": "src-tauri/src/services/session_usage_kimi.rs",
-      "currentSha256": "43470f3c3f1de816d9da3bd6befb66f9ee207d6f8f1177481541a0da84e80fd2"
+      "currentSha256": "30ca1d16a76a0ad6a4f43fa95545d00cf2950fe68b9130516838a1cc4b1e8ac0"
     },
     {
       "path": "services/session_usage_mcode.rs",
       "sha256": "b3f3c1815f27a8c63b50c633294d0f2c79ad8965ef13fa27f2fa2d01403acbea",
       "upstreamPath": "src-tauri/src/services/session_usage_mcode.rs",
-      "currentSha256": "b3f3c1815f27a8c63b50c633294d0f2c79ad8965ef13fa27f2fa2d01403acbea"
+      "currentSha256": "bd40160063e8d300932fc1f4d8ad1483a1e64abf6c702f8be7eef16bf9e67171"
     },
     {
       "path": "services/session_usage_opencode.rs",
       "sha256": "4b493f9143620c4af4e046633106a107d53afc648a4cfad081c35327b6100e58",
       "upstreamPath": "src-tauri/src/services/session_usage_opencode.rs",
-      "currentSha256": "4b493f9143620c4af4e046633106a107d53afc648a4cfad081c35327b6100e58"
+      "currentSha256": "8347a5ef25c8a096df46a67f898cdb3179c236e076f80b03e65594574ec26b2b"
     },
     {
       "path": "services/session_usage_pi.rs",
       "sha256": "3739565600784924f53bc8c375a0d0f35d5203308d0e590c7b26d69e4826dee4",
       "upstreamPath": "src-tauri/src/services/session_usage_pi.rs",
-      "currentSha256": "3739565600784924f53bc8c375a0d0f35d5203308d0e590c7b26d69e4826dee4"
+      "currentSha256": "6ef3280cbcae8081e03736abbbcacd7c3660463444dc127c13096f1e7d51e867"
     },
     {
       "path": "services/session_usage_zcode.rs",
@@ -72,157 +72,151 @@
       "path": "services/usage_stats.rs",
       "sha256": "f877bb94e3f6006bd8b7daf77a0a2bbc79cadb4fc25979a8e636adb6391da74b",
       "upstreamPath": "src-tauri/src/services/usage_stats.rs",
-      "currentSha256": "f877bb94e3f6006bd8b7daf77a0a2bbc79cadb4fc25979a8e636adb6391da74b"
+      "currentSha256": "691e40568f3c56612b822f9314e87444d61e36b35b0141cc334e0a6c9ad30e65"
     },
     {
       "path": "services/sql_helpers.rs",
       "sha256": "45add500ac35a7136240d424265ef7a74800b6740478544ad09827d2ecc72519",
       "upstreamPath": "src-tauri/src/services/sql_helpers.rs",
-      "currentSha256": "45add500ac35a7136240d424265ef7a74800b6740478544ad09827d2ecc72519"
+      "currentSha256": "880b1b9ee94163130cb9187154cc8758e50639e5b439450345c4389bcae2c8b3"
     },
     {
       "path": "services/model_pricing.rs",
       "sha256": "28fa011bfd9905ee47e2a487e054e47bc219156a8b5bfa6bf3a48983ecc33584",
       "upstreamPath": "src-tauri/src/services/model_pricing.rs",
-      "currentSha256": "28fa011bfd9905ee47e2a487e054e47bc219156a8b5bfa6bf3a48983ecc33584"
+      "currentSha256": "6608ec339958c21cce8f466b4836fbe9777c447c61f0d2813cf7f45538feb593"
     },
     {
       "path": "proxy/usage/calculator.rs",
       "sha256": "4828753d4438b686cece2056b0855801128892f388b909aeb446cd24d0e67fde",
       "upstreamPath": "src-tauri/src/proxy/usage/calculator.rs",
-      "currentSha256": "4828753d4438b686cece2056b0855801128892f388b909aeb446cd24d0e67fde"
+      "currentSha256": "c67165712e4b1144c20c22fa1cb1b0f6227693431468c19946fd6e2263a27302"
     },
     {
       "path": "proxy/usage/parser.rs",
       "sha256": "8cee417bd88497a7e2424aa6a6753422274958792f87b8aa27af25d4697bdfca",
       "upstreamPath": "src-tauri/src/proxy/usage/parser.rs",
-      "currentSha256": "8cee417bd88497a7e2424aa6a6753422274958792f87b8aa27af25d4697bdfca"
+      "currentSha256": "c66a9206384008cbd3b8fa4df745cdb4211e7e7b68dffc808abcf48d35b790d8"
     },
     {
       "path": "error.rs",
       "sha256": "ee4e1aef629a9e8e89ab85b05a7b059a49d7afc12544e1248ced3ba530d1e849",
       "upstreamPath": "src-tauri/src/error.rs",
-      "currentSha256": "ee4e1aef629a9e8e89ab85b05a7b059a49d7afc12544e1248ced3ba530d1e849"
+      "currentSha256": "8d9d2c2bbc29fb4755c7330af0fd2acadf63d6f3c850284e16dc449c26ef9331"
     },
     {
       "path": "codex_rollout_file.rs",
       "sha256": "90ecf5e7ab4289578a67388c61fa2826f1f5d8fbbc6ff711132e40d82cc04771",
       "upstreamPath": "src-tauri/src/codex_rollout_file.rs",
-      "currentSha256": "90ecf5e7ab4289578a67388c61fa2826f1f5d8fbbc6ff711132e40d82cc04771"
+      "currentSha256": "19ec4f5af4ce3e83b632b7ca94357b8117285bd294ad83ace8f401c3efff2748"
     },
     {
       "path": "kimi_session.rs",
       "sha256": "20e185cc1ea89161c601809512f0f273831856e0ce44d0f7152b98b9586e34c1",
       "upstreamPath": "src-tauri/src/kimi_session.rs",
-      "currentSha256": "20e185cc1ea89161c601809512f0f273831856e0ce44d0f7152b98b9586e34c1"
+      "currentSha256": "4666b1d09246635282d68e8e1f28765b7e07e96ce7e4beed382214fe4e061569"
     },
     {
       "path": "session_manager/model.rs",
       "sha256": "72729ea4c5822aa400f0c55606895d2f28c989ae1c373acad332ebbc3fef5fc2",
       "upstreamPath": "src-tauri/src/session_manager/model.rs",
-      "currentSha256": "72729ea4c5822aa400f0c55606895d2f28c989ae1c373acad332ebbc3fef5fc2"
+      "currentSha256": "7521ec479d8db58cdfc1fd1e6fcdb4a26ffbb497ad1a0e53b733cb322d8fc11f"
     },
     {
       "path": "session_manager/providers/utils.rs",
       "sha256": "66c0500f664afaec978a6c30278a4f439b4bce901971e117c9d2909716fcb8bc",
       "upstreamPath": "src-tauri/src/session_manager/providers/utils.rs",
-      "currentSha256": "66c0500f664afaec978a6c30278a4f439b4bce901971e117c9d2909716fcb8bc"
+      "currentSha256": "313b722ddf5573d2238cd18f792a42636088680bc078cf139d74e3cee6f889e9"
     },
     {
       "path": "session_manager/providers/blocks.rs",
       "sha256": "f834cc6a7fb95fd255809775536eaeb48a99e65537e060b3a07bbd90e2d24f1b",
       "upstreamPath": "src-tauri/src/session_manager/providers/blocks.rs",
-      "currentSha256": "f834cc6a7fb95fd255809775536eaeb48a99e65537e060b3a07bbd90e2d24f1b"
+      "currentSha256": "c0f38a04ae532f0dcb40c17a6f51d175a355a9fa072dc7d706c28fc4dd76dfd8"
     },
     {
       "path": "session_manager/providers/pi_blocks.rs",
       "sha256": "068f706132a2cb62bbda8dbc0254c38485c3ab10be5af030276e632b04239813",
       "upstreamPath": "src-tauri/src/session_manager/providers/pi_blocks.rs",
-      "currentSha256": "068f706132a2cb62bbda8dbc0254c38485c3ab10be5af030276e632b04239813"
+      "currentSha256": "26cc44d64931a70e0cd092c8c08923e136f7d3407c561c9a4af5498ca3122586"
     },
     {
       "path": "session_manager/providers/pi.rs",
       "sha256": "f750f48c32fcda0c92123f4f6ebac0ff98011267338cfb9cc1f0d30913a87a85",
       "upstreamPath": "src-tauri/src/session_manager/providers/pi.rs",
-      "currentSha256": "f750f48c32fcda0c92123f4f6ebac0ff98011267338cfb9cc1f0d30913a87a85"
+      "currentSha256": "ae4ba43635eee49ac1e4c7e0d3079a8d2c7f40b0628ba05f3b2e9fa8c5767bf6"
     },
     {
       "path": "session_manager/providers/gemini.rs",
       "sha256": "f48afb9cb1284af40c77d0c4ab4a92ea192bc087ec17ffb7b81039b9799b0e64",
       "upstreamPath": "src-tauri/src/session_manager/providers/gemini.rs",
-      "currentSha256": "f48afb9cb1284af40c77d0c4ab4a92ea192bc087ec17ffb7b81039b9799b0e64"
+      "currentSha256": "f4d1a483b8cd56ba4bc5172a0a86ed27da10b587f7efdcccb20abaf5c35c3b5a"
     },
     {
       "path": "session_manager/providers/grokbuild.rs",
       "sha256": "5bd3633947ef9c0bad117eb9ce12f40a79bc657bff5c752b46f0f673e22cb1e7",
       "upstreamPath": "src-tauri/src/session_manager/providers/grokbuild.rs",
-      "currentSha256": "5bd3633947ef9c0bad117eb9ce12f40a79bc657bff5c752b46f0f673e22cb1e7"
+      "currentSha256": "d4dd1daf94ababc6c61ad0a8597b51fd2f9fca3f044abf894c89882fc419b9ee"
     },
     {
       "path": "session_manager/providers/mcode.rs",
       "sha256": "1df38d405470610533ee6ae9fd0c4a61ff9f7d756bd6a7e449bbe7497ee02fb1",
       "upstreamPath": "src-tauri/src/session_manager/providers/mcode.rs",
-      "currentSha256": "1df38d405470610533ee6ae9fd0c4a61ff9f7d756bd6a7e449bbe7497ee02fb1"
+      "currentSha256": "908e62b21161482f3b63f252a2ce2bd4bc5c4edd73758e9ff8fd5a3936409fe6"
     },
     {
       "path": "session_manager/providers/agy.rs",
       "sha256": "2d92273f2c1324a267dcfbc699da3f7d639797e15c035ce6844000f2800224f6",
       "upstreamPath": "src-tauri/src/session_manager/providers/agy.rs",
-      "currentSha256": "2d92273f2c1324a267dcfbc699da3f7d639797e15c035ce6844000f2800224f6"
-    },
-    {
-      "path": "lan_usage/aggregate.rs",
-      "sha256": "c962ef50f5821949b85929f6cf3bcbf8e157fc7603e2e2665088223ad9c3ae8d",
-      "upstreamPath": "src-tauri/src/lan_usage/aggregate.rs",
-      "currentSha256": "c962ef50f5821949b85929f6cf3bcbf8e157fc7603e2e2665088223ad9c3ae8d"
+      "currentSha256": "f7eab063b310fd936c452d19a97ee97d2d7b9472ea14e248a30503bd400cbe4e"
     },
     {
       "path": "lan_usage/client.rs",
       "sha256": "e1447ae0182e3d44905beef1f6e04b082c54c782f3553a122d04f9231f4c85fb",
       "upstreamPath": "src-tauri/src/lan_usage/client.rs",
-      "currentSha256": "e1447ae0182e3d44905beef1f6e04b082c54c782f3553a122d04f9231f4c85fb"
+      "currentSha256": "2266e84ba21a1e41c8fe95a30d677769f911ee7205854e55c4be4cd7478e3a19"
     },
     {
       "path": "lan_usage/discovery.rs",
       "sha256": "67bfb2a66e30b98c291e0ca4c65ae5028bef07aa8c31b4c03b13ddb2f17fd2e4",
       "upstreamPath": "src-tauri/src/lan_usage/discovery.rs",
-      "currentSha256": "67bfb2a66e30b98c291e0ca4c65ae5028bef07aa8c31b4c03b13ddb2f17fd2e4"
+      "currentSha256": "c25f44a4cff23020ce4e1ff9cbfb2d44a694d548c82b61f061f08ec3e5eb1b8e"
     },
     {
       "path": "lan_usage/identity.rs",
       "sha256": "2d510cfc7ea04ad76bb33eaf5e9ff9ff6391376ffcf2c1aa7ccf566cf21cb531",
       "upstreamPath": "src-tauri/src/lan_usage/identity.rs",
-      "currentSha256": "1866501645bc299ca0282fa92d982f157b17120886d580e8f62e84a219721ddc"
+      "currentSha256": "15ea16371ee18f4be085462427ab6591ff71ee23c36b1d6fb77f8ef033480669"
     },
     {
       "path": "lan_usage/interfaces.rs",
       "sha256": "c4eb50c4df1b32c90c5f49b0d0719ac8884494fe5a95e38bcd903859ac4ade37",
       "upstreamPath": "src-tauri/src/lan_usage/interfaces.rs",
-      "currentSha256": "c4eb50c4df1b32c90c5f49b0d0719ac8884494fe5a95e38bcd903859ac4ade37"
+      "currentSha256": "c818cb8bcd8fd66cea1c17ea1c6b486c5dc23cf94a4dbf5aa0f2b0f8f6e4df63"
     },
     {
       "path": "lan_usage/mod.rs",
       "sha256": "9bd8aaca9ada0dfc49193680b9121e5be273d306dd50b0677af758a58a00d9a2",
       "upstreamPath": "src-tauri/src/lan_usage/mod.rs",
-      "currentSha256": "4967cec33f18088476c0f404af30e323c680e1f40bbbc94c2b54df62726ef23c"
+      "currentSha256": "e84303a513acfb1c3fbd03e92088086a973dd627c8978f3316ffeb232e841cc7"
     },
     {
       "path": "lan_usage/projection.rs",
       "sha256": "f5f2d6cc3a59c750d10db432abe5376675f7d829bfd38c81aaf9dd60d52038c9",
       "upstreamPath": "src-tauri/src/lan_usage/projection.rs",
-      "currentSha256": "f5f2d6cc3a59c750d10db432abe5376675f7d829bfd38c81aaf9dd60d52038c9"
+      "currentSha256": "4dd72463c0d10b85830048a5af4acef75eb6bc68ef16f369c027833be392c1d2"
     },
     {
       "path": "lan_usage/server.rs",
       "sha256": "f6213afa8dbee3ebf20164f2dc268be0ebbd7f55b2953ebd0e060615f31916e1",
       "upstreamPath": "src-tauri/src/lan_usage/server.rs",
-      "currentSha256": "f6213afa8dbee3ebf20164f2dc268be0ebbd7f55b2953ebd0e060615f31916e1"
+      "currentSha256": "9dd94f1421a0c9253296535cf50e2138d7924a6fe34ca4f24380091dfa7aeb50"
     },
     {
       "path": "lan_usage/storage.rs",
       "sha256": "c407d27ee9c6349bffa852e057df67890e6be8db00a9b43e54fdf637c031b0a1",
       "upstreamPath": "src-tauri/src/lan_usage/storage.rs",
-      "currentSha256": "c407d27ee9c6349bffa852e057df67890e6be8db00a9b43e54fdf637c031b0a1"
+      "currentSha256": "9c229f5425dfb14111e4c6d8fabb430ea880f866e999d36682b946175c882f08"
     }
   ],
   "extractedSchemaFunctions": [
@@ -237,12 +231,12 @@
     {
       "path": "types/usage.ts",
       "upstreamPath": "src/types/usage.ts",
-      "currentSha256": "84e82905302db42e6c59a8df0ae4579d72a5493fac3eb3f3a819090c799744f7"
+      "currentSha256": "98bf6702b8de5c2378983e1ca06abcb17d594b6d70f3805beb7282fe987584b3"
     },
     {
       "path": "lib/modelsDev.ts",
       "upstreamPath": "src/lib/modelsDev.ts",
-      "currentSha256": "6f6142f612cef908b5ad7d1581309a4130f5a3b79234280e6870985edda896c3"
+      "currentSha256": "15cba68fa3dc82060b775c6e578cfb52b32a9f9f7494ac2f765c067d3a164330"
     },
     {
       "path": "lib/modelsDevPricing.ts",
@@ -252,7 +246,7 @@
     {
       "path": "lib/modelsDevAutoSync.ts",
       "upstreamPath": "src/lib/modelsDevAutoSync.ts",
-      "currentSha256": "92d591b40c856dee2f9f35ec361f2e0e6ac4304bdbaae9d94a4b9da42d434b88"
+      "currentSha256": "30a2bcaabc1bf0c52d53ea12965c0f47507a35ebd5a1f96266b41db0d90811cd"
     }
   ]
 }

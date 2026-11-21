@@ -256,6 +256,7 @@ fn parse_gemini_tokens(tokens: &serde_json::Value) -> GeminiTokens {
 /// takes the lock itself, used by the tests;
 /// the production path uses [`insert_gemini_session_entry_on_conn`] and reuses the
 /// file-level transaction and the pricing cache)
+#[cfg(test)]
 fn insert_gemini_session_entry(
     db: &Database,
     request_id: &str,

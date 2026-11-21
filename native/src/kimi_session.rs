@@ -148,10 +148,12 @@ impl RequestIndex {
         }
     }
 
+    #[cfg(test)]
     pub fn get(&self, meta: &Value) -> Option<&RequestInfo> {
         self.messages.get(meta["messageId"].as_str()?)
     }
 
+    #[cfg(test)]
     pub fn model<'a>(&'a self, meta: &'a Value) -> Option<&'a str> {
         self.get(meta)
             .and_then(|info| info.model.as_deref())

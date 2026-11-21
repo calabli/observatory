@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 pub mod activity;
 pub mod api;
 pub mod codex_rollout_file;

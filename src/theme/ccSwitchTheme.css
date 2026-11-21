@@ -7,9 +7,6 @@
   color: var(--accent);
   font-size: 16px;
 }
-#observatory-root .app-nav .icon-button {
-  position: relative;
-}
 #observatory-root .about-update-dot {
   position: absolute;
   width: 8px;
@@ -146,32 +143,12 @@
   --nav: light-dark(#f0f0f3, #202024);
   --line: light-dark(#e4e4e9, #3c3c43);
 }
-#observatory-root .windows-polish .app-nav {
-  background: linear-gradient(180deg, light-dark(#fafafd, #29292e), var(--nav));
-  border-bottom-color: light-dark(#dadae0, #393940);
-  box-shadow:
-    0 1px 0 light-dark(#fff9, #ffffff08),
-    0 5px 18px light-dark(#23233708, #00000018);
-}
 #observatory-root .windows-polish .brand-mark {
   width: 34px;
   height: 34px;
   border-radius: 10px;
   background: var(--accent-soft);
   box-shadow: inset 0 1px 0 light-dark(#ffffffb0, #ffffff10);
-}
-#observatory-root .windows-polish .app-nav nav button {
-  border-radius: 8px;
-  transition:
-    background-color 150ms,
-    color 150ms,
-    box-shadow 150ms;
-}
-#observatory-root .windows-polish .app-nav nav button[aria-current="page"] {
-  background: light-dark(#ffffff, #38383e);
-  box-shadow:
-    0 1px 3px light-dark(#2323371a, #00000040),
-    inset 0 0 0 1px light-dark(#d8d8df, #ffffff0d);
 }
 #observatory-root .windows-polish .panel,
 #observatory-root .windows-polish .device-card,
@@ -196,11 +173,7 @@
     0 14px 40px light-dark(#1e203026, #00000080),
     inset 0 1px 0 light-dark(#fff, #ffffff10);
 }
-@media (prefers-reduced-motion: reduce) {
-  #observatory-root .windows-polish .app-nav nav button {
-    transition: none;
-  }
-}
+
 html,
 body {
   background: light-dark(#ffffff, #1c1c1e);
@@ -241,11 +214,6 @@ body {
   --heat-3: color-mix(in srgb, var(--chart-usage) 80%, transparent);
   --heat-4: light-dark(#0e7490, #38bdf8);
 }
-#observatory-root .app-nav {
-  min-height: 60px;
-  padding: 10px 20px;
-  gap: 24px;
-}
 #observatory-root .brand {
   font-size: 17px;
   gap: 8px;
@@ -255,19 +223,6 @@ body {
 }
 #observatory-root .brand small {
   display: none;
-}
-#observatory-root .app-nav nav button {
-  color: var(--text-secondary);
-  font-size: 13px;
-  padding: 8px 12px;
-}
-#observatory-root .app-nav nav button[aria-current="page"] {
-  background: var(--selected);
-  box-shadow: none;
-  color: var(--text);
-}
-#observatory-root .app-nav nav button[aria-current="page"] svg {
-  color: var(--accent);
 }
 #observatory-root main {
   padding: 24px 24px 16px;
@@ -300,8 +255,7 @@ body {
 }
 #observatory-root .button,
 #observatory-root .icon-button,
-#observatory-root select,
-#observatory-root .device-picker {
+#observatory-root select {
   border-color: var(--border-strong);
   border-radius: 6px;
 }
@@ -566,45 +520,16 @@ body {
   flex-wrap: wrap;
   justify-content: flex-end;
 }
-@media (max-width: 1050px) {
-  #observatory-root .app-nav {
-    gap: 16px;
-  }
-  #observatory-root .app-nav nav button {
-    padding: 8px;
-    font-size: 12px;
-  }
-}
+
 @media (max-width: 820px) {
-  #observatory-root .app-nav nav button {
-    font-size: 12px;
-  }
   #observatory-root .usage-token-parts {
     grid-template-columns: 1fr 1fr;
   }
 }
-@media (min-width: 721px) and (max-width: 820px) {
-  #observatory-root .app-nav {
-    flex-wrap: nowrap;
-  }
-  #observatory-root .app-nav nav {
-    order: 0;
-    flex-basis: auto;
-    flex-wrap: nowrap;
-  }
-  #observatory-root .app-nav nav button {
-    flex: initial;
-  }
-  #observatory-root .app-nav > .icon-button {
-    margin-left: 0;
-  }
-}
+
 @media (max-width: 560px) {
   #observatory-root main {
     padding: 20px 14px 14px;
-  }
-  #observatory-root .app-nav {
-    padding: 12px 14px;
   }
   #observatory-root .usage-metric-strip > .stat {
     padding: 13px 12px;

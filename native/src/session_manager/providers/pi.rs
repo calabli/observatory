@@ -3,7 +3,6 @@ use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
 use serde_json::Value;
 
 use crate::session_manager::{SessionMessage, SessionMeta};
@@ -32,19 +31,6 @@ enum SessionRootResolution {
         layout: SessionLayout,
     },
     RequiresProjectContext {
-        configured_path: String,
-    },
-    Unavailable {
-        reason: String,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(tag = "status", rename_all = "snake_case")]
-pub enum PiSessionDiscovery {
-    Available,
-    RequiresProjectContext {
-        #[serde(rename = "configuredPath")]
         configured_path: String,
     },
     Unavailable {
@@ -114,16 +100,6 @@ fn session_files_from_resolution(
             "Pi sessionDir '{configured_path}' requires a project cwd and cannot be globally enumerated"
         )),
         SessionRootResolution::Unavailable { reason } => Err(reason),
-    }
-}
-
-pub fn session_discovery() -> PiSessionDiscovery {
-    match resolve_session_root() {
-        SessionRootResolution::Available { .. } => PiSessionDiscovery::Available,
-        SessionRootResolution::RequiresProjectContext { configured_path } => {
-            PiSessionDiscovery::RequiresProjectContext { configured_path }
-        }
-        SessionRootResolution::Unavailable { reason } => PiSessionDiscovery::Unavailable { reason },
     }
 }
 

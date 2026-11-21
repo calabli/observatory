@@ -48,8 +48,8 @@ export function UpdateControl({
     void inspect(false);
     const timer = setInterval(
       () => {
-        // A scheduled check while the window is hidden is pointless: the next
-        // hourly tick after it becomes visible makes up for it.
+        // Skip the check while the window is hidden; the next six-hourly tick
+        // or a manual check from the about dialog covers it.
         if (!document.hidden) void inspect(false);
       },
       6 * 60 * 60 * 1000,

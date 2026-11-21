@@ -1,10 +1,10 @@
 //! Read-only usage query API: offers statistics queries to TinyPane, automation
 //! scripts and other HTTP clients.
 //!
-//! The protocol is described in `docs/ai-usage-query-api-design.md`. The essentials:
+//! The protocol is documented in `docs/read-only-usage-http-api.md`. The essentials:
 //!
-//! - It only queries the statistics stored on this machine and does not aggregate the
-//!   snapshots of other devices;
+//! - It queries this machine's statistics by default; `devices` selects paired devices or
+//!   `all`, which reads their stored snapshots;
 //! - The top level is "the total of the selected range", `daily` and `buckets` are two
 //!   groupings of the same data and the three totals have to add up consistently;
 //! - The amounts are accumulated internally as fixed point decimals and are returned as

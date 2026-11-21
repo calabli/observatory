@@ -682,27 +682,6 @@ pub fn thinking_block(
     }
 }
 
-/// Build a `Text`: when it exceeds [`INLINE_TEXT_MAX_CHARS`] and a reference can be given only
-/// the preview (12 lines / 1200 characters) plus `full` is placed.
-/// It is only used for the content that is collapsed by default (the injected texts); a real
-/// question and the final reply render the full Markdown and do not go through here.
-pub fn large_text_block(
-    text: impl Into<String>,
-    full: impl FnOnce() -> Option<ContentRef>,
-) -> SessionBlock {
-    let text = text.into();
-    if text.chars().nth(INLINE_TEXT_MAX_CHARS).is_none() {
-        return SessionBlock::text(text);
-    }
-    match full() {
-        Some(full) => SessionBlock::Text {
-            text: preview(&text).text,
-            full: Some(full),
-        },
-        None => SessionBlock::text(text),
-    }
-}
-
 /// Build an `Event` with a long description (a compaction summary): when it exceeds
 /// [`EVENT_PREVIEW_CHARS`] and a reference can be given only the preview plus `full` is placed;
 /// without a reference it falls back to a preview with a `…`, so that the whole summary does

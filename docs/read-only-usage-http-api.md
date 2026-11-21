@@ -19,7 +19,7 @@ The collection is bound to the implementation by a test: `postman_collection_req
 
 ## Requests
 
-Only two query endpoints are exposed, both under `/api/v1/usage/`:
+Three query endpoints live under `/api/v1/usage/`; the two dashboard endpoints (`POST /api/v1/dashboard/usage` and `/api/v1/dashboard/models`) are described further below:
 
 | Endpoint | Purpose |
 |---|---|

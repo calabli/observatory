@@ -1067,15 +1067,6 @@ impl Database {
             false,
         )
     }
-    pub fn get_usage_summary_exact_app(
-        &self,
-        start: Option<i64>,
-        end: Option<i64>,
-        app: &str,
-    ) -> Result<UsageSummary, AppError> {
-        let conn = lock_conn!(self.conn);
-        Self::usage_summary_impl(&conn, start, end, Some(app), None, None, true)
-    }
     pub(crate) fn usage_summary_impl(
         conn: &Connection,
         start_date: Option<i64>,
@@ -1455,15 +1446,6 @@ impl Database {
             model,
             false,
         )
-    }
-    pub fn get_daily_trends_exact_app(
-        &self,
-        start: Option<i64>,
-        end: Option<i64>,
-        app: &str,
-    ) -> Result<Vec<DailyStats>, AppError> {
-        let conn = lock_conn!(self.conn);
-        Self::daily_trends_impl(&conn, start, end, Some(app), None, None, true)
     }
     pub(crate) fn daily_trends_impl(
         conn: &Connection,

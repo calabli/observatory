@@ -530,6 +530,7 @@ fn replay_caches() -> &'static Mutex<CodexReplayCaches> {
     CODEX_REPLAY_CACHES.get_or_init(|| Mutex::new(CodexReplayCaches::default()))
 }
 
+#[cfg(test)]
 pub(crate) fn clear_codex_replay_caches() {
     // Clearing it also discards the content that may have been written half way when the lock was held and a panic happened, so it also unpoisons the lock.
     let mut caches = replay_caches()
@@ -547,130 +548,6 @@ fn is_rollout_filename(file_name: &str) -> bool {
     let stem = file_name.trim_end_matches(".jsonl");
     stem.get(stem.len().saturating_sub(36)..)
         .is_some_and(|candidate| uuid::Uuid::parse_str(candidate).is_ok())
-}
-
-fn is_codex_cursor_path(file_path: &str, codex_dir: &Path) -> bool {
-    let path = Path::new(file_path);
-    let file_name = file_path.rsplit(['/', '\\']).next().unwrap_or_default();
-    if !is_rollout_filename(file_name) {
-        return false;
-    }
-
-    if path.starts_with(codex_dir.join("sessions"))
-        || path.starts_with(codex_dir.join("archived_sessions"))
-    {
-        return true;
-    }
-
-    // Tolerate the cursors that were left over after the user changed CODEX_HOME and whose source
-    // file no longer exists. Only a clear directory segment plus a Codex rollout UUID file name
-    // is accepted, so that a broad codex_dir does not delete the cursors of other importers.
-    file_path
-        .replace('\\', "/")
-        .split('/')
-        .any(|segment| matches!(segment, "sessions" | "archived_sessions"))
-}
-
-fn sqlite_table_exists(conn: &rusqlite::Connection, table: &str) -> Result<bool, AppError> {
-    conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1)",
-        [table],
-        |row| row.get(0),
-    )
-    .map_err(|error| AppError::Database(format!("查询表 {table} 失败: {error}")))
-}
-
-fn sqlite_column_exists(
-    conn: &rusqlite::Connection,
-    table: &str,
-    column: &str,
-) -> Result<bool, AppError> {
-    conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM pragma_table_info(?1) WHERE name = ?2)",
-        rusqlite::params![table, column],
-        |row| row.get(0),
-    )
-    .map_err(|error| AppError::Database(format!("查询列 {table}.{column} 失败: {error}")))
-}
-
-pub(crate) fn reset_codex_usage_on_conn(
-    conn: &rusqlite::Connection,
-    codex_dir: &Path,
-) -> Result<(), AppError> {
-    if sqlite_table_exists(conn, "proxy_request_logs")?
-        && sqlite_column_exists(conn, "proxy_request_logs", "data_source")?
-    {
-        conn.execute(
-            "DELETE FROM proxy_request_logs WHERE data_source = 'codex_session'",
-            [],
-        )
-        .map_err(|error| AppError::Database(format!("清理 Codex 会话明细失败: {error}")))?;
-    }
-    if sqlite_table_exists(conn, "usage_daily_rollups")?
-        && sqlite_column_exists(conn, "usage_daily_rollups", "provider_id")?
-    {
-        conn.execute(
-            "DELETE FROM usage_daily_rollups WHERE provider_id = '_codex_session'",
-            [],
-        )
-        .map_err(|error| AppError::Database(format!("清理 Codex 用量汇总失败: {error}")))?;
-    }
-    if sqlite_table_exists(conn, "session_log_sync")?
-        && sqlite_column_exists(conn, "session_log_sync", "file_path")?
-    {
-        let paths = {
-            let mut statement = conn
-                .prepare("SELECT file_path FROM session_log_sync")
-                .map_err(|error| {
-                    AppError::Database(format!("读取会话同步 cursor 失败: {error}"))
-                })?;
-            let paths = statement
-                .query_map([], |row| row.get::<_, String>(0))
-                .map_err(|error| AppError::Database(format!("查询会话同步 cursor 失败: {error}")))?
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|error| {
-                    AppError::Database(format!("解析会话同步 cursor 失败: {error}"))
-                })?;
-            paths
-        };
-        for file_path in paths
-            .into_iter()
-            .filter(|path| is_codex_cursor_path(path, codex_dir))
-        {
-            conn.execute(
-                "DELETE FROM session_log_sync WHERE file_path = ?1",
-                [file_path],
-            )
-            .map_err(|error| AppError::Database(format!("清理 Codex 同步 cursor 失败: {error}")))?;
-        }
-    }
-    Ok(())
-}
-
-impl Database {
-    pub(crate) fn reset_codex_usage(&self) -> Result<(), AppError> {
-        let codex_dir = get_codex_config_dir();
-        let conn = lock_conn!(self.conn);
-        conn.execute("SAVEPOINT reset_codex_usage", [])
-            .map_err(|error| AppError::Database(format!("开启 Codex 重建事务失败: {error}")))?;
-        let result = reset_codex_usage_on_conn(&conn, &codex_dir);
-        match result {
-            Ok(()) => {
-                conn.execute("RELEASE reset_codex_usage", [])
-                    .map_err(|error| {
-                        AppError::Database(format!("提交 Codex 重建事务失败: {error}"))
-                    })?;
-                drop(conn);
-                clear_codex_replay_caches();
-                Ok(())
-            }
-            Err(error) => {
-                conn.execute("ROLLBACK TO reset_codex_usage", []).ok();
-                conn.execute("RELEASE reset_codex_usage", []).ok();
-                Err(error)
-            }
-        }
-    }
 }
 
 fn non_empty_string(value: Option<&serde_json::Value>) -> Option<String> {
@@ -5871,72 +5748,6 @@ mod tests {
             |row| row.get(0),
         )?;
         assert_eq!(count, 2);
-        Ok(())
-    }
-
-    #[test]
-    fn reset_codex_usage_only_removes_codex_rows_and_structural_cursors() -> Result<(), AppError> {
-        let db = Database::memory()?;
-        let temp = tempdir().unwrap();
-        let wide_dir = temp.path();
-        let current_codex = rollout_path(&wide_dir.join("sessions"), CHILD_A_ID);
-        let legacy_codex =
-            format!("C:\\old-codex\\archived_sessions\\rollout-old-{CHILD_B_ID}.jsonl");
-        let gemini_cursor = wide_dir.join("gemini/sessions/session-123.json");
-        let claude_cursor = wide_dir.join(format!("projects/rollout-{PARENT_ID}.jsonl"));
-
-        {
-            let conn = lock_conn!(db.conn);
-            conn.execute_batch(
-                "INSERT INTO proxy_request_logs (
-                    request_id, provider_id, app_type, model, input_tokens,
-                    output_tokens, cache_read_tokens, latency_ms, status_code,
-                    created_at, data_source
-                 ) VALUES
-                    ('codex-row', '_codex_session', 'codex', 'gpt', 1, 1, 0, 0, 200, 1, 'codex_session'),
-                    ('gemini-row', '_gemini_session', 'gemini', 'gemini', 1, 1, 0, 0, 200, 1, 'gemini_session');
-                 INSERT INTO usage_daily_rollups (date, app_type, provider_id, model)
-                 VALUES
-                    ('2026-07-10', 'codex', '_codex_session', 'gpt'),
-                    ('2026-07-10', 'gemini', '_gemini_session', 'gemini');",
-            )?;
-            for path in [
-                current_codex.to_string_lossy().to_string(),
-                legacy_codex,
-                gemini_cursor.to_string_lossy().to_string(),
-                claude_cursor.to_string_lossy().to_string(),
-            ] {
-                conn.execute(
-                    "INSERT INTO session_log_sync
-                     (file_path, last_modified, last_line_offset, last_synced_at)
-                     VALUES (?1, 1, 1, 1)",
-                    [path],
-                )?;
-            }
-
-            reset_codex_usage_on_conn(&conn, wide_dir)?;
-            let codex_rows: i64 = conn.query_row(
-                "SELECT COUNT(*) FROM proxy_request_logs WHERE data_source = 'codex_session'",
-                [],
-                |row| row.get(0),
-            )?;
-            let gemini_rows: i64 = conn.query_row(
-                "SELECT COUNT(*) FROM proxy_request_logs WHERE data_source = 'gemini_session'",
-                [],
-                |row| row.get(0),
-            )?;
-            let codex_rollups: i64 = conn.query_row(
-                "SELECT COUNT(*) FROM usage_daily_rollups WHERE provider_id = '_codex_session'",
-                [],
-                |row| row.get(0),
-            )?;
-            let remaining_cursors: i64 =
-                conn.query_row("SELECT COUNT(*) FROM session_log_sync", [], |row| {
-                    row.get(0)
-                })?;
-            assert_eq!((codex_rows, gemini_rows, codex_rollups), (0, 1, 0));
-            assert_eq!(remaining_cursors, 2);
-        }
         Ok(())
     }
 

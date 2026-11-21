@@ -15,9 +15,6 @@ export interface ModelsDevSyncResult {
   syncedAt: number | null;
 }
 
-export const MODELS_DEV_SYNC_CONFIG_QUERY_KEY = [
-  "models-dev-sync-config",
-] as const;
 export const MODELS_DEV_STARTUP_SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 const errorMessage = (error: unknown) =>
