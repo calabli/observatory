@@ -9,7 +9,7 @@ description = "Local AI usage observatory"
 tauri-build = { version = "2.4", features = [] }
 
 [dependencies]
-tauri = { version = "~2.12.5", features = ["tray-icon"] }
+tauri = { version = "~2.12.5", features = ["tray-icon", "image-png"] }
 tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"

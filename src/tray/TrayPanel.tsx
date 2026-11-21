@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
+import { waveColor } from "../theme/wave";
 import { useQuery } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
-import { Radar, X, ExternalLink, Power } from "lucide-react";
+import { X, ExternalLink, Power } from "lucide-react";
+import observatoryMark from "../assets/observatory-mark.svg";
 import { usageCall } from "../native/usageClient";
 import { AppGlyph } from "../usage/AppGlyph";
 import { formatMoney, formatTokens, timeLabel } from "../usage/ui";
@@ -30,6 +32,9 @@ export function TrayPanel() {
       localStorage.getItem("observatory.color-scheme") ||
       (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"),
   );
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
   useEffect(() => {
     const onVisibility = () =>
       setVisible(document.visibilityState === "visible");
@@ -142,7 +147,7 @@ export function TrayPanel() {
         <header className="tray-head">
           <div className="tray-brand">
             <span className="tray-mark">
-              <Radar size={20} />
+              <img src={observatoryMark} alt="" />
             </span>
             <span>
               <strong>观测台</strong>
@@ -238,6 +243,7 @@ export function TrayPanel() {
                   style={{
                     height:
                       peak > 0 ? `${Math.max(2, (v / peak) * 100)}%` : "2%",
+                    background: waveColor(i, points.length),
                   }}
                 />
               ))}

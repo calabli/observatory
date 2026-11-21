@@ -1,0 +1,848 @@
+/* Widget theme: pure black/white canvas, large rounded cards, one bright accent
+   per card, pill controls and thin bar charts. Loaded after every other
+   stylesheet (see main.tsx and TrayPanel.tsx), so it only restates what changes. */
+
+html,
+body {
+  background: light-dark(#f2f2f7, #1c1c1e);
+}
+
+#observatory-root .obs-shell,
+#observatory-root .obs-shell.windows-polish {
+  /* Dark mode: gray canvas (#1c1c1e), pure black cards, controls inside a
+     card one step lighter (#2c2c2e). */
+  --bg: light-dark(#f2f2f7, #1c1c1e);
+  --surface: light-dark(#ffffff, #000000);
+  --surface-raised: light-dark(#ffffff, #2c2c2e);
+  --sidebar: var(--bg);
+  --nav: var(--bg);
+  --text: light-dark(#111113, #f5f5f7);
+  --text-secondary: light-dark(#55555c, #a1a1a8);
+  --muted: light-dark(#86868b, #8e8e93);
+  --line: light-dark(#e9e9ee, #38383a);
+  --line-soft: light-dark(#f0f0f4, #2c2c2e);
+  --border-strong: light-dark(#dcdce2, #48484a);
+  --soft: light-dark(#f2f2f6, #2c2c2e);
+  --selected: var(--text);
+  --off: light-dark(#e8e8ed, #3a3a3c);
+  /* Accents: one per kind of number. */
+  --accent-violet: light-dark(#7c5cf0, #a78bfa);
+  --accent-pink: light-dark(#e5195f, #ff2d78);
+  --accent-cyan: light-dark(#0ea5a0, #30d1c4);
+  --accent-blue: light-dark(#2f7cf0, #64a8ff);
+  --accent-orange: light-dark(#f07f1a, #ff9f45);
+  --accent-green: light-dark(#34a853, #7ed957);
+  --accent-red: light-dark(#e5484d, #ff6961);
+  --action: var(--text);
+  --action-hover: var(--text);
+  --accent: var(--accent-orange);
+  --accent-soft: color-mix(in srgb, var(--accent-orange) 14%, transparent);
+  --primary: var(--text);
+  --primary-text: var(--surface);
+  --good: var(--accent-green);
+  --good-soft: color-mix(in srgb, var(--accent-green) 16%, transparent);
+  --warning: light-dark(#b58900, #ffd60a);
+  --danger: var(--accent-red);
+  --teal: var(--accent-cyan);
+  --agent-color: var(--accent-orange);
+  --chart-usage: var(--accent-violet);
+  --chart-output: var(--accent-pink);
+  --chart-grid: light-dark(#f0f0f3, #2c2c2e);
+  /* Bar charts fade from --wave-from to --wave-to across the range. */
+  --wave-from: light-dark(#6d5cf5, #7d6eff);
+  --wave-to: light-dark(#e5197a, #ff3ca0);
+  --heat-1: color-mix(in srgb, var(--accent-violet) 28%, transparent);
+  --heat-2: color-mix(in srgb, var(--accent-violet) 52%, transparent);
+  --heat-3: color-mix(in srgb, var(--accent-violet) 76%, transparent);
+  --heat-4: var(--accent-violet);
+  --card-shadow: none;
+  --radius-card: 22px;
+  --radius-control: 999px;
+  background: var(--bg);
+  color: var(--text);
+  font-family:
+    -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
+    "Segoe UI Variable Display", "Segoe UI", "PingFang SC", "Microsoft YaHei",
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Sidebar ---------- */
+#observatory-root .app-sidebar {
+  background: var(--bg);
+  border-right: 0;
+}
+#observatory-root .app-sidebar .brand {
+  font-weight: 500;
+}
+#observatory-root .app-sidebar .brand-mark,
+#observatory-root .tray-mark {
+  border-radius: 10px;
+  background: var(--text);
+  color: var(--surface);
+  box-shadow: none;
+}
+#observatory-root .nav-group-label {
+  font-weight: 500;
+}
+#observatory-root .app-sidebar nav button {
+  min-height: 36px;
+  border-radius: 12px;
+  font-weight: 400;
+}
+#observatory-root .app-sidebar nav button:hover {
+  background: var(--soft);
+}
+#observatory-root .app-sidebar nav button[aria-current="page"] {
+  background: var(--text);
+  color: var(--surface);
+  font-weight: 500;
+}
+#observatory-root .app-sidebar nav button[aria-current="page"] > svg {
+  color: var(--surface);
+}
+#observatory-root .app-sidebar nav button[aria-current="page"]::before {
+  display: none;
+}
+#observatory-root .sidebar-foot {
+  border-top: 0;
+}
+#observatory-root .sidebar-action {
+  border-radius: 12px;
+}
+
+/* ---------- Page chrome ---------- */
+#observatory-root .page-heading h1 {
+  font-size: 24px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+#observatory-root .eyebrow {
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+#observatory-root .context-bar {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+#observatory-root .context-bar code {
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: var(--surface);
+}
+#observatory-root .status-dot {
+  background: var(--accent-green);
+  box-shadow: none;
+}
+#observatory-root .app-footer {
+  border-top: 0;
+}
+
+/* ---------- Cards ---------- */
+#observatory-root .panel,
+#observatory-root .device-card,
+#observatory-root .stats-grid:not(.usage-metric-strip) .stat,
+#observatory-root .windows-polish .panel,
+#observatory-root .windows-polish .device-card,
+#observatory-root .windows-polish .stats-grid:not(.usage-metric-strip) .stat {
+  background: var(--surface);
+  border: 0;
+  border-radius: var(--radius-card);
+  box-shadow: none;
+}
+#observatory-root :is(.panel, .stat, .device-card) :is(.panel, .device-card) {
+  background: var(--soft);
+}
+#observatory-root .panel {
+  padding: 18px 20px;
+}
+#observatory-root .panel-head h2 {
+  font-size: 13px;
+  font-weight: 500;
+}
+#observatory-root .panel-head p,
+#observatory-root .panel-head .muted {
+  font-size: 11px;
+}
+#observatory-root .stat-label {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+}
+#observatory-root .stat-value {
+  font-family: inherit;
+  font-size: 30px;
+  line-height: 1.1;
+  font-weight: 400;
+  letter-spacing: -0.03em;
+}
+#observatory-root .stat-detail {
+  font-size: 11px;
+}
+
+/* AI usage metric strip: four separate cards, the selected one is outlined. */
+#observatory-root .usage-metric-strip,
+#observatory-root .windows-polish .usage-metric-strip {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  gap: 12px;
+  overflow: visible;
+}
+#observatory-root .usage-metric-strip > .stat {
+  --metric: var(--accent-violet);
+  background: var(--surface);
+  border: 0;
+  border-radius: var(--radius-card);
+  box-shadow: none;
+}
+#observatory-root .usage-metric-strip > .stat:nth-child(2) {
+  --metric: var(--accent-pink);
+}
+#observatory-root .usage-metric-strip > .stat:nth-child(3) {
+  --metric: var(--accent-blue);
+}
+#observatory-root .usage-metric-strip > .stat:nth-child(4) {
+  --metric: var(--accent-cyan);
+}
+#observatory-root .usage-metric-strip > .stat:hover {
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+#observatory-root .usage-metric-strip > .stat[aria-pressed="true"] {
+  box-shadow: inset 0 0 0 1.5px var(--metric);
+}
+#observatory-root .usage-metric-strip > .stat .stat-value {
+  color: var(--text);
+}
+#observatory-root .usage-metric-strip > .stat[aria-pressed="true"] .stat-value {
+  color: var(--metric);
+}
+#observatory-root .usage-metric-strip > .stat .stat-label svg {
+  color: var(--metric);
+}
+
+/* Token composition: a segmented capsule above the four counts. */
+#observatory-root .usage-token-parts {
+  display: block;
+  margin-top: 12px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border-radius: var(--radius-card);
+}
+#observatory-root .token-capsule {
+  display: flex;
+  gap: 3px;
+  height: 12px;
+  margin-bottom: 12px;
+}
+#observatory-root .usage-token-parts .token-capsule i {
+  display: block;
+  width: auto;
+  height: 100%;
+  min-width: 8px;
+  flex-basis: 0;
+  border-radius: 4px;
+}
+#observatory-root .token-parts-legend {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+#observatory-root .token-parts-legend > span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--muted);
+}
+#observatory-root .token-parts-legend > span > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+#observatory-root .token-parts-legend i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+#observatory-root .token-parts-legend b {
+  font-size: 16px;
+  font-weight: 400;
+  color: var(--text);
+}
+
+/* ---------- Controls: everything becomes a pill ---------- */
+#observatory-root .button,
+#observatory-root .icon-button,
+#observatory-root select,
+#observatory-root .app-select-trigger,
+#observatory-root .windows-polish .button,
+#observatory-root .windows-polish .icon-button,
+#observatory-root .windows-polish select,
+#observatory-root .windows-polish .app-select-trigger {
+  border: 0;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: none;
+}
+#observatory-root
+  :is(.panel, .stat, .dialog, .usage-dialog, .tray-panel)
+  :is(.button, .icon-button, select, .app-select-trigger) {
+  background: var(--soft);
+}
+#observatory-root .button {
+  min-height: 30px;
+  padding: 5px 14px;
+  font-size: 12px;
+  font-weight: 400;
+}
+#observatory-root .button.primary,
+#observatory-root .windows-polish .button.primary {
+  background: var(--text);
+  color: var(--surface);
+  font-weight: 500;
+  box-shadow: none;
+}
+#observatory-root .button.primary:hover {
+  background: var(--text);
+  opacity: 0.85;
+}
+#observatory-root .icon-button {
+  width: 30px;
+  height: 30px;
+}
+#observatory-root .icon-button:hover,
+#observatory-root .button:not(.primary):hover {
+  background: var(--off);
+}
+#observatory-root .text-button {
+  color: var(--text);
+}
+#observatory-root input:not([type="checkbox"]):not([type="radio"]),
+#observatory-root textarea,
+#observatory-root .usage-input,
+#observatory-root .search {
+  border: 0;
+  border-radius: 12px;
+  background: var(--soft);
+  box-shadow: none;
+}
+#observatory-root .search input {
+  background: transparent;
+}
+#observatory-root button:focus-visible,
+#observatory-root select:focus-visible,
+#observatory-root input:focus-visible,
+#observatory-root .app-select-trigger[data-state="open"] {
+  outline: 2px solid color-mix(in srgb, var(--text) 45%, transparent);
+  outline-offset: 2px;
+}
+#observatory-root input[type="checkbox"] {
+  accent-color: var(--accent-green);
+}
+#observatory-root .segmented {
+  padding: 3px;
+  gap: 2px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--soft);
+}
+#observatory-root .segmented button {
+  border-radius: 999px;
+  padding: 3px 11px;
+  font-size: 11px;
+  font-weight: 400;
+}
+#observatory-root .segmented button[aria-pressed="true"] {
+  background: var(--text);
+  color: var(--surface);
+  box-shadow: none;
+}
+#observatory-root .tabs {
+  gap: 6px;
+  border-bottom: 0;
+}
+#observatory-root .tabs button {
+  padding: 5px 13px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 400;
+  background: var(--soft);
+}
+#observatory-root .tabs button[aria-pressed="true"] {
+  background: var(--text);
+  color: var(--surface);
+  font-weight: 500;
+}
+#observatory-root .tabs button[aria-pressed="true"]::after {
+  display: none;
+}
+#observatory-root .tabs button .badge {
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+}
+#observatory-root .badge {
+  border: 0;
+  border-radius: 999px;
+  background: var(--soft);
+  font-weight: 400;
+}
+#observatory-root .badge.good {
+  color: var(--accent-green);
+  background: color-mix(in srgb, var(--accent-green) 14%, transparent);
+}
+#observatory-root .badge.blue {
+  color: var(--accent-blue);
+  background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
+}
+#observatory-root .badge.warning {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+}
+
+/* Thin progress meters with a rounded fill. */
+#observatory-root .meter {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--off);
+  overflow: hidden;
+}
+#observatory-root .meter > span {
+  border-radius: 3px;
+  background: var(--meter-color, var(--accent-violet));
+}
+
+/* ---------- Charts ---------- */
+#observatory-root .chart-grid {
+  stroke: var(--chart-grid);
+}
+#observatory-root .trend .legend i {
+  border-radius: 50%;
+}
+#observatory-root .chart-tooltip {
+  border: 0;
+  border-radius: 14px;
+  background: var(--surface-raised);
+  box-shadow: 0 8px 24px light-dark(#0000001f, #000000a0);
+}
+#observatory-root .usage-heatmap > div,
+#observatory-root .usage-block,
+#observatory-root .usage-block-placeholder,
+#observatory-root .usage-block-legend b,
+#observatory-root .usage-heat-legend b {
+  border-radius: 50%;
+}
+
+/* ---------- Tables ---------- */
+#observatory-root .table-wrap {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+#observatory-root th {
+  height: 32px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+  background: transparent;
+  border-bottom: 0;
+}
+#observatory-root td,
+#observatory-root .usage-request-table td {
+  font-size: 12px;
+  border-bottom: 0;
+  border-top: 0.5px solid var(--line);
+}
+#observatory-root tbody tr:hover {
+  background: var(--soft);
+}
+#observatory-root tbody tr:hover td:first-child {
+  border-radius: 10px 0 0 10px;
+}
+#observatory-root tbody tr:hover td:last-child {
+  border-radius: 0 10px 10px 0;
+}
+#observatory-root .app-glyph {
+  border-radius: 8px;
+  background: var(--soft);
+}
+
+/* ---------- Overlays ---------- */
+#observatory-root .dialog,
+#observatory-root .usage-dialog,
+#observatory-root .app-select-menu,
+#observatory-root .windows-polish .dialog,
+#observatory-root .windows-polish .usage-dialog,
+#observatory-root .windows-polish .app-select-menu {
+  border: 0;
+  border-radius: 26px;
+  background: var(--surface-raised);
+  box-shadow: 0 24px 64px light-dark(#00000029, #000000c0);
+}
+#observatory-root .app-select-menu {
+  border-radius: 16px;
+}
+#observatory-root .app-select-item {
+  border-radius: 10px;
+}
+#observatory-root .toast {
+  border-radius: 999px;
+  background: var(--text);
+  color: var(--surface);
+}
+
+/* ---------- Overview ---------- */
+#observatory-root .bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+}
+#observatory-root .bars > i {
+  flex: 1;
+  min-width: 2px;
+  border-radius: 3px;
+}
+#observatory-root .stat .bars {
+  height: 26px;
+  margin-top: 12px;
+}
+#observatory-root .week-bars {
+  height: 150px;
+  gap: 10px;
+}
+#observatory-root .week-bars > i {
+  border-radius: 8px;
+}
+#observatory-root .week-labels {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+#observatory-root .week-labels > span {
+  flex: 1;
+  text-align: center;
+}
+#observatory-root .app-costs .meter > span {
+  --meter-color: var(--accent-violet);
+}
+#observatory-root .ov-cost .stat-value {
+  color: var(--accent-violet);
+}
+#observatory-root .ov-all .stat-value {
+  color: var(--accent-cyan);
+}
+
+/* ---------- Tray panel ---------- */
+#observatory-root .tray-panel {
+  border-radius: 26px;
+  background: var(--surface);
+  border: 0;
+}
+#observatory-root .tray-range button,
+#observatory-root .tray-device button {
+  border-radius: 999px;
+}
+#observatory-root .tray-primary {
+  border-radius: 999px;
+  background: var(--text);
+  color: var(--surface);
+}
+
+/* ---------- Subscriptions & quota ---------- */
+#observatory-root .sp-tabs {
+  gap: 6px;
+  border-bottom: 0;
+}
+#observatory-root .sp-tabs > button:not(.button) {
+  padding: 5px 13px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 12px;
+}
+#observatory-root .sp-tabs > button[aria-pressed="true"] {
+  background: var(--text);
+  color: var(--surface);
+}
+/* These blocks sit directly on the page, not inside a card, so they take the
+   card color like every other top-level block. */
+#observatory-root .sp-agent {
+  border: 0;
+  border-radius: 16px;
+  background: var(--surface);
+}
+#observatory-root .sp-agent.selected {
+  box-shadow: inset 0 0 0 1.5px var(--accent-orange);
+}
+#observatory-root .sp-mode {
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--surface);
+}
+#observatory-root .sp-mode button {
+  border-radius: 999px;
+}
+#observatory-root .sp-mode button[aria-pressed="true"] {
+  background: var(--text);
+  color: var(--surface);
+}
+#observatory-root :is(.sp-form, .sp-cycle-nav) select {
+  border: 0;
+  border-radius: 999px;
+}
+#observatory-root .sp-period,
+#observatory-root .sp-metrics {
+  border: 0;
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+/* The page column is a nested <main>: it must not pick up the page padding. */
+#observatory-root .sp-layout > main {
+  padding: 0;
+}
+#observatory-root .sp-metrics > div + div {
+  border-left: 0.5px solid var(--line);
+}
+#observatory-root .sp-metrics strong {
+  font-weight: 400;
+  letter-spacing: -0.02em;
+}
+#observatory-root .sp-metrics > div:nth-child(2) strong {
+  color: var(--accent-orange);
+}
+#observatory-root .sp-bar-col > div {
+  border-radius: 6px;
+  background: var(--accent-orange);
+}
+#observatory-root .sp-bar-tip {
+  border: 0;
+  border-radius: 12px;
+  background: var(--surface-raised);
+}
+#observatory-root .button[aria-pressed="true"] {
+  background: var(--text);
+  color: var(--surface);
+}
+#observatory-root .toggle {
+  background: var(--off);
+}
+#observatory-root .toggle:checked {
+  background: var(--accent-green);
+}
+#observatory-root .toggle::before {
+  background: #ffffff;
+}
+
+/* ---------- Network ---------- */
+#observatory-root .network-live {
+  --accent: var(--accent-blue);
+  --teal: var(--accent-pink);
+}
+#observatory-root .network-cards strong,
+#observatory-root .network-public-ip strong {
+  font-weight: 400;
+  letter-spacing: -0.02em;
+}
+#observatory-root .network-cards > :nth-child(3) strong {
+  color: var(--accent-blue);
+}
+#observatory-root .network-cards > :nth-child(4) strong {
+  color: var(--accent-pink);
+}
+
+/* ---------- Activity log: one color per event kind ---------- */
+#observatory-root .activity-kind {
+  --kind: var(--muted);
+  color: var(--kind);
+  background: color-mix(in srgb, var(--kind) 14%, transparent);
+}
+#observatory-root .activity-kind[data-kind="scan"] {
+  --kind: var(--accent-cyan);
+}
+#observatory-root .activity-kind[data-kind="api_in"] {
+  --kind: var(--accent-blue);
+}
+#observatory-root .activity-kind[data-kind="sync"] {
+  --kind: var(--accent-green);
+}
+#observatory-root .activity-kind[data-kind="action"] {
+  --kind: var(--accent-orange);
+}
+#observatory-root .activity-detail > td {
+  background: var(--soft);
+  border-radius: 0 0 14px 14px;
+}
+#observatory-root .badge.danger,
+#observatory-root .badge.error {
+  color: var(--accent-red);
+  background: color-mix(in srgb, var(--accent-red) 14%, transparent);
+}
+
+/* ---------- Tray panel details ---------- */
+#observatory-root .tray-range {
+  padding: 3px;
+  border-radius: 999px;
+}
+#observatory-root .tray-range button[aria-pressed="true"] {
+  background: var(--text);
+  color: var(--surface);
+}
+#observatory-root .tray-hero {
+  border: 0;
+  border-radius: 20px;
+  background: var(--soft);
+}
+#observatory-root .tray-hero strong {
+  font-weight: 400;
+  letter-spacing: -0.03em;
+  color: var(--accent-violet);
+}
+#observatory-root .tray-bars span {
+  border-radius: 3px;
+}
+#observatory-root .tray-stats {
+  gap: 8px;
+  border: 0;
+  background: transparent;
+}
+#observatory-root .tray-stats div {
+  border-radius: 16px;
+  background: var(--soft);
+}
+#observatory-root .tray-stats strong {
+  font-weight: 400;
+}
+#observatory-root .tray-stats div:nth-child(3) strong {
+  color: var(--accent-cyan);
+}
+#observatory-root .tray-stats div:nth-child(4) strong {
+  color: var(--accent-green);
+}
+#observatory-root .tray-actions .tray-primary {
+  background: var(--text);
+  color: var(--surface);
+  font-weight: 500;
+}
+#observatory-root .tray-head,
+#observatory-root .tray-actions,
+#observatory-root .tray-foot {
+  border-color: var(--line);
+}
+
+/* Dark-on-transparent app icons turn light in dark mode; hue-rotate keeps
+   colored parts (such as Kimi's blue dot) close to their original hue. */
+html[data-theme="dark"] #observatory-root .app-glyph img.dark-ink {
+  filter: invert(1) hue-rotate(180deg);
+}
+
+/* Page-level boxes sit on the card level; inside a card they step up one. */
+#observatory-root .multi-scan-panel {
+  border: 0;
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+#observatory-root .multi-scan-device + .multi-scan-device,
+#observatory-root .multi-scan-panel li + li {
+  border-color: var(--line);
+}
+#observatory-root .usage-note {
+  border-radius: 14px;
+  background: var(--surface);
+}
+#observatory-root :is(.panel, .dialog, .usage-dialog) .usage-note {
+  background: var(--soft);
+}
+
+/* ---------- Model speed chart ---------- */
+#observatory-root .model-speed-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+#observatory-root .model-speed-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 220px) minmax(0, 1fr) 110px 86px;
+  align-items: center;
+  gap: 14px;
+  font-size: 12px;
+}
+#observatory-root .model-speed-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#observatory-root .model-speed-track {
+  height: 10px;
+  border-radius: 5px;
+  background: var(--off);
+  overflow: hidden;
+}
+#observatory-root .model-speed-track > i {
+  display: block;
+  height: 100%;
+  border-radius: 5px;
+}
+#observatory-root .model-speed-value {
+  font-size: 16px;
+  font-weight: 400;
+  text-align: right;
+  letter-spacing: -0.02em;
+}
+#observatory-root .model-speed-value small {
+  font-size: 11px;
+  color: var(--muted);
+}
+#observatory-root .model-speed-first {
+  font-size: 11px;
+  color: var(--muted);
+  text-align: right;
+}
+@media (max-width: 720px) {
+  #observatory-root .model-speed-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  #observatory-root .model-speed-track {
+    grid-column: 1 / -1;
+    order: 3;
+  }
+  #observatory-root .model-speed-first {
+    display: none;
+  }
+}
+
+/* Brand mark: the app icon artwork, used as is on both themes. */
+#observatory-root .app-sidebar .brand-mark,
+#observatory-root .tray-mark {
+  padding: 0;
+  overflow: hidden;
+  background: transparent;
+}
+#observatory-root :is(.brand-mark, .tray-mark) img,
+#observatory-root .about-mark {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+#observatory-root .about-mark {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+}
+
+/* Page-level tabs and selects take the card color; inside a card they step up. */
+#observatory-root .tabs button:not([aria-pressed="true"]),
+#observatory-root .sp-controls select {
+  background: var(--surface);
+}
+#observatory-root
+  :is(.panel, .dialog, .usage-dialog)
+  .tabs
+  button:not([aria-pressed="true"]),
+#observatory-root :is(.panel, .dialog, .usage-dialog) .sp-controls select {
+  background: var(--soft);
+}

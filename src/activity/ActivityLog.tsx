@@ -444,7 +444,12 @@ export function ActivityLog() {
                     </td>
                     <td className="muted">{time(entry.ts)}</td>
                     <td>
-                      <span className="badge">{KIND_LABEL[entry.kind]}</span>
+                      <span
+                        className="badge activity-kind"
+                        data-kind={entry.kind}
+                      >
+                        {KIND_LABEL[entry.kind]}
+                      </span>
                     </td>
                     <td>{entry.title}</td>
                     <td>

@@ -31,7 +31,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 const IS_WINDOWS = /Windows/i.test(navigator.userAgent);
-import openai from "./assets/openai.svg";
+import codex from "./assets/codex.svg";
+import observatoryMark from "./assets/observatory-mark.svg";
 import claude from "./assets/claude.svg";
 import deepseek from "./assets/deepseek.svg";
 import zcode from "./assets/zcode.png";
@@ -54,6 +55,10 @@ import { UpdateControl } from "./UpdateControl";
 import packageInfo from "../package.json";
 import { usageCall } from "./native/usageClient";
 import { ActivityLog } from "./activity/ActivityLog";
+import { waveColor } from "./theme/wave";
+import { formatTokens } from "./usage/ui";
+// Loaded last so it overrides every page stylesheet imported above.
+import "./theme/widget.css";
 import type { NativeStatus, Dashboard, LanStatus } from "./usage/types";
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
@@ -70,7 +75,7 @@ type Page =
   | "activity";
 
 const brandIcons: Record<string, string> = {
-  codex: openai,
+  codex,
   claude,
   dsh: deepseek,
   zcode,
@@ -166,30 +171,35 @@ function Panel({
     </section>
   );
 }
-function Spark({
+/** Thin bars for a short series; the peak fills the height. */
+function Bars({
   values,
-  color = "var(--accent)",
+  accent,
+  className = "",
+  titles,
 }: {
   values: number[];
-  color?: string;
+  accent?: string;
+  className?: string;
+  titles?: string[];
 }) {
-  // Guard against an all-zero series and a single point, which would divide
-  // by zero and produce NaN coordinates.
   const peak = Math.max(...values, 0) || 1;
-  const step = values.length > 1 ? 90 / (values.length - 1) : 0;
-  const points = values
-    .map((v, i) => `${i * step},${34 - (v / peak) * 27}`)
-    .join(" ");
   return (
-    <svg className="spark" viewBox="0 0 90 38" aria-hidden="true">
-      <polyline
-        points={points}
-        fill="none"
-        stroke={color}
-        strokeWidth="1.6"
-        strokeLinejoin="round"
-      />
-    </svg>
+    <div
+      className={"bars " + className}
+      aria-hidden={titles ? undefined : true}
+    >
+      {values.map((v, i) => (
+        <i
+          key={i}
+          title={titles?.[i]}
+          style={{
+            height: `${Math.max(4, (v / peak) * 100)}%`,
+            background: waveColor(i, values.length, accent),
+          }}
+        />
+      ))}
+    </div>
   );
 }
 function Stat({
@@ -199,7 +209,8 @@ function Stat({
   detail,
   icon: Icon,
   values,
-  tone = "blue",
+  accent,
+  className = "",
 }: {
   label: string;
   value: ReactNode;
@@ -207,10 +218,11 @@ function Stat({
   detail: ReactNode;
   icon: LucideIcon;
   values?: number[];
-  tone?: string;
+  accent?: string;
+  className?: string;
 }) {
   return (
-    <div className="stat">
+    <div className={"stat " + className}>
       <div className="stat-label">
         {label}
         <Icon size={15} />
@@ -220,146 +232,7 @@ function Stat({
         {unit && <small>{unit}</small>}
       </div>
       <div className="stat-detail">{detail}</div>
-      {values && (
-        <Spark
-          values={values}
-          color={tone === "teal" ? "var(--teal)" : "var(--accent)"}
-        />
-      )}
-    </div>
-  );
-}
-function Trend({
-  series,
-  max = 100,
-  unit = "%",
-  ticks,
-  height = 156,
-}: {
-  series: { name: string; values: number[]; color: string }[];
-  max?: number;
-  unit?: string;
-  ticks: string[];
-  height?: number;
-}) {
-  const [hover, setHover] = useState<number | null>(null);
-  // The last index of the longest series; every x position is a fraction of it.
-  const last = Math.max(1, ...series.map((s) => s.values.length - 1));
-  const format = (v: number) =>
-    v === 0 ? "0" : v.toFixed(max <= 5 ? 1 : 0) + unit;
-  return (
-    <div className="trend">
-      <div className="legend">
-        {series.map((x) => (
-          <span key={x.name}>
-            <i style={{ background: x.color }} />
-            {x.name}
-          </span>
-        ))}
-      </div>
-      <div className="plot-row">
-        <div className="yaxis" style={{ height }}>
-          {[1, 0.75, 0.5, 0.25, 0].map((v) => (
-            <span key={v}>{format(max * v)}</span>
-          ))}
-        </div>
-        <div
-          className="plot"
-          style={{ height }}
-          onPointerMove={(e) => {
-            const r = e.currentTarget.getBoundingClientRect();
-            setHover(
-              Math.max(
-                0,
-                Math.min(
-                  last,
-                  Math.round(((e.clientX - r.left) / r.width) * last),
-                ),
-              ),
-            );
-          }}
-          onPointerLeave={() => setHover(null)}
-        >
-          <svg
-            viewBox="0 0 1000 180"
-            preserveAspectRatio="none"
-            role="img"
-            aria-label={series.map((s) => s.name).join("、") + "变化趋势"}
-          >
-            {[8, 48, 88, 128, 168].map((y) => (
-              <line
-                key={y}
-                x1="0"
-                x2="1000"
-                y1={y}
-                y2={y}
-                className="chart-grid"
-              />
-            ))}
-            {series.map((s, i) => {
-              const pts = s.values
-                .map((v, k) => `${(k * 1000) / last},${168 - (v / max) * 150}`)
-                .join(" ");
-              return (
-                <g key={s.name}>
-                  {i === 0 && (
-                    <polygon
-                      points={"0,168 " + pts + " 1000,168"}
-                      fill={s.color}
-                      opacity=".075"
-                    />
-                  )}
-                  <polyline
-                    points={pts}
-                    fill="none"
-                    stroke={s.color}
-                    strokeWidth="2"
-                    vectorEffect="non-scaling-stroke"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </g>
-              );
-            })}
-            {hover !== null && (
-              <line
-                x1={(hover * 1000) / last}
-                x2={(hover * 1000) / last}
-                y1="0"
-                y2="174"
-                stroke="var(--muted)"
-                strokeWidth="1"
-                vectorEffect="non-scaling-stroke"
-                strokeDasharray="3 4"
-              />
-            )}
-          </svg>
-          {hover !== null && (
-            <div
-              className="chart-tooltip"
-              style={{
-                left: `clamp(5px, ${(hover / last) * 100 - 12}%, calc(100% - 148px))`,
-              }}
-            >
-              <small>{ticks[hover] ?? `采样点 ${hover + 1}`}</small>
-              {series.map((s) => (
-                <span key={s.name}>
-                  <i style={{ background: s.color }} />
-                  {s.name}
-                  <b>
-                    {format(s.values[Math.min(hover, s.values.length - 1)])}
-                  </b>
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-      <div className="xaxis">
-        {ticks.map((t, i) => (
-          <span key={i}>{t}</span>
-        ))}
-      </div>
+      {values && values.length > 0 && <Bars values={values} accent={accent} />}
     </div>
   );
 }
@@ -434,6 +307,8 @@ function App() {
   useEffect(() => {
     const theme = dark ? "dark" : "light";
     document.documentElement.style.colorScheme = theme;
+    // Lets CSS pick per-theme assets, such as the dark-mode app icons.
+    document.documentElement.dataset.theme = theme;
     try {
       localStorage.setItem("observatory.color-scheme", theme);
     } catch {
@@ -585,6 +460,7 @@ function App() {
     <>
       <div className="stats-grid">
         <Stat
+          className="ov-cost"
           label="本机今日 AI 费用"
           value={
             overviewUsage.data
@@ -619,7 +495,8 @@ function App() {
             </>
           }
           icon={Laptop}
-          tone="teal"
+          className="ov-all"
+          accent="var(--accent-cyan)"
           values={overviewAllDevices.data?.trends.map((t) =>
             Number(t.totalCost),
           )}
@@ -652,24 +529,26 @@ function App() {
             </>
           }
           icon={Radio}
-          tone="teal"
         />
       </div>
       <div className="overview-grid">
         <Panel title="近 7 天用量" sub="每日总 Token · 本机">
           {weekTrends.length ? (
-            <Trend
-              series={[
-                {
-                  name: "总 Token",
-                  values: weekTokens,
-                  color: "var(--teal)",
-                },
-              ]}
-              max={Math.max(1, ...weekTokens)}
-              unit=""
-              ticks={weekTrends.map((t) => t.date.slice(5, 10))}
-            />
+            <>
+              <Bars
+                className="week-bars"
+                values={weekTokens}
+                titles={weekTrends.map(
+                  (t) =>
+                    `${t.date.slice(5, 10)} · ${formatTokens(t.totalTokens)}`,
+                )}
+              />
+              <div className="week-labels">
+                {weekTrends.map((t) => (
+                  <span key={t.date}>{t.date.slice(5, 10)}</span>
+                ))}
+              </div>
+            </>
           ) : (
             <p className="hint">暂无用量数据；扫描与历史迁移后显示。</p>
           )}
@@ -851,7 +730,7 @@ function App() {
           title="观测台"
         >
           <span className="brand-mark">
-            <Radar size={18} />
+            <img src={observatoryMark} alt="" />
           </span>
           <span className="brand-text">
             观测台<small>Observatory</small>
@@ -914,7 +793,7 @@ function App() {
         <Dialog title="关于观测台" onClose={() => setAboutOpen(false)}>
           <div className="about-details">
             <div className="about-brand">
-              <Radar size={24} />
+              <img className="about-mark" src={observatoryMark} alt="" />
               <strong>观测台 · Observatory</strong>
             </div>
             <p>AI 用量与设备观测工作台</p>

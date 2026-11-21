@@ -30,6 +30,28 @@ async fn backend(state: &BackendState) -> Result<Arc<UsageBackend>, String> {
 }
 struct TrayReady(AtomicBool);
 
+/// The menu bar / notification area icon is the bare glyph, without the app
+/// icon's background tile. macOS tints a template image to match the menu
+/// bar; Windows does not, so it gets a light glyph on dark themes and a dark
+/// glyph on light ones.
+#[cfg(target_os = "macos")]
+fn tray_image(_dark: bool) -> tauri::Result<tauri::image::Image<'static>> {
+    tauri::image::Image::from_bytes(include_bytes!("../icons/tray-template.png"))
+}
+#[cfg(not(target_os = "macos"))]
+fn tray_image(dark: bool) -> tauri::Result<tauri::image::Image<'static>> {
+    tauri::image::Image::from_bytes(if dark {
+        include_bytes!("../icons/tray-light.png").as_slice()
+    } else {
+        include_bytes!("../icons/tray-dark.png").as_slice()
+    })
+}
+fn dark_theme(app: &tauri::AppHandle) -> bool {
+    app.get_webview_window("main")
+        .and_then(|window| window.theme().ok())
+        .is_some_and(|theme| theme == tauri::Theme::Dark)
+}
+
 fn show_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.unminimize();
@@ -121,12 +143,9 @@ fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
             &open, &sep1, &heading, &cost, &requests, &tokens, &sep2, &quit,
         ],
     )?;
-    let icon = app
-        .default_window_icon()
-        .cloned()
-        .ok_or_else(|| tauri::Error::AssetNotFound("app icon".into()))?;
     let tray = TrayIconBuilder::with_id("observatory-tray")
-        .icon(icon)
+        .icon(tray_image(dark_theme(app.handle()))?)
+        .icon_as_template(cfg!(target_os = "macos"))
         .tooltip("观测台 · 本机今日用量")
         .menu(&menu)
         .show_menu_on_left_click(false)
@@ -238,6 +257,16 @@ fn main() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            if let tauri::WindowEvent::ThemeChanged(theme) = event {
+                if !cfg!(target_os = "macos") {
+                    if let (Some(tray), Ok(image)) = (
+                        window.app_handle().tray_by_id("observatory-tray"),
+                        tray_image(*theme == tauri::Theme::Dark),
+                    ) {
+                        let _ = tray.set_icon(Some(image));
+                    }
+                }
+            }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if hides_on_close(
                     window.label(),

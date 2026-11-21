@@ -1,4 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { modelSpeeds } from "./modelSpeed";
+import { waveColor } from "../theme/wave";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
@@ -415,24 +417,59 @@ function UsageWorkspaceImpl({
     if (scope === "multi")
       void qc.invalidateQueries({ queryKey: ["usage", "dashboard"] });
   }, [peerRevision, qc, scope]);
+  // Device names for peer sync errors, read from a ref so the refresh
+  // callback (and the timers keyed on it) is not rebuilt on every LAN poll.
+  const peerNames = useRef(new Map<string, string>());
+  peerNames.current = new Map(
+    (lan.data?.devices ?? []).map((d) => [d.deviceId, d.deviceName]),
+  );
+  /**
+   * "This machine" scans only local logs and never contacts paired devices,
+   * so an offline peer cannot surface as a local error. Automatic local
+   * refreshes do not scan at all: the engine's background loop already scans
+   * on the same interval, and the revision poll picks up its results.
+   * The multi-device scope keeps scanning locally and pulling every peer.
+   */
   const refresh = useCallback(
     async (automatic = false) => {
       if (scanRef.current) return scanRef.current;
       if (activeMultiScan) return;
+      if (scope !== "multi" && automatic) {
+        await qc.invalidateQueries({ queryKey: ["usage"] });
+        return;
+      }
       const task = (async () => {
         setScanBusy(true);
         onBusy?.(true);
         try {
-          const r = await usageCall<{
-            scan: { imported: number; errors: string[] };
-            peers: { error?: string }[];
-          }>("sync", { automatic });
-          if (mounted.current) {
-            setScanErrors([
-              ...r.scan.errors,
-              ...r.peers.flatMap((p) => (p.error ? [p.error] : [])),
-            ]);
-            setNotice(`本机扫描完成，新增或更新 ${r.scan.imported} 条记录。`);
+          if (scope === "multi") {
+            const r = await usageCall<{
+              scan: { imported: number; errors: string[] };
+              peers: { deviceId: string; error?: string }[];
+            }>("sync", { automatic });
+            if (mounted.current) {
+              setScanErrors([
+                ...r.scan.errors,
+                ...r.peers.flatMap((p) =>
+                  p.error
+                    ? [
+                        `设备 ${peerNames.current.get(p.deviceId) ?? p.deviceId} 未连上，保留上次同步的数据：${p.error}`,
+                      ]
+                    : [],
+                ),
+              ]);
+              setNotice(
+                `本机扫描完成，新增或更新 ${r.scan.imported} 条记录；已同步 ${r.peers.filter((p) => !p.error).length}/${r.peers.length} 台设备。`,
+              );
+            }
+          } else {
+            const r = await usageCall<{ imported: number; errors: string[] }>(
+              "scan_local_only",
+            );
+            if (mounted.current) {
+              setScanErrors(r.errors);
+              setNotice(`本机扫描完成，新增或更新 ${r.imported} 条记录。`);
+            }
           }
           await qc.invalidateQueries({ queryKey: ["usage"] });
         } catch (e) {
@@ -447,8 +484,10 @@ function UsageWorkspaceImpl({
       scanRef.current = task;
       return task;
     },
-    [qc, onBusy],
+    [qc, onBusy, scope],
   );
+  // Errors from one scope's scan do not describe the other scope.
+  useEffect(() => setScanErrors([]), [scope]);
   const refreshMulti = async () => {
     if (scanRef.current || activeMultiScan || !status.data || !lan.data) return;
     activeMultiScan = true;
@@ -949,18 +988,42 @@ function UsageWorkspaceImpl({
         />
       </div>
       <div className="usage-token-parts" aria-label="Token 构成">
-        {[
-          ["新增输入", s?.totalInputTokens, "var(--chart-usage)"],
-          ["输出", s?.totalOutputTokens, "var(--chart-output)"],
-          ["缓存写入", s?.totalCacheCreationTokens, "var(--agent-color)"],
-          ["缓存读取", s?.totalCacheReadTokens, "var(--teal)"],
-        ].map(([label, value, color]) => (
-          <span key={String(label)}>
-            <i style={{ background: String(color) }} />
-            {label}
-            <b>{typeof value === "number" ? formatTokens(value) : "—"}</b>
-          </span>
-        ))}
+        {(() => {
+          const parts: [string, number | undefined, string][] = [
+            ["新增输入", s?.totalInputTokens, "var(--accent-blue)"],
+            ["输出", s?.totalOutputTokens, "var(--accent-pink)"],
+            ["缓存写入", s?.totalCacheCreationTokens, "var(--accent-orange)"],
+            ["缓存读取", s?.totalCacheReadTokens, "var(--accent-cyan)"],
+          ];
+          const total = parts.reduce((sum, [, v]) => sum + (v ?? 0), 0);
+          return (
+            <>
+              {total > 0 && (
+                <div className="token-capsule" aria-hidden="true">
+                  {parts.map(([label, value, color]) => (
+                    <i
+                      key={label}
+                      style={{ flexGrow: value ?? 0, background: color }}
+                    />
+                  ))}
+                </div>
+              )}
+              <div className="token-parts-legend">
+                {parts.map(([label, value, color]) => (
+                  <span key={label}>
+                    <span>
+                      <i style={{ background: color }} />
+                      {label}
+                    </span>
+                    <b>
+                      {typeof value === "number" ? formatTokens(value) : "—"}
+                    </b>
+                  </span>
+                ))}
+              </div>
+            </>
+          );
+        })()}
       </div>
       {dashboard.data && s && s.totalRequests === 0 && !scanBusy && (
         <div className="usage-empty">
@@ -1115,6 +1178,7 @@ function UsageWorkspaceImpl({
           </div>
         </section>
       </div>
+      <ModelSpeedChart models={dashboard.data?.models ?? []} />
       <ActivityGrid
         data={dashboard.data?.trends ?? []}
         start={period.startDate}
@@ -1598,7 +1662,7 @@ function UsageChart({
               chartType === "bar" &&
               values.map((v, i) => {
                 const band = 1000 / values.length;
-                const width = Math.min(36, band * 0.7);
+                const width = Math.min(28, band * 0.62);
                 const height = v > 0 ? Math.max(1, (v / max) * 150) : 0;
                 return (
                   <rect
@@ -1607,8 +1671,8 @@ function UsageChart({
                     y={168 - height}
                     width={width}
                     height={height}
-                    rx={2}
-                    fill="var(--chart-usage)"
+                    rx={Math.min(4, width / 2)}
+                    style={{ fill: waveColor(i, values.length) }}
                   />
                 );
               })}
@@ -1663,6 +1727,61 @@ function UsageChart({
         ))}
       </div>
     </div>
+  );
+}
+/** Horizontal bars of output speed per model, fastest first. */
+function ModelSpeedChart({ models }: { models: ModelStats[] }) {
+  const rows = useMemo(() => modelSpeeds(models), [models]);
+  const peak = Math.max(1, ...rows.map((r) => r.speed));
+  const seconds = (ms: number) =>
+    ms >= 1000 ? (ms / 1000).toFixed(1) + "s" : Math.round(ms) + "ms";
+  return (
+    <section className="panel section-gap model-speed">
+      <div className="panel-head">
+        <h2>模型输出速度</h2>
+        <span className="muted">
+          输出 Token / 秒 · 所选范围 · ≈ 为按日志耗时估算，含首字等待
+        </span>
+      </div>
+      {rows.length ? (
+        <div className="model-speed-list">
+          {rows.map((r, i) => (
+            <div
+              className="model-speed-row"
+              key={r.model}
+              title={`${r.model} · ${r.requests.toLocaleString()} 次请求`}
+            >
+              <span className="model-speed-name">
+                {modelDisplayName(r.model)}
+              </span>
+              <span className="model-speed-track">
+                <i
+                  style={{
+                    width: `${Math.max(2, (r.speed / peak) * 100)}%`,
+                    background: waveColor(i, rows.length),
+                  }}
+                />
+              </span>
+              <b className="model-speed-value">
+                {r.estimated ? "≈ " : ""}
+                {r.speed.toFixed(1)}
+                <small> tok/s</small>
+              </b>
+              <span className="model-speed-first">
+                {r.firstTokenMs === null
+                  ? "首字 —"
+                  : `首字 ${r.firstTokenEstimated ? "≈ " : ""}${seconds(r.firstTokenMs)}`}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="hint">
+          所选范围内没有可计算速度的请求（需要至少 100 个输出 Token
+          且有耗时记录；较早记录已按日汇总，不含速度）。
+        </p>
+      )}
+    </section>
   );
 }
 function ActivityGrid({
