@@ -313,6 +313,10 @@ pub(crate) fn record_scan(
         let mut keys: Vec<&String> = source.after.cursors.keys().collect();
         keys.sort();
         for key in keys {
+            // Skip reserved internal state rows in session_log_sync that do not represent files.
+            if key == "agy:latency-backfill-v1" || key == "pi:child-cutoff" {
+                continue;
+            }
             let current = &source.after.cursors[key];
             let previous = source.before.cursors.get(key);
             if previous == Some(current) {

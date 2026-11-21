@@ -14,19 +14,19 @@ use std::{path::PathBuf, sync::Arc, sync::Mutex};
 
 pub const APPS: &[(&str, &str, bool)] = &[
     ("claude", "Claude Code", true),
-    ("claude-desktop", "Claude Desktop", false),
     ("codex", "Codex", true),
-    ("gemini", "Gemini CLI", true),
-    ("grokbuild", "Grok Build", true),
     ("opencode", "OpenCode", true),
-    ("openclaw", "OpenClaw", false),
-    ("hermes", "Hermes", false),
-    ("pi", "Pi", true),
-    ("mcode", "MiniMax Code", true),
-    ("kimi", "Kimi Code", true),
     ("agy", "Antigravity", true),
     ("dsh", "DeepSeek Harness", true),
     ("zcode", "ZCode", true),
+    ("gemini", "Gemini CLI", true),
+    ("grokbuild", "Grok Build", true),
+    ("pi", "Pi", true),
+    ("mcode", "MiniMax Code", true),
+    ("kimi", "Kimi Code", true),
+    ("claude-desktop", "Claude Desktop", false),
+    ("openclaw", "OpenClaw", false),
+    ("hermes", "Hermes", false),
 ];
 #[derive(Default, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -104,6 +104,14 @@ fn store_result(key: ResultKey, value: &Value) {
 }
 
 impl UsageBackend {
+    /// Cache key for the tray's today summary: changes only when data is written
+    /// (`data_epoch`) or when the local calendar date rolls over.
+    pub fn today_cache_key(&self) -> (u64, i64) {
+        let now = chrono::Local::now();
+        let day_key = i64::from(chrono::Datelike::num_days_from_ce(&now.date_naive()));
+        (self.db.data_epoch(), day_key)
+    }
+
     pub fn today_summary(&self) -> Result<usage_stats::UsageSummary, AppError> {
         if self.db.get_setting("usage_initial_import_error")?.is_some() {
             return Err(AppError::Message("历史用量导入未完成".into()));
@@ -226,12 +234,11 @@ impl UsageBackend {
                 if elapsed < seconds * 1000 {
                     continue;
                 }
-                let Ok(enabled) = read_enabled_sources(&db) else {
-                    continue;
-                };
                 let source = db.clone();
                 if let Err(e) = tokio::task::spawn_blocking(move || {
-                    scan_database(&source, &enabled, crate::activity::ScanTrigger::Background)
+                    if let Ok(enabled) = read_enabled_sources(&source) {
+                        scan_database(&source, &enabled, crate::activity::ScanTrigger::Background);
+                    }
                 })
                 .await
                 {
@@ -469,6 +476,21 @@ impl UsageBackend {
         store_result(key, &value);
         Ok(value)
     }
+    fn insights_impl(db: &Arc<Database>, q: &Query, args: &Value) -> Result<Value, AppError> {
+        let db = Self::query_selected_database(db, q)?;
+        let f = &q.filters;
+        let (s, e, a) = (f.start_date, f.end_date, f.app_type.as_deref());
+        let epoch = db.write_epoch.load(std::sync::atomic::Ordering::Relaxed);
+        let key = result_key(&db, epoch, "insights", args);
+        if let Some(hit) = cached_result(&key) {
+            return Ok(hit);
+        }
+        let data =
+            db.with_read_connection(|conn| crate::insights::query_insights_on_conn(conn, s, e, a))?;
+        let value = to_json(data)?;
+        store_result(key, &value);
+        Ok(value)
+    }
     /// Unified command entry point. Key operations that change data or issue external requests (see
     /// `activity::action_label`) are recorded in the activity log here: sensitive fields are stripped
     /// from the arguments and only a summary of the result is kept; the record is written asynchronously
@@ -654,6 +676,11 @@ impl UsageBackend {
                 let q: Query = serde_json::from_value(args.clone())
                     .map_err(|e| AppError::InvalidInput(e.to_string()))?;
                 self.call_blocking(move |db| Self::dashboard_impl(db, &q, &args)).await
+            }
+            "insights" => {
+                let q: Query = serde_json::from_value(args.clone())
+                    .map_err(|e| AppError::InvalidInput(e.to_string()))?;
+                self.call_blocking(move |db| Self::insights_impl(db, &q, &args)).await
             }
             "request_detail" => {
                 let q: Query = serde_json::from_value(args)

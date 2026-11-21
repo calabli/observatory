@@ -25,6 +25,7 @@ import {
   RefreshCw,
   ScrollText,
   ShieldCheck,
+  Sparkles,
   Sun,
   Wifi,
   X,
@@ -47,6 +48,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { UsageWorkspace } from "./usage/UsageWorkspace";
+import { InsightsWorkspace } from "./insights/InsightsWorkspace";
 import { SubscriptionWorkspace } from "./subscriptions/SubscriptionWorkspace";
 import { DeviceManager } from "./usage/DeviceManager";
 import { TrayPanel } from "./tray/TrayPanel";
@@ -69,6 +71,7 @@ type OverviewUsage = Pick<Dashboard, "summary" | "trends" | "byApp">;
 type Page =
   | "overview"
   | "usage"
+  | "insights"
   | "subscriptions"
   | "network"
   | "devices"
@@ -91,6 +94,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     items: [
       { id: "overview", label: "总览", icon: Radar },
       { id: "usage", label: "AI 用量", icon: Boxes },
+      { id: "insights", label: "洞察", icon: Sparkles },
       { id: "subscriptions", label: "订阅与额度", icon: Clock3 },
     ],
   },
@@ -117,6 +121,10 @@ function readSidebarCollapsed() {
 const titles: Record<Page, [string, string]> = {
   overview: ["运行总览", "把 AI 调用、设备同步与网络状态放在一起看。"],
   usage: ["AI 用量", "从一次调用到多设备汇总，费用与用量清晰可查。"],
+  insights: [
+    "洞察",
+    "缓存省钱、30 天预测、7×24 节律、会话膨胀与模型长尾稳定性。",
+  ],
   subscriptions: [
     "订阅与额度",
     "管理订阅和额度周期，查看所选时间范围内的用量。",
@@ -829,11 +837,13 @@ function App() {
             <div className="eyebrow">
               {page === "overview"
                 ? "WORKSPACE OVERVIEW"
-                : page === "network"
-                  ? "NETWORK OBSERVABILITY"
-                  : page === "activity"
-                    ? "ACTIVITY LOG"
-                    : "OBSERVATORY"}
+                : page === "insights"
+                  ? "DEEP INSIGHTS"
+                  : page === "network"
+                    ? "NETWORK OBSERVABILITY"
+                    : page === "activity"
+                      ? "ACTIVITY LOG"
+                      : "OBSERVATORY"}
             </div>
             <h1>{titles[page][0]}</h1>
             <p>{titles[page][1]}</p>
@@ -853,6 +863,7 @@ function App() {
         </div>
         {page !== "network" &&
           page !== "subscriptions" &&
+          page !== "insights" &&
           page !== "activity" && (
             <div className="context-bar">
               {page === "usage" || page === "devices" ? (
@@ -928,6 +939,11 @@ function App() {
           overview
         ) : page === "usage" ? (
           usage
+        ) : page === "insights" ? (
+          <InsightsWorkspace
+            sources={nativeStatus?.sources ?? nativeInfo.data?.sources ?? []}
+            multiDevice={false}
+          />
         ) : page === "subscriptions" ? (
           <SubscriptionWorkspace />
         ) : page === "network" ? (

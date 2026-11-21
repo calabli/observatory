@@ -29,6 +29,8 @@ async fn backend(state: &BackendState) -> Result<Arc<UsageBackend>, String> {
         .cloned()
 }
 struct TrayReady(AtomicBool);
+#[cfg(target_os = "macos")]
+struct PendingFullscreenHide(AtomicBool);
 
 /// The menu bar / notification area icon is the bare glyph, without the app
 /// icon's background tile. macOS tints a template image to match the menu
@@ -70,11 +72,76 @@ fn tray_is_dark(app: &tauri::AppHandle) -> bool {
 }
 
 fn show_window(app: &tauri::AppHandle) {
+    #[cfg(target_os = "macos")]
+    app.state::<PendingFullscreenHide>()
+        .0
+        .store(false, Ordering::Release);
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
     }
+}
+
+/// On macOS, calling `window.hide()` directly while a window is in a native
+/// fullscreen Space leaves the user stranded on an empty black Space. Exit
+/// fullscreen first, wait for AppKit's Space-exit animation (~600-700ms) to
+/// finish (AppKit ignores `orderOut:` mid-transition even after `is_fullscreen`
+/// flips to false), and then hide.
+#[cfg(target_os = "macos")]
+fn hide_window_safely(window: &tauri::Window) {
+    if !window.is_fullscreen().unwrap_or(false) {
+        let _ = window.hide();
+        return;
+    }
+    let pending = window.state::<PendingFullscreenHide>();
+    if pending.0.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    let started = std::time::Instant::now();
+    let _ = window.set_fullscreen(false);
+    let win = window.clone();
+    std::thread::spawn(move || {
+        // 1. Wait until fullscreen flag clears and the exit animation has had time to settle.
+        for _ in 0..40 {
+            std::thread::sleep(std::time::Duration::from_millis(80));
+            if !win
+                .state::<PendingFullscreenHide>()
+                .0
+                .load(Ordering::Acquire)
+            {
+                return;
+            }
+            if !win.is_fullscreen().unwrap_or(false)
+                && started.elapsed() >= std::time::Duration::from_millis(750)
+            {
+                break;
+            }
+        }
+        // 2. Hide once settled; retry briefly in case AppKit's Space transition is still finishing.
+        for _ in 0..6 {
+            if !win
+                .state::<PendingFullscreenHide>()
+                .0
+                .load(Ordering::Acquire)
+            {
+                return;
+            }
+            let _ = win.hide();
+            std::thread::sleep(std::time::Duration::from_millis(120));
+            if !win.is_visible().unwrap_or(false) {
+                break;
+            }
+        }
+        win.state::<PendingFullscreenHide>()
+            .0
+            .store(false, Ordering::Release);
+    });
+}
+
+#[cfg(not(target_os = "macos"))]
+fn hide_window_safely(window: &tauri::Window) {
+    let _ = window.hide();
 }
 
 fn toggle_tray_panel(app: &tauri::AppHandle, x: f64, y: f64) {
@@ -188,6 +255,7 @@ fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
     let handle = app.handle().clone();
     #[cfg(target_os = "windows")]
     let mut tray_dark = dark;
+    let mut last_summary_key: Option<(u64, i64)> = None;
     std::thread::spawn(move || loop {
         // Recheck on the tray's existing refresh cycle, even when only the
         // Windows shell theme changes and no window theme event is emitted.
@@ -204,8 +272,14 @@ fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
         }
         let backend = handle.state::<BackendState>().0.get().cloned();
         let ready = backend.is_some();
+        let cache_key = backend.as_ref().map(|b| b.today_cache_key());
+        if ready && cache_key == last_summary_key {
+            std::thread::sleep(std::time::Duration::from_secs(30));
+            continue;
+        }
         match backend.map(|backend| backend.today_summary()) {
             Some(Ok(summary)) => {
+                last_summary_key = cache_key;
                 let usd = summary.total_cost.parse::<f64>().ok();
                 let amount = usd
                     .map(|v| format!("${v:.2}"))
@@ -219,6 +293,7 @@ fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
                 )));
             }
             Some(Err(_)) => {
+                last_summary_key = None;
                 let _ = cost.set_text("今日用量读取失败，请打开观测台查看");
                 let _ = requests.set_text("今日请求：—");
                 let _ = tokens.set_text("今日 Token：—");
@@ -261,14 +336,17 @@ fn hides_on_close(label: &str, tray_ready: bool) -> bool {
 }
 
 fn main() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_window(app);
         }))
         .manage(BackendState(tokio::sync::OnceCell::new()))
-        .manage(TrayReady(AtomicBool::new(false)))
+        .manage(TrayReady(AtomicBool::new(false)));
+    #[cfg(target_os = "macos")]
+    let builder = builder.manage(PendingFullscreenHide(AtomicBool::new(false)));
+    builder
         .setup(|app| {
             if let Err(e) = setup_tray(app) {
                 eprintln!("Tray unavailable: {e}");
@@ -305,7 +383,7 @@ fn main() {
                     window.state::<TrayReady>().0.load(Ordering::Acquire),
                 ) {
                     api.prevent_close();
-                    let _ = window.hide();
+                    hide_window_safely(window);
                 }
             }
         })

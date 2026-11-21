@@ -5,6 +5,7 @@ use super::{
 };
 use crate::session_manager::model::{MessageMeta, SessionBlock};
 use crate::session_manager::{SessionMessage, SessionMeta};
+use serde::Deserialize;
 use serde_json::Value;
 use std::{
     collections::BTreeMap,
@@ -12,6 +13,184 @@ use std::{
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
 };
+
+/// Minimal per-step metadata needed by the usage collector. Large fields like
+/// `thinking`, `media`, `tool_calls` arguments, and `GENERIC` tool outputs are
+/// skipped during deserialization instead of building a full `serde_json::Value` DOM.
+#[derive(Debug, Clone)]
+pub(crate) struct UsageStep {
+    pub step_index: u64,
+    pub step_type: String,
+    pub source: Option<String>,
+    pub status: Option<String>,
+    pub created_at_ms: Option<i64>,
+    pub model: Option<String>,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub cache_read_tokens: i64,
+    pub cache_write_tokens: i64,
+    pub has_tool_calls: bool,
+    pub content: Option<String>,
+}
+
+fn deserialize_non_empty_seq<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct NonEmptySeq;
+    impl<'de> serde::de::Visitor<'de> for NonEmptySeq {
+        type Value = bool;
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("a JSON array or null")
+        }
+        fn visit_none<E>(self) -> Result<bool, E> {
+            Ok(false)
+        }
+        fn visit_unit<E>(self) -> Result<bool, E> {
+            Ok(false)
+        }
+        fn visit_seq<A>(self, mut seq: A) -> Result<bool, A::Error>
+        where
+            A: serde::de::SeqAccess<'de>,
+        {
+            let mut non_empty = false;
+            while seq.next_element::<serde::de::IgnoredAny>()?.is_some() {
+                non_empty = true;
+            }
+            Ok(non_empty)
+        }
+    }
+    deserializer.deserialize_any(NonEmptySeq)
+}
+
+#[derive(Deserialize)]
+struct RawUsageStep {
+    step_index: Option<u64>,
+    #[serde(rename = "type", default)]
+    step_type: String,
+    source: Option<String>,
+    status: Option<String>,
+    created_at: Option<Value>,
+    model: Option<String>,
+    #[serde(default)]
+    input_tokens: u64,
+    #[serde(default)]
+    output_tokens: u64,
+    #[serde(default)]
+    cache_read_tokens: u64,
+    #[serde(default)]
+    cache_write_tokens: u64,
+    #[serde(default, deserialize_with = "deserialize_non_empty_seq")]
+    tool_calls: bool,
+}
+
+#[derive(Deserialize)]
+struct RawUsageStepWithContent {
+    #[serde(flatten)]
+    base: RawUsageStep,
+    content: Option<String>,
+}
+
+impl RawUsageStep {
+    fn into_usage_step(self, content: Option<String>) -> Option<UsageStep> {
+        let step_index = self.step_index?;
+        let created_at_ms = self.created_at.as_ref().and_then(parse_timestamp_to_ms);
+        Some(UsageStep {
+            step_index,
+            step_type: self.step_type,
+            source: self.source,
+            status: self.status,
+            created_at_ms,
+            model: self.model,
+            input_tokens: i64::try_from(self.input_tokens).unwrap_or(0),
+            output_tokens: i64::try_from(self.output_tokens).unwrap_or(0),
+            cache_read_tokens: i64::try_from(self.cache_read_tokens).unwrap_or(0),
+            cache_write_tokens: i64::try_from(self.cache_write_tokens).unwrap_or(0),
+            has_tool_calls: self.tool_calls,
+            content,
+        })
+    }
+}
+
+/// Stream-parse only the fields needed for usage collection. Lines that do not
+/// mention `Model Selection` skip `content` completely (zero allocation for huge
+/// tool outputs). The latest record for each `step_index` wins.
+pub(crate) fn usage_steps(path: &Path) -> Result<Vec<UsageStep>, String> {
+    let file =
+        fs::File::open(path).map_err(|e| format!("Cannot read Antigravity transcript: {e}"))?;
+    let mut steps = BTreeMap::new();
+    let mut reader = BufReader::new(file);
+    let mut line = String::new();
+    loop {
+        line.clear();
+        let bytes = reader
+            .read_line(&mut line)
+            .map_err(|e| format!("Cannot read Antigravity transcript: {e}"))?;
+        if bytes == 0 {
+            break;
+        }
+        let step = if line.contains("Model Selection") {
+            serde_json::from_str::<RawUsageStepWithContent>(&line)
+                .ok()
+                .and_then(|raw| {
+                    let keep_content = raw.base.step_type == "USER_INPUT";
+                    raw.base
+                        .into_usage_step(keep_content.then_some(raw.content).flatten())
+                })
+        } else {
+            serde_json::from_str::<RawUsageStep>(&line)
+                .ok()
+                .and_then(|raw| raw.into_usage_step(None))
+        };
+        if let Some(step) = step {
+            steps.insert(step.step_index, step);
+        }
+    }
+    Ok(steps.into_values().collect())
+}
+
+/// Lightweight transcript file discovery for the usage collector: walks the
+/// session roots directly without opening `conversation_summaries.db` or
+/// fallback-parsing transcripts to build UI titles.
+pub(crate) fn scan_transcript_files() -> Vec<(String, PathBuf)> {
+    let mut seen = std::collections::HashSet::new();
+    let mut files = Vec::new();
+    for (root, _) in session_sources() {
+        let canonical_root = root.canonicalize().ok();
+        let Ok(entries) = fs::read_dir(&root) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            if !entry.file_type().is_ok_and(|t| t.is_dir()) {
+                continue;
+            }
+            let Some(id) = entry
+                .file_name()
+                .to_str()
+                .map(str::to_string)
+                .filter(|id| valid_session_id(id))
+            else {
+                continue;
+            };
+            let path = entry
+                .path()
+                .join(".system_generated/logs/transcript_full.jsonl");
+            if !path.is_file()
+                || !path
+                    .canonicalize()
+                    .ok()
+                    .zip(canonical_root.as_ref())
+                    .is_some_and(|(p, r)| p.starts_with(r))
+            {
+                continue;
+            }
+            if seen.insert(id.clone()) {
+                files.push((id, path));
+            }
+        }
+    }
+    files
+}
 
 /// Antigravity CLI keeps sessions in `~/.gemini/antigravity-cli/brain`, while the IDE writes the
 /// same layout to `~/.gemini/antigravity/brain`. API-key providers run agy with a private
@@ -400,5 +579,28 @@ mod tests {
             messages[1].meta.as_ref().unwrap().cache_read_tokens,
             Some(20)
         );
+    }
+
+    #[test]
+    fn agy_usage_steps_streams_minimal_fields_and_skips_generic_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("transcript_full.jsonl");
+        fs::write(&file, concat!(
+            "{\"step_index\":0,\"source\":\"USER_EXPLICIT\",\"type\":\"USER_INPUT\",\"status\":\"DONE\",\"created_at\":\"2026-11-21T13:12:07Z\",\"content\":\"changed setting `Model Selection` from None to Gemini 4 Neon (Medium).\"}\n",
+            "{\"step_index\":1,\"source\":\"MODEL\",\"type\":\"PLANNER_RESPONSE\",\"status\":\"DONE\",\"created_at\":\"2026-11-21T13:12:07Z\",\"input_tokens\":100,\"output_tokens\":250,\"cache_read_tokens\":50,\"thinking\":\"very long thinking\",\"tool_calls\":[{\"name\":\"run_command\",\"args\":{\"huge\":\"payload\"}}]}\n",
+            "{\"step_index\":2,\"source\":\"MODEL\",\"type\":\"GENERIC\",\"status\":\"DONE\",\"created_at\":\"2026-11-21T13:12:13Z\",\"content\":\"huge tool output without model switch\"}\n",
+            "{\"step_index\":3,\"source\":\"MODEL\",\"type\":\"PLANNER_RESPONSE\",\"status\":\"DONE\",\"created_at\":\"2026-11-21T13:12:14Z\",\"output_tokens\":300,\"tool_calls\":[]}\n",
+        )).unwrap();
+        let steps = usage_steps(&file).unwrap();
+        assert_eq!(steps.len(), 4);
+        assert!(steps[0]
+            .content
+            .as_deref()
+            .is_some_and(|c| c.contains("Model Selection")));
+        assert!(steps[1].has_tool_calls);
+        assert_eq!(steps[1].output_tokens, 250);
+        assert!(steps[1].content.is_none());
+        assert!(steps[2].content.is_none());
+        assert!(!steps[3].has_tool_calls);
     }
 }

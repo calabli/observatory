@@ -30,10 +30,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NOTES: |
-            - Refreshed the dashboard and usage views with widget-style cards, updated charts, and a new app icon.
-            - Added model output speed and first-token latency to the usage view.
-            - Local scans read this device only. Scan feedback stays with the local or multi-device view that started it.
-            - The Windows tray icon follows the taskbar color mode. Secondary text is easier to read in light mode.
+            - Added the new Insights page with cache savings, 30-day cost forecast & budget tracking, 7x24 coding rhythm heatmap, session health scatter plot, model P50-P95 stability dumbbells, token mix stacked area, and status health breakdown.
+            - Added estimated latency & output speed for Antigravity tool-calling steps, with streaming low-memory transcript parsing and one-time backfill.
+            - Fixed macOS fullscreen close leaving an empty black Space; closing now exits fullscreen before hiding to the menu bar.
+            - Updated app ordering, set the macOS Utility app category, and reduced background CPU/SQLite overhead in the tray and scan loops.
 
             The macOS build is not notarized.
         run: |

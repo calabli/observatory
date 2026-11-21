@@ -4,6 +4,7 @@ pub mod codex_rollout_file;
 pub mod config;
 pub mod database;
 pub mod error;
+pub mod insights;
 pub mod kimi_config;
 pub mod kimi_session;
 pub mod lan_usage;

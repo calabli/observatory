@@ -12,7 +12,7 @@
       "path": "services/session_usage_agy.rs",
       "sha256": "9529a2d5f10f39225e6dd80df2f15c5a7b8bfc95aa198cbfe551b12df80d578b",
       "upstreamPath": "src-tauri/src/services/session_usage_agy.rs",
-      "currentSha256": "cbcfcdbb7e11c30bf4754f6361bb31aefd63fa4d98de26b70ac5a3fe4c972398"
+      "currentSha256": "0dcd2ebfb4208df7b075600e2833c6440baefc94277d392081d739865a981e92"
     },
     {
       "path": "services/session_usage_codex.rs",
@@ -168,7 +168,7 @@
       "path": "session_manager/providers/agy.rs",
       "sha256": "2d92273f2c1324a267dcfbc699da3f7d639797e15c035ce6844000f2800224f6",
       "upstreamPath": "src-tauri/src/session_manager/providers/agy.rs",
-      "currentSha256": "f7eab063b310fd936c452d19a97ee97d2d7b9472ea14e248a30503bd400cbe4e"
+      "currentSha256": "ad356da5c8d27d45361e0ab2eb9e28f1edf34951d36f2a587b1256ce0358ab0f"
     },
     {
       "path": "lan_usage/client.rs",
