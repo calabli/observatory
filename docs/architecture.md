@@ -20,6 +20,7 @@ src/                    React frontend
   main.tsx              App shell: sidebar, overview page, page routing, tray entry
   native/usageClient.ts The single call path into the engine (`usageCall`)
   usage/                AI usage page, devices, pricing, multi-device scan
+  insights/             Insights analytics, Agent trace waterfall, HTML/Markdown report builder
   subscriptions/        Subscriptions & quota page and its cycle math
   network/              Network page and rate calculation
   activity/             Activity log page
@@ -30,6 +31,8 @@ src/                    React frontend
 native/                 Rust engine crate
   src/api.rs            UsageBackend: open, background loops, the op dispatcher
   src/main.rs           `observatory-engine` binary: JSON-lines over stdio (dev only)
+  src/insights.rs       Insights aggregates, project cost attribution, session metadata cache
+  src/trace.rs          On-demand Agent single-task call-chain trace extraction (read-only)
   src/database/         Connection management, schema, CC Switch import, price seed
   src/services/         Collectors (`session_usage_*.rs`), statistics, pricing
   src/session_manager/  Per-tool session file parsers used by the collectors
@@ -41,7 +44,7 @@ native/                 Rust engine crate
   src/network_overview.rs Adapter snapshot and egress IP
   tests/                Integration tests against real databases and HTTP servers
 src-tauri/              Tauri shell (main.rs), config, icons, NSIS template
-scripts/                Vite dev bridge (usageBridge.ts) and cargo wrapper
+scripts/                Vite dev bridge (usageBridge.ts), cargo wrapper, macOS local installer (mac-install.mjs)
 tests/                  Frontend unit tests (*.test.mjs)
 packages/index.html     Promo page published to GitHub Pages
 docs/                   This documentation and API examples
@@ -73,10 +76,10 @@ Both modes use the same data directory, and `engine.lock` (an exclusive file loc
 
 | Label | Purpose |
 | --- | --- |
-| `main` | The app. Close hides it when the tray exists, otherwise quits. |
-| `tray-panel` | Frameless quick panel loaded as `index.html?surface=tray`. Always hidden, never destroyed, so the tray shortcut survives Alt+F4. |
+| `main` | The app. Close hides it when the tray exists (exiting macOS fullscreen cleanly before hiding so Space transitions never leave a blank window), otherwise quits. |
+| `tray-panel` | Frameless quick panel loaded as `index.html?surface=tray`. Created lazily on the first tray left-click and always hidden rather than destroyed, keeping startup light while preserving the shortcut. |
 
-A background thread in the shell refreshes the tray menu text (today's cost, requests, tokens) every 30 s.
+A background thread in the shell refreshes the tray menu text (today's cost, requests, tokens) every 30 s, skipping SQLite queries whenever `today_cache_key` (`(data_epoch, local_day)`) is unchanged.
 
 ## 4. Engine Core (`native/src/api.rs`)
 
@@ -86,7 +89,7 @@ A background thread in the shell refreshes the tray menu text (today's cost, req
 
 **Background loops (`start_background`)**:
 
-- *Local scan loop*: ticks every 5 s; scans when the configured interval (30 s, 60 s or manual) has elapsed since the last completed scan. Uses `try_lock` on the scan lock so it never queues behind a manual scan. Runs `wal_checkpoint(TRUNCATE)` and `PRAGMA optimize` at most hourly, right after a scan.
+- *Local scan loop*: ticks every 5 s, caching `(data_epoch, refresh_interval, import_failed)` so idle ticks do zero `spawn_blocking` or SQLite reads; scans when the configured interval (30 s, 60 s or manual) has elapsed since the last completed scan. Uses `try_lock` on the scan lock so it never queues behind a manual scan. Runs `wal_checkpoint(TRUNCATE)` and `PRAGMA optimize` at most hourly, right after a scan.
 - *LAN loops* (`lan_usage::start_background`): starts the HTTP service if sharing is on, then pulls paired devices on the configured interval.
 
 **Dispatcher (`call` → `dispatch`)**: one `match` over string op names. Every op that touches SQLite runs in `spawn_blocking`, because the connection lock is a `std::sync::Mutex` and long aggregates must not stall Tokio workers shared with the LAN service. Ops listed in `activity::action_label` are also written to the activity log with sanitized arguments.
@@ -94,7 +97,7 @@ A background thread in the shell refreshes the tray menu text (today's cost, req
 | Group | Ops |
 | --- | --- |
 | Status & settings | `status`, `preferences_save`, `sources_save`, `scan_revision` |
-| Dashboards | `dashboard`, `tray_dashboard`, `request_detail` |
+| Dashboards & Insights | `dashboard`, `tray_dashboard`, `request_detail`, `insights`, `session_turns`, `session_trace` |
 | Scanning | `sync` (local scan + pull peers), `scan_local_only`, `import_cc_switch` |
 | Pricing | `pricing_list`, `pricing_update`, `pricing_batch`, `pricing_delete`, `pricing_backfill`, `modelsdev_fetch`, `modelsdev_config_get`, `modelsdev_config_save`, `modelsdev_record_result` |
 | Subscriptions | `subscriptions_get`, `subscriptions_save`, `subscription_usage`, `subscription_cycle_usage`, `subscription_cycle_series` |
@@ -131,7 +134,7 @@ Schema: `native/src/database/schema.sql`. The database is metrics-only; it never
 
 1. Lists the tool's session files or database.
 2. Loads all cursors once (`load_sync_cursors`) and skips files whose modification time and tail fingerprint are unchanged.
-3. Reads from the saved byte offset, parses records with the matching `session_manager` provider, and computes cost with the cached price table.
+3. Reads from the saved byte offset, parses records with the matching `session_manager` provider (Antigravity uses a streaming low-memory deserializer that skips thinking/media/tool payload bodies), computes estimated latencies where native durations are absent (Antigravity, DeepSeek Harness, Gemini CLI), and computes cost with the cached price table.
 4. Inserts rows in a per-file transaction, checking `session_usage_dedup` first.
 5. Advances the cursor.
 
@@ -142,7 +145,9 @@ The scan lock serializes background scans, manual scans, remote-requested scans 
 ## 7. Querying and Caching
 
 - Statistics live in `services/usage_stats.rs`. Every aggregate combines detail rows and rollups for the requested range, and refuses a range that splits a rollup-only day.
-- `dashboard` and `tray_dashboard` compute all their parts inside one read snapshot (`with_read_connection`), so a concurrent scan cannot make totals, trends and groupings disagree.
+- Insights analytics live in `native/src/insights.rs` (reusing `effective_usage_log_filter_for_range` proxy-shadow deduplication, `find_model_pricing` for cache-savings math, and an in-memory cache with per-platform batch reads for session titles, project directories and git branches).
+- Agent task call-chain traces live in `native/src/trace.rs`: `session_trace` parses local session transcripts read-only on demand (Antigravity, Claude Code, Codex, OpenCode, Gemini CLI) to build hierarchical LLM + tool/subagent waterfalls with parallel interval union math, falling back to `proxy_request_logs` turns for other platforms or remote devices. Conversation contents are never written to `observatory.db`.
+- `dashboard`, `tray_dashboard` and `insights` compute their parts inside one read snapshot (`with_read_connection`), so a concurrent scan cannot make totals, trends and groupings disagree.
 - Results are cached in a 16-entry LRU keyed by `(database instance, write epoch, op + args [+ local date for open-ended ranges])`.
 - `status` caches its two full-table counts by write epoch.
 - The frontend polls the cheap `scan_revision` op and invalidates TanStack Query caches only when the revision or epoch changes.
@@ -189,11 +194,11 @@ The public API contract, parameters, errors and examples are in [read-only-usage
 
 ## 10. Frontend
 
-- **Data access**: all calls go through `usageCall`. Query keys start with `"usage"` so a scan can invalidate everything at once.
-- **Routing**: `main.tsx` keeps the current page in React state; each page is a component (`UsageWorkspace`, `SubscriptionWorkspace`, `DeviceManager`, `NetworkOverview`, `ActivityLog`). The tray window renders `TrayPanel` instead of `App`.
-- **Pure logic is separated for testing**: `usage/appRanking.ts`, `chartData.ts`, `modelDisplay.ts`, `requestSpeed.ts`, `statsSort.ts`, `timeRange.ts`, `multiDeviceScan.ts`, `network/networkRate.ts`, `subscriptions/*.ts` each have a matching test in `tests/`.
-- **Styling**: `styles.css` (base), `usage/usage.css`, `theme/ccSwitchTheme.css` (colors from CC Switch), `theme/redesign.css` (sidebar shell). Light/dark follows the system and can be toggled; the choice is passed to the native title bar.
-- **Local storage** holds only view preferences (sidebar state, theme, last filters).
+- **Data access**: all calls go through `usageCall`. Query keys start with `"usage"` so a scan can invalidate everything at once; background status polling (`scan_revision`, `lan_status`) is gated on `document.visibilityState === "visible"`.
+- **Routing**: `main.tsx` keeps the current page in React state; each page is a component (`UsageWorkspace`, `InsightsWorkspace`, `SubscriptionWorkspace`, `DeviceManager`, `NetworkOverview`, `ActivityLog`). The tray window renders `TrayPanel` instead of `App`.
+- **Pure logic is separated for testing**: `usage/appRanking.ts`, `chartData.ts`, `modelDisplay.ts`, `requestSpeed.ts`, `statsSort.ts`, `timeRange.ts`, `multiDeviceScan.ts`, `network/networkRate.ts`, `subscriptions/*.ts` each have a matching test in `tests/`. `insights/reportBuilder.ts` generates both standalone offline HTML reports (with inline SVG charts and hover tooltips) and Markdown reports without external dependencies.
+- **Styling**: `styles.css` (base), `usage/usage.css`, `insights/insights.css`, `theme/ccSwitchTheme.css` (colors from CC Switch), `theme/redesign.css` (sidebar shell). Light/dark follows the system and can be toggled; the choice is passed to the native title bar.
+- **Local storage** holds only view preferences (sidebar state, theme, last filters, Insights budget thresholds).
 
 ## 11. Testing
 
@@ -212,6 +217,7 @@ Tests that touch process-wide environment variables use `serial_test`.
 
 - `npm run desktop:dev` runs the Tauri app against the Vite dev server.
 - `npm run desktop:build` builds a debug executable without installers; `desktop:release` builds an optimized one.
+- `npm run mac:install` (`scripts/mac-install.mjs`) builds the macOS `.app` bundle, installs it to `/Applications/Observatory.app` with `ditto`, and removes the temporary build bundle so Launchpad and Spotlight only index one copy.
 - Pushing a `v*` tag runs `.github/workflows/release.yml`: it creates one draft release, builds the Windows x64 NSIS installer plus a portable `.exe` and the macOS Apple Silicon DMG, signs updater artifacts, runs lint and tests in parallel, and publishes `latest.json` only when checks pass. The tag must match `package.json`'s version.
 - Version numbers live in `package.json`, `native/Cargo.toml`, `src-tauri/Cargo.toml` and `src-tauri/tauri.conf.json`; keep them in sync.
 - The updater checks `releases/latest/download/latest.json` on GitHub at startup and every six hours.

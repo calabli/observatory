@@ -43,11 +43,20 @@ The app has a collapsible left sidebar with three groups.
 
 **Subscriptions & Quota (订阅与额度)** — Record subscriptions (name, agent, amount, currency, billing period, validity dates, weekly reset time) and view usage per quota cycle or for the last N days. Details: [subscriptions-and-quota.md](subscriptions-and-quota.md).
 
+**Insights (洞察)** — Deep cost, efficiency and session-level review across one machine or all paired devices:
+
+- *KPIs & budget alerts*: Prompt cache savings (reusing effective model pricing resolution for tiered/dated IDs), average context volume per request, 30-day cost forecast anchored on each source's active usage span, and inline daily + monthly budget thresholds with 80% warning and 100% over-budget banners.
+- *Subscription ROI*: compares active subscription bills against equivalent API value in the selected range and current billing cycle (non-USD subscriptions keep their native currency without estimated exchange-rate conversion).
+- *Visual analytics (with interactive hover tooltips)*: 7×24 local coding rhythm matrix (cost, requests, output speed), session health scatter (turns × cost × average context), model latency/speed stability dumbbell (auto-selecting speed when TTFT is absent), 100% stacked daily token-mix flow, and status-code health with automatic diagnosis.
+- *Project cost & Sessions explorer*: attributes session spend to local workspace/repository directories (click any project to filter) and provides searchable, sortable session rankings with real titles, project paths, git branches and one-click resume command copy.
+- *Agent single-task call-chain waterfall*: clicking any session bubble or table row opens an on-demand hierarchical waterfall (User Task → LLM calls → Tool / Subagent calls) with parallel tool union timing, LLM vs. tool duration attribution, top-tool breakdown, TTFT segments and a span inspector (extracted read-only from local logs for Antigravity, Claude Code, Codex, OpenCode and Gemini CLI, and falling back transparently to database turn waterfalls for other platforms or remote devices).
+- *Visual report preview & export*: live in-app preview and download of standalone offline HTML reports (embedded interactive SVG charts, total token consumption and four-category breakdown, hover tooltips and print-to-PDF styling) alongside Markdown reports.
+
 ### 3.2 Devices
 
 **Multi-device (多设备)** — Turn on LAN sharing, choose which apps to share, discover devices, pair with a code, enable or disable devices in the aggregate, revoke access, run a multi-device scan, and manage the read-only API key.
 
-**Network (网络诊断)** — Local adapters with IPv4/IPv6, state, gateway, DNS, and live receive/transmit rates. Rates are sampled every 3 seconds only while the page is visible; the chart keeps the last 60 samples in memory. The internet egress IPv4 is looked up through ipify only when the user clicks. The recommended adapter can be overridden because VPNs and split routing can make the guess wrong.
+**Network (网络诊断)** — Local adapters with IPv4/IPv6, state, gateway, DNS, and live receive/transmit rates with interactive chart hover tooltips. Rates are sampled every 3 seconds only while the page is visible; the chart keeps the last 60 samples in memory. The internet egress IPv4 is looked up through ipify only when the user clicks. The recommended adapter can be overridden because VPNs and split routing can make the guess wrong.
 
 ### 3.3 Records
 
@@ -125,4 +134,3 @@ These are ideas, not commitments:
 - Persistent remote scan jobs with per-device retry.
 - Real device performance metrics (CPU, memory, disk) correlated with AI usage on one timeline.
 - Network diagnostics beyond the adapter view: gateway latency, DNS resolution, connection checks.
-- Agent tracing: a call tree from task to model and tool calls, with cost and time attribution.

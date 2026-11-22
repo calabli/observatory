@@ -6,7 +6,8 @@ Built with Tauri 2, React, TypeScript, Rust and SQLite. Releases are published f
 
 ## Features
 
-- **AI usage**: cost, requests, four token categories, cache hit rate, trends, per-app/provider/model breakdowns, request details and CSV export, filtered by time, app, provider and model.
+- **AI usage**: cost, requests, four token categories, cache hit rate, interactive trends, per-app/provider/model breakdowns, request details and CSV export, filtered by time, app, provider and model.
+- **Insights & Agent tracing**: prompt cache savings, 30-day cost forecast with daily/monthly budget alerts, subscription ROI gauge, 7×24 coding rhythm heatmap, project/repository cost ranking, searchable sessions explorer with one-click resume commands, on-demand Agent single-task call-chain waterfall (User Task → LLM → Tool/Subagent timing and cost attribution), and offline visual HTML / Markdown report preview and export.
 - **11 native collectors**: Claude Code, Codex, Gemini CLI, Grok Build, OpenCode, Pi, MiniMax Code, Antigravity, Kimi Code, DeepSeek Harness, ZCode. Scans are incremental and never double count.
 - **Pricing**: editable per-model prices, models.dev import and auto-sync, recalculation of costs for records that were missing a price.
 - **Subscriptions & quota**: usage per weekly quota cycle next to what you pay.
@@ -51,11 +52,11 @@ npm test
 npm run native:test
 ```
 
-Builds: `npm run desktop:build` (debug executable) and `npm run desktop:release` (optimized). Installers are produced by the release workflow when a `v*` tag is pushed; see [docs/architecture.md](docs/architecture.md#12-build-and-release).
+Builds: `npm run desktop:build` (debug executable), `npm run desktop:release` (optimized), and `npm run mac:install` (macOS local install to `/Applications/Observatory.app` with temporary bundle cleanup). Installers are produced by the release workflow when a `v*` tag is pushed; see [docs/architecture.md](docs/architecture.md#12-build-and-release).
 
 ## Privacy
 
-Observatory reads usage metadata only. It never imports or exports API keys, provider configuration or conversation contents. LAN sharing is off by default; when enabled it uses plain HTTP, so only turn it on in trusted networks.
+Observatory stores usage metadata only in `observatory.db`. It never imports or exports API keys, provider configuration or conversation contents. On-demand session drill-down (titles, project directories, git branches and Agent tool-call trace waterfalls) reads local session logs directly from disk without persisting conversation bodies to the database. LAN sharing is off by default; when enabled it uses plain HTTP, so only turn it on in trusted networks.
 
 ## Sources and Licensing
 
