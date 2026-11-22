@@ -30,9 +30,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NOTES: |
-            - Fixed Insights cache savings calculation for tiered and dated model IDs (such as Antigravity `gemini-*-high`/`medium`) by reusing `find_model_pricing` resolution.
-            - Fixed 30-day cost forecast burn rate to anchor on each platform's effective active span (never diluted by unused days before first usage) and aligned period-over-period delta boundaries to whole local days.
-            - Auto-selected output speed stability dumbbell on platforms without TTFT (such as Antigravity).
+            - Added Agent single-task call-chain waterfall (`session_trace`) inside Insights session drill-down: extracts hierarchical User Task → LLM → Tool/Subagent call trees with parallel tool union timing, LLM vs tool duration attribution, top tools breakdown, and TTFT segments for Antigravity, Claude Code, Codex, OpenCode, and Gemini CLI (with graceful DB turn waterfall fallback for other platforms and remote devices).
+            - Added project / repository cost ranking (`Project Cost`), searchable & sortable Sessions Explorer with cross-platform session title, project directory, git branch, and one-click resume command copy, plus Subscription ROI gauge and multi-device toggle in Insights.
+            - Added daily & monthly budget alerts (80% warning / 100% over-budget banners) and rich visual report preview & export supporting standalone offline HTML (with embedded interactive SVG charts, total token consumption breakdown, and hover tooltips) alongside Markdown.
+            - Added interactive hover tooltips across all report charts, Insights charts (30-day forecast curve, model stability dumbbell, token mix, status bar, project ranking, waterfall spans, context growth sparkline), AI usage trend chart, and network throughput chart.
+            - Added estimated latency & output speed backfill for DeepSeek Harness and Gemini CLI, wired proxy-shadow deduplication into Insights, and reduced idle background overhead (lazy tray WebView creation, cached 5s ticker checks, and visibility-gated frontend polling).
 
             The macOS build is not notarized.
         run: |

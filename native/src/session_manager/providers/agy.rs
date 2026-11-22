@@ -328,6 +328,85 @@ fn scan_root(root: &Path, gemini_dir: Option<&Path>) -> Vec<SessionMeta> {
     sessions
 }
 
+/// Batch read of `(title, project_dir)` for all Antigravity sessions from
+/// `conversation_summaries.db` (one fast SQLite scan, zero transcript file reads).
+pub(crate) fn lookup_all_summaries(
+) -> std::collections::HashMap<String, (Option<String>, Option<String>)> {
+    let mut map = std::collections::HashMap::new();
+    for (root, _) in session_sources() {
+        let db_path = root
+            .parent()
+            .unwrap_or(&root)
+            .join("conversation_summaries.db");
+        let Ok(conn) = rusqlite::Connection::open_with_flags(
+            &db_path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        ) else {
+            continue;
+        };
+        let Ok(mut stmt) = conn
+            .prepare("SELECT conversation_id, title, workspace_uris FROM conversation_summaries")
+        else {
+            continue;
+        };
+        let Ok(rows) = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        }) else {
+            continue;
+        };
+        for (id, title, uris) in rows.flatten() {
+            if !valid_session_id(&id) || map.contains_key(&id) {
+                continue;
+            }
+            let project_dir = serde_json::from_str::<Vec<String>>(&uris)
+                .ok()
+                .and_then(|v| v.into_iter().next())
+                .and_then(|uri| url::Url::parse(&uri).ok()?.to_file_path().ok())
+                .map(|p| p.to_string_lossy().into_owned());
+            map.insert(id, ((!title.is_empty()).then_some(title), project_dir));
+        }
+    }
+    map
+}
+
+/// Fast on-demand lookup of `(title, project_dir)` for a single Antigravity session ID
+/// without scanning all sessions or parsing any transcript files.
+pub(crate) fn lookup_session_summary(session_id: &str) -> Option<(Option<String>, Option<String>)> {
+    if !valid_session_id(session_id) {
+        return None;
+    }
+    for (root, _) in session_sources() {
+        let db_path = root
+            .parent()
+            .unwrap_or(&root)
+            .join("conversation_summaries.db");
+        let Ok(conn) = rusqlite::Connection::open_with_flags(
+            &db_path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        ) else {
+            continue;
+        };
+        let row: Result<(String, String), _> = conn.query_row(
+            "SELECT title, workspace_uris FROM conversation_summaries WHERE conversation_id = ?1 LIMIT 1",
+            [session_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        );
+        if let Ok((title, uris)) = row {
+            let project_dir = serde_json::from_str::<Vec<String>>(&uris)
+                .ok()
+                .and_then(|v| v.into_iter().next())
+                .and_then(|uri| url::Url::parse(&uri).ok()?.to_file_path().ok())
+                .map(|p| p.to_string_lossy().into_owned());
+            return Some(((!title.is_empty()).then_some(title), project_dir));
+        }
+    }
+    None
+}
+
 fn read_summaries(path: &Path, gemini_dir: Option<&Path>) -> BTreeMap<String, SessionMeta> {
     let mut result = BTreeMap::new();
     let Ok(conn) =

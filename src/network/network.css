@@ -90,10 +90,35 @@
 #observatory-root .network-chart-legend span:nth-child(2) {
   color: var(--teal);
 }
+#observatory-root .network-chart-plot {
+  position: relative;
+  margin: 12px 0;
+  cursor: crosshair;
+}
 #observatory-root .network-chart svg {
   width: 100%;
   height: 170px;
-  margin: 12px 0;
+  display: block;
+}
+#observatory-root .network-chart-tip {
+  position: absolute;
+  top: 6px;
+  pointer-events: none;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.16);
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  z-index: 4;
+}
+#observatory-root .network-chart-tip small {
+  display: block;
+  color: var(--muted);
+  margin-bottom: 2px;
 }
 #observatory-root .network-wait {
   padding: 50px 0;

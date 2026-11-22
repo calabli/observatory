@@ -195,27 +195,38 @@ impl UsageBackend {
         tokio::spawn(async move {
             let mut ticker = tokio::time::interval(std::time::Duration::from_secs(5));
             let mut last_maintenance = std::time::Instant::now();
+            // Cache (data_epoch, refresh_interval, import_failed) so the 5s ticker
+            // does zero SQLite reads or spawn_blocking work while settings are unchanged.
+            let mut cached_prefs: Option<(u64, String, bool)> = None;
             ticker.tick().await;
             loop {
                 ticker.tick().await;
-                // Reading settings needs the connection lock, so it goes to a blocking thread instead of stalling a worker while a scan holds the lock.
-                let source = db.clone();
-                let Ok((interval, import_failed)) = tokio::task::spawn_blocking(move || {
-                    let interval = source
-                        .get_setting("usage_refresh_interval")
-                        .ok()
-                        .flatten()
-                        .unwrap_or_else(|| "30".into());
-                    let import_failed = source
-                        .get_setting("usage_initial_import_error")
-                        .ok()
-                        .flatten()
-                        .is_some();
-                    (interval, import_failed)
-                })
-                .await
-                else {
-                    continue;
+                let epoch = db.data_epoch();
+                let (interval, import_failed) = match &cached_prefs {
+                    Some((e, interval, failed)) if *e == epoch => (interval.clone(), *failed),
+                    _ => {
+                        let source = db.clone();
+                        let Ok((interval, import_failed)) =
+                            tokio::task::spawn_blocking(move || {
+                                let interval = source
+                                    .get_setting("usage_refresh_interval")
+                                    .ok()
+                                    .flatten()
+                                    .unwrap_or_else(|| "30".into());
+                                let import_failed = source
+                                    .get_setting("usage_initial_import_error")
+                                    .ok()
+                                    .flatten()
+                                    .is_some();
+                                (interval, import_failed)
+                            })
+                            .await
+                        else {
+                            continue;
+                        };
+                        cached_prefs = Some((epoch, interval.clone(), import_failed));
+                        (interval, import_failed)
+                    }
                 };
                 if interval == "manual" || import_failed {
                     continue;
@@ -477,16 +488,22 @@ impl UsageBackend {
         Ok(value)
     }
     fn insights_impl(db: &Arc<Database>, q: &Query, args: &Value) -> Result<Value, AppError> {
-        let db = Self::query_selected_database(db, q)?;
+        let local_epoch = db.write_epoch.load(std::sync::atomic::Ordering::Relaxed);
+        let local_subs = crate::subscriptions::load(db).unwrap_or_default();
+        let target_db = Self::query_selected_database(db, q)?;
         let f = &q.filters;
         let (s, e, a) = (f.start_date, f.end_date, f.app_type.as_deref());
-        let epoch = db.write_epoch.load(std::sync::atomic::Ordering::Relaxed);
-        let key = result_key(&db, epoch, "insights", args);
+        let target_epoch = target_db
+            .write_epoch
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let epoch = target_epoch.wrapping_mul(31).wrapping_add(local_epoch);
+        let key = result_key(&target_db, epoch, "insights", args);
         if let Some(hit) = cached_result(&key) {
             return Ok(hit);
         }
-        let data =
-            db.with_read_connection(|conn| crate::insights::query_insights_on_conn(conn, s, e, a))?;
+        let data = target_db.with_read_connection(|conn| {
+            crate::insights::query_insights_on_conn(conn, s, e, a, &local_subs)
+        })?;
         let value = to_json(data)?;
         store_result(key, &value);
         Ok(value)
@@ -681,6 +698,55 @@ impl UsageBackend {
                 let q: Query = serde_json::from_value(args.clone())
                     .map_err(|e| AppError::InvalidInput(e.to_string()))?;
                 self.call_blocking(move |db| Self::insights_impl(db, &q, &args)).await
+            }
+            "session_turns" => {
+                let q: Query = serde_json::from_value(args.clone())
+                    .map_err(|e| AppError::InvalidInput(e.to_string()))?;
+                let session_id = args
+                    .get("sessionId")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                self.call_blocking(move |db| {
+                    let target_db = Self::query_selected_database(db, &q)?;
+                    let f = &q.filters;
+                    let data = target_db.with_read_connection(|conn| {
+                        crate::insights::query_session_turns_on_conn(
+                            conn,
+                            &session_id,
+                            f.app_type.as_deref(),
+                            f.start_date,
+                            f.end_date,
+                        )
+                    })?;
+                    to_json(data)
+                })
+                .await
+            }
+            "session_trace" => {
+                let q: Query = serde_json::from_value(args.clone())
+                    .map_err(|e| AppError::InvalidInput(e.to_string()))?;
+                let session_id = args
+                    .get("sessionId")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                self.call_blocking(move |db| {
+                    let target_db = Self::query_selected_database(db, &q)?;
+                    let f = &q.filters;
+                    let data = target_db.with_read_connection(|conn| {
+                        crate::trace::query_session_trace_on_conn(
+                            conn,
+                            &session_id,
+                            f.app_type.as_deref(),
+                            f.start_date,
+                            f.end_date,
+                            false,
+                        )
+                    })?;
+                    to_json(data)
+                })
+                .await
             }
             "request_detail" => {
                 let q: Query = serde_json::from_value(args)

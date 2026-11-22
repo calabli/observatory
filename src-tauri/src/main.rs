@@ -144,8 +144,28 @@ fn hide_window_safely(window: &tauri::Window) {
     let _ = window.hide();
 }
 
+fn ensure_tray_panel(app: &tauri::AppHandle) -> Option<tauri::WebviewWindow> {
+    if let Some(window) = app.get_webview_window("tray-panel") {
+        return Some(window);
+    }
+    WebviewWindowBuilder::new(
+        app,
+        "tray-panel",
+        WebviewUrl::App("index.html?surface=tray".into()),
+    )
+    .title("观测台快捷面板")
+    .inner_size(420.0, 720.0)
+    .resizable(false)
+    .decorations(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .visible(false)
+    .build()
+    .ok()
+}
+
 fn toggle_tray_panel(app: &tauri::AppHandle, x: f64, y: f64) {
-    let Some(window) = app.get_webview_window("tray-panel") else {
+    let Some(window) = ensure_tray_panel(app) else {
         show_window(app);
         return;
     };
@@ -200,19 +220,6 @@ fn tray_action(
 }
 
 fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
-    WebviewWindowBuilder::new(
-        app,
-        "tray-panel",
-        WebviewUrl::App("index.html?surface=tray".into()),
-    )
-    .title("观测台快捷面板")
-    .inner_size(420.0, 720.0)
-    .resizable(false)
-    .decorations(false)
-    .always_on_top(true)
-    .skip_taskbar(true)
-    .visible(false)
-    .build()?;
     let open = MenuItem::with_id(app, "open", "打开观测台", true, None::<&str>)?;
     let heading = MenuItem::with_id(app, "heading", "本机 · 今日用量", false, None::<&str>)?;
     let cost = MenuItem::with_id(app, "cost", "今日估算费用：读取中…", false, None::<&str>)?;

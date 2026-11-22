@@ -314,7 +314,13 @@ pub(crate) fn record_scan(
         keys.sort();
         for key in keys {
             // Skip reserved internal state rows in session_log_sync that do not represent files.
-            if key == "agy:latency-backfill-v1" || key == "pi:child-cutoff" {
+            if matches!(
+                key.as_str(),
+                "agy:latency-backfill-v1"
+                    | "dsh:latency-backfill-v1"
+                    | "gemini:latency-backfill-v1"
+                    | "pi:child-cutoff"
+            ) {
                 continue;
             }
             let current = &source.after.cursors[key];

@@ -45,6 +45,7 @@ export function NetworkOverview() {
   const [selected, setSelected] = useState("");
   const [samples, setSamples] = useState<Sample[]>([]);
   const [rate, setRate] = useState<{ down: number; up: number } | null>(null);
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const publicIp = useMutation({
     mutationFn: () =>
       usageCall<{ ip: string; checkedAt: number }>(
@@ -264,27 +265,105 @@ export function NetworkOverview() {
                     <span>● 上传</span>
                     <span>峰值 {speed(max)}</span>
                   </div>
-                  <svg
-                    viewBox="0 0 1000 160"
-                    preserveAspectRatio="none"
-                    role="img"
-                    aria-label="所选网卡最近下载与上传速度"
+                  <div
+                    className="network-chart-plot"
+                    onPointerMove={(e) => {
+                      const r = e.currentTarget.getBoundingClientRect();
+                      const ratio = Math.max(
+                        0,
+                        Math.min(
+                          1,
+                          (e.clientX - r.left) / Math.max(1, r.width),
+                        ),
+                      );
+                      const idx = Math.round(ratio * (samples.length - 1));
+                      setHoverIdx((prev) => (prev === idx ? prev : idx));
+                    }}
+                    onPointerLeave={() => setHoverIdx(null)}
                   >
-                    <polyline
-                      points={points("down")}
-                      fill="none"
-                      stroke="var(--accent)"
-                      strokeWidth="2"
-                      vectorEffect="non-scaling-stroke"
-                    />
-                    <polyline
-                      points={points("up")}
-                      fill="none"
-                      stroke="var(--teal)"
-                      strokeWidth="2"
-                      vectorEffect="non-scaling-stroke"
-                    />
-                  </svg>
+                    <svg
+                      viewBox="0 0 1000 160"
+                      preserveAspectRatio="none"
+                      role="img"
+                      aria-label="所选网卡最近下载与上传速度"
+                    >
+                      <polyline
+                        points={points("down")}
+                        fill="none"
+                        stroke="var(--accent)"
+                        strokeWidth="2"
+                        vectorEffect="non-scaling-stroke"
+                      />
+                      <polyline
+                        points={points("up")}
+                        fill="none"
+                        stroke="var(--teal)"
+                        strokeWidth="2"
+                        vectorEffect="non-scaling-stroke"
+                      />
+                      {hoverIdx !== null && samples[hoverIdx] && (
+                        <>
+                          <line
+                            x1={
+                              (hoverIdx * 1000) /
+                              Math.max(1, samples.length - 1)
+                            }
+                            x2={
+                              (hoverIdx * 1000) /
+                              Math.max(1, samples.length - 1)
+                            }
+                            y1="6"
+                            y2="154"
+                            stroke="var(--text)"
+                            strokeWidth="1"
+                            strokeDasharray="3 3"
+                            opacity="0.35"
+                            vectorEffect="non-scaling-stroke"
+                          />
+                          <circle
+                            cx={
+                              (hoverIdx * 1000) /
+                              Math.max(1, samples.length - 1)
+                            }
+                            cy={150 - (samples[hoverIdx].down / max) * 140}
+                            r="3.5"
+                            fill="var(--accent)"
+                            vectorEffect="non-scaling-stroke"
+                          />
+                          <circle
+                            cx={
+                              (hoverIdx * 1000) /
+                              Math.max(1, samples.length - 1)
+                            }
+                            cy={150 - (samples[hoverIdx].up / max) * 140}
+                            r="3.5"
+                            fill="var(--teal)"
+                            vectorEffect="non-scaling-stroke"
+                          />
+                        </>
+                      )}
+                    </svg>
+                    {hoverIdx !== null && samples[hoverIdx] && (
+                      <div
+                        className="network-chart-tip"
+                        style={{
+                          left: `clamp(8px, calc(${(
+                            (hoverIdx / Math.max(1, samples.length - 1)) *
+                            100
+                          ).toFixed(1)}% - 72px), calc(100% - 160px))`,
+                        }}
+                      >
+                        <small>
+                          {new Date(samples[hoverIdx].time).toLocaleTimeString(
+                            "zh-CN",
+                            { hour12: false },
+                          )}
+                        </small>
+                        <div>下载 {speed(samples[hoverIdx].down)}</div>
+                        <div>上传 {speed(samples[hoverIdx].up)}</div>
+                      </div>
+                    )}
+                  </div>
                   <div className="network-chart-times">
                     <span>
                       {new Date(samples[0].time).toLocaleTimeString("zh-CN", {

@@ -16,6 +16,7 @@ pub mod scan_jobs;
 pub mod services;
 pub mod session_manager;
 pub mod subscriptions;
+pub mod trace;
 
 pub mod codex_config {
     pub fn get_codex_config_dir() -> std::path::PathBuf {

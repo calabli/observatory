@@ -942,7 +942,6 @@ function App() {
         ) : page === "insights" ? (
           <InsightsWorkspace
             sources={nativeStatus?.sources ?? nativeInfo.data?.sources ?? []}
-            multiDevice={false}
           />
         ) : page === "subscriptions" ? (
           <SubscriptionWorkspace />

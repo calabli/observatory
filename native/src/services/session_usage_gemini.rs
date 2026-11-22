@@ -21,7 +21,8 @@ use crate::gemini_config::get_gemini_dir;
 use crate::proxy::usage::calculator::CostCalculator;
 use crate::proxy::usage::parser::TokenUsage;
 use crate::services::session_usage::{
-    metadata_modified_nanos, update_sync_state_on_conn, SessionPricingCache, SessionSyncResult,
+    estimated_latency_ms, metadata_modified_nanos, parse_timestamp_millis,
+    update_sync_state_on_conn, SessionPricingCache, SessionSyncResult,
 };
 use crate::services::usage_stats::{should_skip_session_insert, DedupKey};
 use crate::session_manager::providers::gemini::{is_session_file, parse_session_document};
@@ -38,6 +39,8 @@ struct GeminiTokens {
     cached: u32,
     thoughts: u32,
 }
+
+const LATENCY_BACKFILL_KEY: &str = "gemini:latency-backfill-v1";
 
 /// Sync the Gemini usage data (from the JSON session logs)
 pub fn sync_gemini_usage(db: &Database) -> Result<SessionSyncResult, AppError> {
@@ -59,11 +62,16 @@ pub fn sync_gemini_usage(db: &Database) -> Result<SessionSyncResult, AppError> {
     }
 
     let cursors = crate::services::session_usage::load_sync_cursors(db)?;
+    let needs_latency_backfill = !cursors.contains_key(LATENCY_BACKFILL_KEY);
 
     for file_path in &files {
-        let last_modified = cursors
-            .get(file_path.to_string_lossy().as_ref())
-            .map_or(0, |c| c.last_modified);
+        let last_modified = if needs_latency_backfill {
+            0
+        } else {
+            cursors
+                .get(file_path.to_string_lossy().as_ref())
+                .map_or(0, |c| c.last_modified)
+        };
         match sync_single_gemini_file(db, file_path, last_modified) {
             Ok((imported, skipped)) => {
                 result.imported += imported;
@@ -75,6 +83,10 @@ pub fn sync_gemini_usage(db: &Database) -> Result<SessionSyncResult, AppError> {
                 result.errors.push(msg);
             }
         }
+    }
+    if needs_latency_backfill && result.errors.is_empty() {
+        let conn = lock_conn!(db.conn);
+        update_sync_state_on_conn(&conn, LATENCY_BACKFILL_KEY, 0, 0)?;
     }
 
     if result.imported > 0 {
@@ -185,11 +197,23 @@ fn sync_single_gemini_file(
         .map_err(|e| AppError::Database(format!("启动 Gemini 会话导入事务失败: {e}")))?;
     // The same file repeatedly hits a few models: cache the price lookups per transaction (including the misses).
     let mut pricing_cache = SessionPricingCache::default();
+    let mut prev_user_ms: Option<i64> = None;
     for msg in messages {
-        // Only messages with type == "gemini" are processed
-        if msg.get("type").and_then(|t| t.as_str()) != Some("gemini") {
+        let msg_type = msg.get("type").and_then(|t| t.as_str());
+        if msg_type == Some("user") {
+            prev_user_ms = msg
+                .get("timestamp")
+                .and_then(|v| v.as_str())
+                .and_then(parse_timestamp_millis);
             continue;
         }
+        // Only messages with type == "gemini" are processed
+        if msg_type != Some("gemini") {
+            prev_user_ms = None;
+            continue;
+        }
+
+        let start_ms = prev_user_ms.take();
 
         // Extract the tokens object
         let tokens_obj = match msg.get("tokens") {
@@ -211,6 +235,20 @@ fn sync_single_gemini_file(
             .and_then(|v| v.as_str())
             .unwrap_or("unknown");
         let timestamp = msg.get("timestamp").and_then(|v| v.as_str());
+        // Skip latency estimation when `toolCalls` are attached because Gemini CLI writes
+        // a single message timestamp that may include local shell/tool execution time.
+        let has_tool_calls = msg
+            .get("toolCalls")
+            .and_then(|v| v.as_array())
+            .is_some_and(|calls| !calls.is_empty());
+        let latency_ms = if has_tool_calls {
+            0
+        } else {
+            start_ms
+                .zip(timestamp.and_then(parse_timestamp_millis))
+                .and_then(|(s, e)| estimated_latency_ms(s, e))
+                .unwrap_or(0)
+        };
 
         // Generate a unique request_id
         let session_id_str = session_id.as_deref().unwrap_or("unknown");
@@ -223,6 +261,7 @@ fn sync_single_gemini_file(
             model,
             session_id.as_deref(),
             timestamp,
+            latency_ms,
             &mut pricing_cache,
         ) {
             Ok(true) => imported += 1,
@@ -274,11 +313,13 @@ fn insert_gemini_session_entry(
         model,
         session_id,
         timestamp,
+        0,
         &mut pricing_cache,
     )
 }
 
 /// Insert a single Gemini session record; the caller is responsible for the lock / transaction.
+#[allow(clippy::too_many_arguments)]
 fn insert_gemini_session_entry_on_conn(
     conn: &rusqlite::Connection,
     request_id: &str,
@@ -286,6 +327,7 @@ fn insert_gemini_session_entry_on_conn(
     model: &str,
     session_id: Option<&str>,
     timestamp: Option<&str>,
+    latency_ms: i64,
     pricing_cache: &mut SessionPricingCache,
 ) -> Result<bool, AppError> {
     let created_at = timestamp
@@ -369,11 +411,13 @@ fn insert_gemini_session_entry_on_conn(
             output_cost_usd = excluded.output_cost_usd,
             cache_read_cost_usd = excluded.cache_read_cost_usd,
             cache_creation_cost_usd = excluded.cache_creation_cost_usd,
-            total_cost_usd = excluded.total_cost_usd
+            total_cost_usd = excluded.total_cost_usd,
+            latency_ms = CASE WHEN excluded.latency_ms > 0 THEN excluded.latency_ms ELSE latency_ms END
         WHERE input_tokens != excluded.input_tokens
            OR output_tokens != excluded.output_tokens
            OR cache_read_tokens != excluded.cache_read_tokens
-           OR model != excluded.model",
+           OR model != excluded.model
+           OR (excluded.latency_ms > 0 AND latency_ms != excluded.latency_ms)",
         rusqlite::params![
             request_id,
             "_gemini_session",   // provider_id
@@ -389,7 +433,7 @@ fn insert_gemini_session_entry_on_conn(
             cache_read_cost,
             cache_creation_cost,
             total_cost,
-            0i64,                // latency_ms
+            latency_ms,          // latency_ms
             Option::<i64>::None, // first_token_ms
             200i64,              // status_code
             Option::<String>::None, // error_message
@@ -540,5 +584,43 @@ mod tests {
         let should_skip =
             tokens.input == 0 && tokens.output == 0 && tokens.thoughts == 0 && tokens.cached == 0;
         assert!(!should_skip, "纯缓存命中记录不应被跳过");
+    }
+
+    #[test]
+    fn test_gemini_estimates_latency_only_without_tool_calls() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("session-timing.json");
+        fs::write(
+            &file,
+            r#"{
+              "sessionId": "gem-s1",
+              "messages": [
+                {"id":"u1","type":"user","timestamp":"2026-11-21T10:00:00.000Z","content":"hi"},
+                {"id":"g1","type":"gemini","timestamp":"2026-11-21T10:00:05.500Z","model":"gemini-2.5-pro","tokens":{"input":1000,"output":300,"cached":0,"thoughts":100}},
+                {"id":"u2","type":"user","timestamp":"2026-11-21T10:01:00.000Z","content":"run build"},
+                {"id":"g2","type":"gemini","timestamp":"2026-11-21T10:01:20.000Z","model":"gemini-2.5-pro","toolCalls":[{"name":"run_shell_command"}],"tokens":{"input":1000,"output":250,"cached":0,"thoughts":0}}
+              ]
+            }"#,
+        )
+        .unwrap();
+        let db = Database::memory().unwrap();
+        let (imported, _) = sync_single_gemini_file(&db, &file, 0).unwrap();
+        assert_eq!(imported, 2);
+        let conn = db.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare("SELECT request_id, latency_ms FROM proxy_request_logs ORDER BY request_id")
+            .unwrap();
+        let rows: Vec<(String, i64)> = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            rows,
+            vec![
+                ("gemini_session:gem-s1:g1".to_string(), 5_500),
+                ("gemini_session:gem-s1:g2".to_string(), 0),
+            ]
+        );
     }
 }

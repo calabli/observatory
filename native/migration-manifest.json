@@ -24,13 +24,13 @@
       "path": "services/session_usage_dsh.rs",
       "sha256": "7f8ef800bfdf4c684c47eddaf78f98cf05a1b15ebeea4412da805724c3d8bbd4",
       "upstreamPath": "src-tauri/src/services/session_usage_dsh.rs",
-      "currentSha256": "354a7b3d64a46c3baf4fd2dac3d72d92c3d0038e3ee4e30444777d2b255628a5"
+      "currentSha256": "2101b2d1cb8b2330ec68e1f9172ca96486bb6b4752707d64d86e13ab735bafca"
     },
     {
       "path": "services/session_usage_gemini.rs",
       "sha256": "9992b41fd74edcfc4f2c58891eaef3aabfee0fe478addef0bd6355f99177f1a1",
       "upstreamPath": "src-tauri/src/services/session_usage_gemini.rs",
-      "currentSha256": "eb8857fff74317ef7e673e7dbf069590f6a371bd55217a11955c9a75e3c4c27a"
+      "currentSha256": "a9b0b2c53a4a6ff1d64fb6b403b677f3617553aeb526f8f2def8761cc1590368"
     },
     {
       "path": "services/session_usage_grokbuild.rs",
@@ -168,7 +168,7 @@
       "path": "session_manager/providers/agy.rs",
       "sha256": "2d92273f2c1324a267dcfbc699da3f7d639797e15c035ce6844000f2800224f6",
       "upstreamPath": "src-tauri/src/session_manager/providers/agy.rs",
-      "currentSha256": "ad356da5c8d27d45361e0ab2eb9e28f1edf34951d36f2a587b1256ce0358ab0f"
+      "currentSha256": "258ea98392771ea8369fa746ab918b21ba991d23d4917a6c3cf4ec4b13ead39f"
     },
     {
       "path": "lan_usage/client.rs",

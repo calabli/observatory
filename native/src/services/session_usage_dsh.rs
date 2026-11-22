@@ -1,6 +1,9 @@
 //! Read-only DeepSeek Harness v4 session import. No credentials or plugin required.
 use super::{
-    session_usage::{load_sync_cursors, SessionPricingCache, SessionSyncResult},
+    session_usage::{
+        estimated_latency_ms, load_sync_cursors, update_sync_state_on_conn, SessionPricingCache,
+        SessionSyncResult,
+    },
     sql_helpers::INPUT_TOKEN_SEMANTICS_FRESH,
 };
 use crate::{
@@ -49,6 +52,8 @@ fn collect_logs(root: &Path, depth: usize, files: &mut Vec<PathBuf>) -> std::io:
     Ok(())
 }
 
+const LATENCY_BACKFILL_KEY: &str = "dsh:latency-backfill-v1";
+
 fn sync_dir(db: &Database, root: &Path) -> Result<SessionSyncResult, AppError> {
     let mut result = SessionSyncResult::default();
     if !root.exists() {
@@ -56,7 +61,11 @@ fn sync_dir(db: &Database, root: &Path) -> Result<SessionSyncResult, AppError> {
     }
     let mut files = Vec::new();
     collect_logs(root, 0, &mut files).map_err(|e| AppError::io(root, e))?;
-    let cursors = load_sync_cursors(db)?;
+    let mut cursors = load_sync_cursors(db)?;
+    let needs_latency_backfill = !cursors.contains_key(LATENCY_BACKFILL_KEY);
+    if needs_latency_backfill {
+        cursors.retain(|k, _| !k.starts_with("dsh:"));
+    }
     for path in files {
         let key = format!("dsh:{}", path.display());
         let metadata = match fs::metadata(&path) {
@@ -109,6 +118,10 @@ fn sync_dir(db: &Database, root: &Path) -> Result<SessionSyncResult, AppError> {
             Err(_) => result.deferred_files += 1,
         }
     }
+    if needs_latency_backfill && result.deferred_files == 0 && result.errors.is_empty() {
+        let conn = lock_conn!(db.conn);
+        update_sync_state_on_conn(&conn, LATENCY_BACKFILL_KEY, 0, 0)?;
+    }
     Ok(result)
 }
 
@@ -126,6 +139,9 @@ fn import_reader(db: &Database, reader: impl Read) -> Result<(u32, u32, bool), A
     let mut session = None;
     let mut seeded = false;
     let mut complete = true;
+    // Timestamp (ms) of the immediately preceding trigger event (user message / tool result)
+    // used to approximate `assistant/message` request duration.
+    let mut last_trigger_ms: Option<i64> = None;
     let mut conn = lock_conn!(db.conn);
     let tx = conn.transaction()?;
     let (mut imported, mut skipped) = (0, 0);
@@ -163,14 +179,23 @@ fn import_reader(db: &Database, reader: impl Read) -> Result<(u32, u32, bool), A
                     .filter(|s| !s.is_empty())
                     .map(str::to_owned);
                 seeded = row["isSeeded"].as_bool().unwrap_or(false);
+                last_trigger_ms = None;
                 continue;
             }
             Some("session/end-seed") => {
                 seeded = false;
+                last_trigger_ms = None;
                 continue;
             }
             Some("assistant/message") if !seeded => {}
-            _ => continue,
+            _ => {
+                if !seeded {
+                    if let Some(t) = row["time"].as_i64().filter(|v| *v > 0) {
+                        last_trigger_ms = Some(t);
+                    }
+                }
+                continue;
+            }
         }
         let Some(session) = &session else {
             continue;
@@ -181,6 +206,10 @@ fn import_reader(db: &Database, reader: impl Read) -> Result<(u32, u32, bool), A
         let Some(time) = row["time"].as_i64().filter(|v| *v > 0) else {
             continue;
         };
+        let latency_ms = last_trigger_ms
+            .take()
+            .and_then(|start| estimated_latency_ms(start, time))
+            .unwrap_or(0);
         let native = &row["data"]["usage"];
         let (Some(input), Some(output), Some(cache), Some(write)) = (
             count(native, "inputTokens", true),
@@ -201,7 +230,16 @@ fn import_reader(db: &Database, reader: impl Read) -> Result<(u32, u32, bool), A
         // Tombstones survive pruning, so re-reading a rewritten log cannot resurrect history.
         let fresh = tx.execute("INSERT OR IGNORE INTO session_usage_dedup(data_source,request_id,semantic_id,has_entry_id) VALUES('dsh_session',?1,?1,1)", [&id])?;
         if fresh == 0 {
-            skipped += 1;
+            if latency_ms > 0 {
+                let changed = tx.execute(
+                    "UPDATE proxy_request_logs SET latency_ms = ?2 WHERE request_id = ?1 AND latency_ms = 0",
+                    params![id, latency_ms],
+                )?;
+                imported += changed as u32;
+                skipped += u32::from(changed == 0);
+            } else {
+                skipped += 1;
+            }
             continue;
         }
         let usage = TokenUsage {
@@ -229,7 +267,7 @@ fn import_reader(db: &Database, reader: impl Read) -> Result<(u32, u32, bool), A
             })
             .unwrap_or_else(|| std::array::from_fn(|_| "0".into()));
         // Harness inputTokens excludes cache; output already contains reasoning.
-        tx.execute("INSERT INTO proxy_request_logs(request_id,provider_id,app_type,model,request_model,input_tokens,output_tokens,cache_read_tokens,cache_creation_tokens,input_cost_usd,output_cost_usd,cache_read_cost_usd,cache_creation_cost_usd,total_cost_usd,latency_ms,status_code,session_id,provider_type,is_streaming,cost_multiplier,created_at,data_source,input_token_semantics) VALUES(?1,'_dsh_session','dsh',?2,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,0,200,?12,'dsh_session',1,'1',?13,'dsh_session',?14)",params![id,model,input,output,cache,write,costs[0],costs[1],costs[2],costs[3],costs[4],session,time/1000,INPUT_TOKEN_SEMANTICS_FRESH])?;
+        tx.execute("INSERT INTO proxy_request_logs(request_id,provider_id,app_type,model,request_model,input_tokens,output_tokens,cache_read_tokens,cache_creation_tokens,input_cost_usd,output_cost_usd,cache_read_cost_usd,cache_creation_cost_usd,total_cost_usd,latency_ms,status_code,session_id,provider_type,is_streaming,cost_multiplier,created_at,data_source,input_token_semantics) VALUES(?1,'_dsh_session','dsh',?2,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?15,200,?12,'dsh_session',1,'1',?13,'dsh_session',?14)",params![id,model,input,output,cache,write,costs[0],costs[1],costs[2],costs[3],costs[4],session,time/1000,INPUT_TOKEN_SEMANTICS_FRESH,latency_ms])?;
         imported += 1;
     }
     if reader.get_ref().limit() == 0 {
@@ -306,5 +344,26 @@ mod tests {
         bytes.extend(zstd::stream::encode_all(format!("{}\n", event(2)).as_bytes(), 3).unwrap());
         fs::write(&path, &bytes).unwrap();
         assert_eq!(sync_dir(&db, dir.path()).unwrap().imported, 1);
+    }
+    #[test]
+    fn dsh_estimates_latency_from_previous_trigger_event() {
+        let db = Database::memory().unwrap();
+        let mut assistant = event(2);
+        assistant["time"] = json!(1_776_754_565_500i64);
+        let text = format!(
+            "{}{{\"type\":\"user/message\",\"seq\":1,\"time\":1776754560000}}\n{}\n",
+            log(false),
+            assistant
+        );
+        assert_eq!(import_reader(&db, text.as_bytes()).unwrap(), (1, 0, true));
+        let latency: i64 = db
+            .conn
+            .lock()
+            .unwrap()
+            .query_row("SELECT latency_ms FROM proxy_request_logs", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(latency, 5_500);
     }
 }

@@ -361,13 +361,15 @@ function UsageWorkspaceImpl({
     if (scanRevision.data?.epoch === undefined) return;
     void qc.invalidateQueries({ queryKey: ["usage", "status"] });
     void qc.invalidateQueries({ queryKey: ["usage", "dashboard"] });
+    void qc.invalidateQueries({ queryKey: ["usage", "insights"] });
   }, [scanRevision.data?.epoch, qc]);
   const lan = useQuery({
     queryKey: ["usage", "lan"],
     queryFn: () => usageCall<LanStatus>("lan_status"),
     enabled: !!status.data,
     staleTime: 10000,
-    refetchInterval: 10000,
+    refetchInterval: () =>
+      document.visibilityState === "visible" ? 10000 : false,
   });
   const period = useMemo(
     () => bounds(range, customStart, customEnd),
@@ -1690,6 +1692,7 @@ function UsageChart({
                 const band = 1000 / values.length;
                 const width = Math.min(28, band * 0.62);
                 const height = v > 0 ? Math.max(1, (v / max) * 150) : 0;
+                const isHover = hover === i;
                 return (
                   <rect
                     key={i}
@@ -1698,7 +1701,10 @@ function UsageChart({
                     width={width}
                     height={height}
                     rx={Math.min(4, width / 2)}
-                    style={{ fill: waveColor(i, values.length) }}
+                    style={{
+                      fill: waveColor(i, values.length),
+                      opacity: hover === null || isHover ? 1 : 0.45,
+                    }}
                   />
                 );
               })}
@@ -1730,16 +1736,65 @@ function UsageChart({
                   </g>
                 );
               })}
+            {hover !== null && values[hover] !== undefined && (
+              <g>
+                <line
+                  x1={
+                    chartType === "bar"
+                      ? ((hover + 0.5) * 1000) / Math.max(1, values.length)
+                      : x(hover)
+                  }
+                  x2={
+                    chartType === "bar"
+                      ? ((hover + 0.5) * 1000) / Math.max(1, values.length)
+                      : x(hover)
+                  }
+                  y1={8}
+                  y2={168}
+                  stroke="var(--text)"
+                  strokeWidth="1"
+                  strokeDasharray="3 3"
+                  opacity="0.35"
+                  vectorEffect="non-scaling-stroke"
+                />
+                {chartType === "area" && (
+                  <circle
+                    cx={x(hover)}
+                    cy={y(hover)}
+                    r="4"
+                    fill="var(--chart-usage)"
+                    stroke="var(--surface)"
+                    strokeWidth="1.5"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                )}
+              </g>
+            )}
           </svg>
           {hover !== null && data[hover] && (
             <div
               className="chart-tooltip"
-              style={{ left: "min(50%, calc(100% - 150px))" }}
+              style={{
+                left: `clamp(8px, calc(${(
+                  (chartType === "bar"
+                    ? (hover + 0.5) / Math.max(1, data.length)
+                    : hover / Math.max(1, data.length - 1)) * 100
+                ).toFixed(1)}% - 85px), calc(100% - 190px))`,
+              }}
             >
               <small>{data[hover].date}</small>
-              {metric === "hitRate" && trendHitRate(data[hover]) === null
-                ? "无可缓存输入"
-                : label(values[hover])}
+              <div>
+                <strong>
+                  {metric === "hitRate" && trendHitRate(data[hover]) === null
+                    ? "无可缓存输入"
+                    : label(values[hover])}
+                </strong>
+              </div>
+              <small>
+                {formatMoney(Number(data[hover].totalCost))} ·{" "}
+                {data[hover].requestCount.toLocaleString()} 次 ·{" "}
+                {formatTokens(trendTokens(data[hover]))}
+              </small>
             </div>
           )}
           {values.length === 0 && (
