@@ -16,11 +16,54 @@ use rusqlite::{params, OptionalExtension};
 use serde::Serialize;
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;
+use std::future::Future;
 use std::path::Path;
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 /// Number of days the log is retained.
 pub const RETENTION_DAYS: i64 = 7;
+/// Maximum number of `api_out` records kept in the local database to bound disk usage during polling.
+pub const API_OUT_MAX_ROWS: i64 = 500;
+const MAX_REQUEST_PREVIEW_BYTES: usize = 64 * 1024;
+const MAX_RESPONSE_PREVIEW_BYTES: usize = 128 * 1024;
+
+/// One upstream HTTP call made while serving an outbound API operation.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutboundHttpTrace {
+    pub provider: String,
+    pub method: String,
+    pub url: String,
+    pub http_status: Option<u16>,
+    pub duration_ms: i64,
+    pub response_bytes: usize,
+    pub error: Option<String>,
+}
+
+tokio::task_local! {
+    static HTTP_TRACES: Arc<Mutex<Vec<OutboundHttpTrace>>>;
+}
+
+/// Run an async operation while collecting any [`OutboundHttpTrace`] emitted on this task.
+pub async fn capture_http_traces<F, T>(fut: F) -> (T, Vec<OutboundHttpTrace>)
+where
+    F: Future<Output = T>,
+{
+    let buf = Arc::new(Mutex::new(Vec::new()));
+    let output = HTTP_TRACES.scope(buf.clone(), fut).await;
+    let traces = buf.lock().map(|v| v.clone()).unwrap_or_default();
+    (output, traces)
+}
+
+/// Append one upstream HTTP call trace to the current task's collector, if active.
+pub fn record_http_trace(trace: OutboundHttpTrace) {
+    let _ = HTTP_TRACES.try_with(|buf| {
+        if let Ok(mut list) = buf.lock() {
+            list.push(trace);
+        }
+    });
+}
 
 /// One activity waiting to be recorded.
 pub struct Event {
@@ -45,6 +88,7 @@ pub fn record(db: &Database, event: Event) {
 
 fn try_record(db: &Database, event: &Event) -> Result<(), AppError> {
     static LAST_PRUNE: AtomicI64 = AtomicI64::new(0);
+    static API_OUT_WRITES: AtomicU64 = AtomicU64::new(0);
     let now = chrono::Utc::now().timestamp_millis();
     db.write_quietly(|conn| {
         conn.execute(
@@ -65,6 +109,18 @@ fn try_record(db: &Database, event: &Event) -> Result<(), AppError> {
             conn.execute(
                 "DELETE FROM activity_log WHERE ts < ?1",
                 [now - RETENTION_DAYS * 86_400_000],
+            )?;
+        }
+        if event.kind == "api_out" && API_OUT_WRITES.fetch_add(1, Ordering::Relaxed) % 25 == 0 {
+            conn.execute(
+                "DELETE FROM activity_log
+                 WHERE kind = 'api_out'
+                   AND id NOT IN (
+                       SELECT id FROM activity_log
+                       WHERE kind = 'api_out'
+                       ORDER BY id DESC LIMIT ?1
+                   )",
+                [API_OUT_MAX_ROWS],
             )?;
         }
         Ok(())
@@ -434,6 +490,139 @@ pub(crate) fn record_scan(
 // Key operations: actions started from the UI through the unified command entry point
 // that change data or issue external requests.
 
+/// Outbound external-API operations recorded as `api_out` with full request parameters,
+/// upstream HTTP traces, and response payloads in `detail`.
+pub fn api_out_label(op: &str) -> Option<&'static str> {
+    Some(match op {
+        "markets_quotes" => "拉取市场行情",
+        "markets_chart" => "拉取行情走势图",
+        "markets_search" => "搜索股票代码",
+        "modelsdev_fetch" => "拉取 models.dev 价格",
+        "network_international_ipv4" => "查询国际出口 IP",
+        _ => return None,
+    })
+}
+
+/// Strip sensitive fields without collapsing arrays so outbound API request parameters stay inspectable.
+pub fn sanitize_request_payload(args: &Value) -> Value {
+    const SENSITIVE: [&str; 6] = ["code", "key", "token", "reversetoken", "apikey", "password"];
+    match args {
+        Value::Object(map) => {
+            let mut out = Map::new();
+            for (name, value) in map {
+                let lower = name.to_ascii_lowercase();
+                if SENSITIVE.contains(&lower.as_str()) {
+                    out.insert(name.clone(), json!("（已隐藏）"));
+                } else {
+                    out.insert(name.clone(), sanitize_request_payload(value));
+                }
+            }
+            Value::Object(out)
+        }
+        Value::Array(items) => Value::Array(items.iter().map(sanitize_request_payload).collect()),
+        other => other.clone(),
+    }
+}
+
+/// Pretty-print a JSON value and cap its byte length cleanly at a UTF-8 boundary.
+pub fn format_json_preview(value: &Value, max_bytes: usize) -> (String, usize, bool) {
+    let full = serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string());
+    let total_bytes = full.len();
+    if total_bytes <= max_bytes {
+        return (full, total_bytes, false);
+    }
+    let mut end = max_bytes;
+    while end > 0 && !full.is_char_boundary(end) {
+        end -= 1;
+    }
+    (
+        format!("{}\n…（内容过长已截断）", &full[..end]),
+        total_bytes,
+        true,
+    )
+}
+
+/// Record an outbound API call (`kind = "api_out"`) with request parameters, upstream HTTP calls,
+/// and formatted response payload stored in `detail`.
+#[allow(clippy::too_many_arguments)]
+pub fn record_api_out(
+    db: &Database,
+    op: &str,
+    title: &str,
+    status: &'static str,
+    duration_ms: i64,
+    request_args: &Value,
+    response_body: Option<&Value>,
+    error: Option<&str>,
+    http_calls: &[OutboundHttpTrace],
+) {
+    let safe_req = sanitize_request_payload(request_args);
+    let (request_text, request_bytes, request_truncated) =
+        format_json_preview(&safe_req, MAX_REQUEST_PREVIEW_BYTES);
+    let (response_text, response_bytes, response_truncated, item_count) = match response_body {
+        Some(val) => {
+            let (text, bytes, trunc) = format_json_preview(val, MAX_RESPONSE_PREVIEW_BYTES);
+            let count = if let Some(arr) = val.as_array() {
+                Some(arr.len())
+            } else if let Some(pts) = val.get("points").and_then(Value::as_array) {
+                Some(pts.len())
+            } else {
+                None
+            };
+            (Some(text), bytes, trunc, count)
+        }
+        None => (None, 0, false, None),
+    };
+
+    let mut providers: Vec<&str> = Vec::new();
+    for call in http_calls {
+        if !call.provider.is_empty() && !providers.contains(&call.provider.as_str()) {
+            providers.push(call.provider.as_str());
+        }
+    }
+    let http_status = http_calls
+        .iter()
+        .find_map(|c| c.http_status.filter(|&s| s >= 400))
+        .or_else(|| http_calls.iter().find_map(|c| c.http_status));
+    let http_errors = http_calls.iter().filter(|c| c.error.is_some()).count();
+    let total_http_bytes: usize = http_calls.iter().map(|c| c.response_bytes).sum();
+
+    let summary = json!({
+        "op": op,
+        "providers": providers.join(" / "),
+        "httpCount": http_calls.len(),
+        "httpStatus": http_status,
+        "httpErrors": http_errors,
+        "firstUrl": http_calls.first().map(|c| c.url.as_str()),
+        "responseBytes": if response_bytes > 0 { response_bytes } else { total_http_bytes },
+        "itemCount": item_count,
+        "error": error,
+    });
+    let detail = json!({
+        "op": op,
+        "requestText": request_text,
+        "requestBytes": request_bytes,
+        "requestTruncated": request_truncated,
+        "responseText": response_text,
+        "responseBytes": response_bytes,
+        "responseTruncated": response_truncated,
+        "error": error,
+        "httpCalls": http_calls,
+    });
+
+    record(
+        db,
+        Event {
+            kind: "api_out",
+            title: title.to_string(),
+            status,
+            duration_ms: Some(duration_ms),
+            summary,
+            detail: Some(detail),
+        },
+    );
+}
+
 /// The operations that must be recorded and their display names; operations missing from the table (queries, polling) are not recorded.
 pub fn action_label(op: &str, args: &Value) -> Option<&'static str> {
     Some(match op {
@@ -448,7 +637,7 @@ pub fn action_label(op: &str, args: &Value) -> Option<&'static str> {
         "pricing_batch" => "批量导入模型价格",
         "pricing_delete" => "删除模型价格",
         "modelsdev_config_save" => "保存 models.dev 同步设置",
-        "modelsdev_fetch" => "从 models.dev 拉取价格（外部请求）",
+        "markets_config_save" => "保存市场行情配置",
         "preferences_save" => "修改刷新间隔",
         "sources_save" => "修改数据来源",
         "subscriptions_save" => "保存订阅与额度",
@@ -461,7 +650,6 @@ pub fn action_label(op: &str, args: &Value) -> Option<&'static str> {
         "lan_incoming_revoke" => "撤销入站授权",
         "usage_api_key_rotate" => "生成只读 API 密钥",
         "usage_api_key_revoke" => "停用只读 API 密钥",
-        "network_international_ipv4" => "查询国际出口 IP（外部请求）",
         _ => return None,
     })
 }
@@ -557,5 +745,22 @@ mod tests {
             Some(1_794_240_624_512)
         );
         assert_eq!(normalize_ms(0), None);
+    }
+
+    #[test]
+    fn api_out_preview_keeps_request_arrays_and_truncates_utf8_safely() {
+        let req = json!({
+            "items": [{"symbol": "NVDA"}, {"symbol": "AAPL"}, {"symbol": "MSFT"}, {"symbol": "TSLA"}, {"symbol": "GOOGL"}, {"symbol": "AMZN"}],
+            "apiKey": "secret-token"
+        });
+        let safe = sanitize_request_payload(&req);
+        assert_eq!(safe["items"].as_array().unwrap().len(), 6);
+        assert_eq!(safe["apiKey"], "（已隐藏）");
+
+        let large = json!({"msg": "你好世界".repeat(100)});
+        let (preview, total_bytes, truncated) = format_json_preview(&large, 64);
+        assert!(truncated);
+        assert!(total_bytes > 64);
+        assert!(preview.contains("已截断"));
     }
 }

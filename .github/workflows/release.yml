@@ -30,10 +30,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NOTES: |
-            - Added a new **Markets (市场行情)** page with zero-API-key, zero-registration live multi-market quotes routed per market for maximum freshness: Tencent Finance real-time + batch quotes (1–3s lag with live market cap) for A-shares, Hong Kong, and US universes, official TWSE/TPEx MIS batch real-time (5s lag) for Taiwan equities, and Yahoo Finance v8 Chart (with US pre/post-market and multi-range intraday/historical charts).
-            - Added full-market Finviz-style Squarified Treemap heatmaps covering 1,058 live-verified global companies across five built-in sector-grouped universes: **S&P 500 (503)**, **CSI 300 (300)**, **TWSE Top 150**, **HKEX Core (105)**, and **Global AI Supply Chain (49)**, alongside a customizable personal watchlist with one-click starring and global symbol search.
-            - Added native **Fullscreen Heatmap** mode (`F` / `Esc`) with dynamic viewport-resolution layout, click-to-zoom sector headers, live market breadth counters, market-cap / turnover / move / equal weighting, in-pool filtering, and a floating corner live chart drawer.
-            - Fixed a flaky parallel Rust database test race by serializing `opening_an_old_database_folds_the_case_duplicate_pricing_rows`.
+            - Added outbound external API call logging (`api_out` / **接口请求**) to the Activity Log module, automatically capturing all market quote/chart/search calls (`qt.gtimg.cn`, `web.ifzq.gtimg.cn`, `smartbox.gtimg.cn`, `mis.twse.com.tw`, Yahoo Finance), `models.dev` pricing fetches, and `ipify` IP lookups.
+            - Recorded full sanitized request parameters, per-request upstream HTTP trace details (provider, method, full URL, HTTP status, response bytes, latency, errors), and formatted response payloads (lazy-loaded with bounded 500-entry retention).
+            - Enhanced the Activity Log UI with a dedicated **接口请求** filter, upstream HTTP breakdown table, and side-by-side scrollable Request Params & Response Body viewers with one-click copy.
 
             The macOS build is not notarized.
         run: |

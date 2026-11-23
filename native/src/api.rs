@@ -513,6 +513,38 @@ impl UsageBackend {
     /// from the arguments and only a summary of the result is kept; the record is written asynchronously
     /// on the blocking thread pool so the response is not slowed down.
     pub async fn call(&self, op: &str, args: Value) -> Result<Value, AppError> {
+        if let Some(label) = crate::activity::api_out_label(op) {
+            let req_args = args.clone();
+            let started = std::time::Instant::now();
+            let (result, http_calls) =
+                crate::activity::capture_http_traces(self.dispatch(op, args)).await;
+            let duration_ms = started.elapsed().as_millis() as i64;
+            let status = match &result {
+                Ok(_) if http_calls.is_empty() || http_calls.iter().any(|c| c.error.is_none()) => {
+                    "ok"
+                }
+                _ => "error",
+            };
+            let resp_body = result.as_ref().ok().cloned();
+            let err_text = result.as_ref().err().map(ToString::to_string);
+            let db = self.db.clone();
+            let op_name = op.to_string();
+            let title = label.to_string();
+            tokio::task::spawn_blocking(move || {
+                crate::activity::record_api_out(
+                    &db,
+                    &op_name,
+                    &title,
+                    status,
+                    duration_ms,
+                    &req_args,
+                    resp_body.as_ref(),
+                    err_text.as_deref(),
+                    &http_calls,
+                );
+            });
+            return result;
+        }
         let Some(label) = crate::activity::action_label(op, &args) else {
             return self.dispatch(op, args).await;
         };
@@ -938,24 +970,56 @@ impl UsageBackend {
                 .await
             }
             "modelsdev_fetch" => {
+                let url = "https://models.dev/api.json";
+                let started = std::time::Instant::now();
                 let client = reqwest::Client::builder()
                     .timeout(std::time::Duration::from_secs(30))
                     .build()
                     .map_err(|e| AppError::Message(e.to_string()))?;
-                let response = client
-                    .get("https://models.dev/api.json")
-                    .send()
+                let response = match client.get(url).send().await {
+                    Ok(resp) => resp,
+                    Err(e) => {
+                        let msg = e.to_string();
+                        crate::activity::record_http_trace(crate::activity::OutboundHttpTrace {
+                            provider: "models.dev".into(),
+                            method: "GET".into(),
+                            url: url.into(),
+                            http_status: None,
+                            duration_ms: started.elapsed().as_millis() as i64,
+                            response_bytes: 0,
+                            error: Some(msg.clone()),
+                        });
+                        return Err(AppError::Message(msg));
+                    }
+                };
+                let status_code = response.status().as_u16();
+                if !response.status().is_success() {
+                    let msg = format!("models.dev returned HTTP {}", response.status());
+                    crate::activity::record_http_trace(crate::activity::OutboundHttpTrace {
+                        provider: "models.dev".into(),
+                        method: "GET".into(),
+                        url: url.into(),
+                        http_status: Some(status_code),
+                        duration_ms: started.elapsed().as_millis() as i64,
+                        response_bytes: 0,
+                        error: Some(msg.clone()),
+                    });
+                    return Err(AppError::Message(msg));
+                }
+                let bytes = response
+                    .bytes()
                     .await
                     .map_err(|e| AppError::Message(e.to_string()))?;
-                if !response.status().is_success() {
-                    return Err(AppError::Message(format!(
-                        "models.dev returned HTTP {}",
-                        response.status()
-                    )));
-                }
-                response
-                    .json::<Value>()
-                    .await
+                crate::activity::record_http_trace(crate::activity::OutboundHttpTrace {
+                    provider: "models.dev".into(),
+                    method: "GET".into(),
+                    url: url.into(),
+                    http_status: Some(status_code),
+                    duration_ms: started.elapsed().as_millis() as i64,
+                    response_bytes: bytes.len(),
+                    error: None,
+                });
+                serde_json::from_slice::<Value>(&bytes)
                     .map_err(|e| AppError::Message(e.to_string()))
             }
             "lan_status" => {

@@ -3,19 +3,56 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 pub async fn international_ipv4() -> Result<Value, crate::error::AppError> {
+    let url = "https://api.ipify.org?format=json";
+    let started = Instant::now();
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(15))
         .build()
         .map_err(|e| crate::error::AppError::Message(format!("无法创建查询请求: {e}")))?;
-    let response = client
-        .get("https://api.ipify.org?format=json")
-        .send()
+    let response = match client.get(url).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            let msg = format!("无法连接 ipify: {e}");
+            crate::activity::record_http_trace(crate::activity::OutboundHttpTrace {
+                provider: "ipify".into(),
+                method: "GET".into(),
+                url: url.into(),
+                http_status: None,
+                duration_ms: started.elapsed().as_millis() as i64,
+                response_bytes: 0,
+                error: Some(msg.clone()),
+            });
+            return Err(crate::error::AppError::Message(msg));
+        }
+    };
+    let status_code = response.status().as_u16();
+    if !response.status().is_success() {
+        let msg = format!("ipify 返回 HTTP {}", response.status());
+        crate::activity::record_http_trace(crate::activity::OutboundHttpTrace {
+            provider: "ipify".into(),
+            method: "GET".into(),
+            url: url.into(),
+            http_status: Some(status_code),
+            duration_ms: started.elapsed().as_millis() as i64,
+            response_bytes: 0,
+            error: Some(msg.clone()),
+        });
+        return Err(crate::error::AppError::Message(msg));
+    }
+    let bytes = response
+        .bytes()
         .await
-        .and_then(|r| r.error_for_status())
-        .map_err(|e| crate::error::AppError::Message(format!("无法连接 ipify: {e}")))?;
-    let body: Value = response
-        .json()
-        .await
+        .map_err(|e| crate::error::AppError::Message(format!("ipify 响应读取失败: {e}")))?;
+    crate::activity::record_http_trace(crate::activity::OutboundHttpTrace {
+        provider: "ipify".into(),
+        method: "GET".into(),
+        url: url.into(),
+        http_status: Some(status_code),
+        duration_ms: started.elapsed().as_millis() as i64,
+        response_bytes: bytes.len(),
+        error: None,
+    });
+    let body: Value = serde_json::from_slice(&bytes)
         .map_err(|e| crate::error::AppError::Message(format!("ipify 响应无效: {e}")))?;
     let address = parse_ipv4_response(&body)?;
     Ok(json!({"ip": address.to_string(), "checkedAt": chrono::Utc::now().timestamp_millis()}))

@@ -91,6 +91,78 @@
   white-space: pre-wrap;
   font-family: "Cascadia Code", Consolas, monospace;
 }
+#observatory-root .activity-http-table td.activity-path {
+  min-width: 240px;
+  max-width: 620px;
+}
+#observatory-root .activity-http-err {
+  color: var(--warning);
+  white-space: normal;
+  max-width: 240px;
+}
+#observatory-root .activity-payload-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+#observatory-root .activity-payload-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+#observatory-root .activity-payload-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+#observatory-root .activity-payload-head h4 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+#observatory-root .activity-payload-meta {
+  font-weight: 400;
+  color: var(--muted);
+  font-size: 10.5px;
+}
+#observatory-root .activity-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 10.5px;
+  cursor: pointer;
+}
+#observatory-root .activity-copy-btn:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+#observatory-root .activity-payload-pre {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  font-family: "Cascadia Code", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 320px;
+  overflow: auto;
+}
+#observatory-root .activity-payload-pre.error {
+  color: var(--warning);
+}
 #observatory-root .activity-errors {
   margin: 0;
   padding-left: 18px;

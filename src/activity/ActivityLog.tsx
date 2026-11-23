@@ -1,10 +1,10 @@
 import { Fragment, useEffect, useState } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Copy } from "lucide-react";
 import { usageCall } from "../native/usageClient";
 import "./activity.css";
 
-type Kind = "scan" | "api_in" | "sync" | "action";
+type Kind = "scan" | "api_out" | "api_in" | "sync" | "action";
 type Entry = {
   id: number;
   ts: number;
@@ -48,16 +48,38 @@ type ScanDetail = {
   files: ScanFile[];
   errors: string[];
 };
+type OutboundHttpCall = {
+  provider: string;
+  method: string;
+  url: string;
+  httpStatus: number | null;
+  durationMs: number;
+  responseBytes: number;
+  error: string | null;
+};
+type ApiOutDetail = {
+  op: string;
+  requestText: string;
+  requestBytes: number;
+  requestTruncated: boolean;
+  responseText: string | null;
+  responseBytes: number;
+  responseTruncated: boolean;
+  error: string | null;
+  httpCalls: OutboundHttpCall[];
+};
 
 const KINDS: { id: Kind | ""; label: string }[] = [
   { id: "", label: "全部" },
   { id: "scan", label: "文件扫描" },
+  { id: "api_out", label: "接口请求" },
   { id: "api_in", label: "外部调用" },
   { id: "sync", label: "设备同步" },
   { id: "action", label: "操作" },
 ];
 const KIND_LABEL: Record<Kind, string> = {
   scan: "文件扫描",
+  api_out: "接口请求",
   api_in: "外部调用",
   sync: "设备同步",
   action: "操作",
@@ -100,6 +122,28 @@ function brief(entry: Entry) {
   switch (entry.kind) {
     case "scan":
       return `${str(s.trigger)} · ${num(s.filesChanged)} 个文件有新内容 · 新增 ${num(s.newRows)} 条 · ${num(s.tokens)} Token${s.errors ? ` · ${num(s.errors)} 个错误` : ""}`;
+    case "api_out": {
+      const parts: string[] = [];
+      if (s.providers) parts.push(str(s.providers));
+      else parts.push(str(s.op));
+      if (typeof s.httpCount === "number" && s.httpCount > 0) {
+        parts.push(`${s.httpCount} 次 HTTP`);
+      }
+      if (typeof s.httpStatus === "number") {
+        parts.push(`HTTP ${s.httpStatus}`);
+      }
+      if (typeof s.itemCount === "number") {
+        parts.push(`${num(s.itemCount)} 条`);
+      }
+      if (typeof s.responseBytes === "number" && s.responseBytes > 0) {
+        parts.push(bytes(s.responseBytes));
+      }
+      if (s.error) parts.push(`失败：${str(s.error)}`);
+      else if (typeof s.httpErrors === "number" && s.httpErrors > 0) {
+        parts.push(`${s.httpErrors} 个上游失败`);
+      }
+      return parts.join(" · ");
+    }
     case "api_in":
       return `${str(s.method)} ${str(s.path)} · ${str(s.caller)} · HTTP ${str(s.httpStatus)}${typeof s.responseBytes === "number" ? ` · ${bytes(s.responseBytes)}` : ""}`;
     case "sync":
@@ -258,11 +302,153 @@ function ScanDetailView({ id }: { id: number }) {
   );
 }
 
+function CopyCodeBlock({
+  title,
+  text,
+  totalBytes,
+  truncated,
+}: {
+  title: string;
+  text: string;
+  totalBytes: number;
+  truncated: boolean;
+}) {
+  const [copied, setCopied] = useState(false);
+  const onCopy = () => {
+    void navigator.clipboard?.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1400);
+    });
+  };
+  return (
+    <div className="activity-payload-block">
+      <div className="activity-payload-head">
+        <h4>
+          {title}
+          <span className="activity-payload-meta">
+            {bytes(totalBytes)}
+            {truncated ? "（已截断展示）" : ""}
+          </span>
+        </h4>
+        <button
+          type="button"
+          className="activity-copy-btn"
+          onClick={onCopy}
+          title={`复制${title}`}
+        >
+          {copied ? <Check size={12} /> : <Copy size={12} />}
+          <span>{copied ? "已复制" : "复制"}</span>
+        </button>
+      </div>
+      <pre className="activity-payload-pre">{text}</pre>
+    </div>
+  );
+}
+
+function ApiOutDetailView({ entry }: { entry: Entry }) {
+  const detail = useQuery({
+    queryKey: ["activity", "detail", entry.id],
+    queryFn: () =>
+      usageCall<ApiOutDetail | null>("activity_detail", { id: entry.id }),
+    staleTime: Infinity,
+  });
+  if (detail.isLoading) return <p className="hint">读取请求与返回明细…</p>;
+  if (detail.error)
+    return <p className="usage-error">明细读取失败：{String(detail.error)}</p>;
+  const d = detail.data;
+  if (!d) return <p className="hint">没有记录请求明细。</p>;
+  const s = entry.summary;
+
+  return (
+    <div className="activity-detail-body">
+      <KeyValues
+        rows={[
+          ["接口命令", <code key="op">{str(d.op)}</code>],
+          ["数据通道", str(s.providers || "—")],
+          ["上游 HTTP", `${d.httpCalls.length} 次`],
+          ["响应大小", bytes(d.responseBytes)],
+          ["总耗时", duration(entry.durationMs)],
+        ]}
+      />
+
+      {d.httpCalls.length > 0 && (
+        <>
+          <h4>上游 HTTP 请求（{d.httpCalls.length}）</h4>
+          <div className="table-wrap">
+            <table className="activity-http-table">
+              <thead>
+                <tr>
+                  <th>通道</th>
+                  <th>请求 URL</th>
+                  <th className="numeric">状态码</th>
+                  <th className="numeric">返回大小</th>
+                  <th className="numeric">耗时</th>
+                  <th>备注</th>
+                </tr>
+              </thead>
+              <tbody>
+                {d.httpCalls.map((c, idx) => (
+                  <tr key={`${c.url}|${idx}`}>
+                    <td>{c.provider}</td>
+                    <td className="activity-path">
+                      <code>{`${c.method} ${c.url}`}</code>
+                    </td>
+                    <td className="numeric">
+                      {c.httpStatus != null ? (
+                        <span
+                          className={`badge ${c.httpStatus >= 200 && c.httpStatus < 300 ? "good" : "warning"}`}
+                        >
+                          {c.httpStatus}
+                        </span>
+                      ) : (
+                        <span className="badge warning">失败</span>
+                      )}
+                    </td>
+                    <td className="numeric">{bytes(c.responseBytes)}</td>
+                    <td className="numeric">{duration(c.durationMs)}</td>
+                    <td className="activity-http-err">{c.error ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      <div className="activity-payload-grid">
+        <CopyCodeBlock
+          title="请求参数"
+          text={d.requestText}
+          totalBytes={d.requestBytes}
+          truncated={d.requestTruncated}
+        />
+        {d.error ? (
+          <div className="activity-payload-block">
+            <div className="activity-payload-head">
+              <h4>错误信息</h4>
+            </div>
+            <pre className="activity-payload-pre error">{d.error}</pre>
+          </div>
+        ) : (
+          <CopyCodeBlock
+            title="返回内容"
+            text={d.responseText ?? "（空）"}
+            totalBytes={d.responseBytes}
+            truncated={d.responseTruncated}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
 function EntryDetail({ entry }: { entry: Entry }) {
   const s = entry.summary;
   switch (entry.kind) {
     case "scan":
       return <ScanDetailView id={entry.id} />;
+    case "api_out":
+      return <ApiOutDetailView entry={entry} />;
     case "api_in":
       return (
         <KeyValues

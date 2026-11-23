@@ -35,6 +35,77 @@ fn http_client() -> &'static reqwest::Client {
     })
 }
 
+async fn traced_get_bytes(
+    provider: &str,
+    url: &str,
+    referer: Option<&str>,
+) -> Result<Vec<u8>, String> {
+    let started = std::time::Instant::now();
+    let mut req = http_client().get(url);
+    if let Some(r) = referer {
+        req = req.header("Referer", r);
+    }
+    let resp = match req.send().await {
+        Ok(r) => r,
+        Err(e) => {
+            let msg = format!("{provider}请求失败: {e}");
+            crate::activity::record_http_trace(crate::activity::OutboundHttpTrace {
+                provider: provider.to_string(),
+                method: "GET".into(),
+                url: url.to_string(),
+                http_status: None,
+                duration_ms: started.elapsed().as_millis() as i64,
+                response_bytes: 0,
+                error: Some(msg.clone()),
+            });
+            return Err(msg);
+        }
+    };
+    let status = resp.status();
+    let status_code = status.as_u16();
+    if !status.is_success() {
+        let msg = format!("{provider} HTTP {status}");
+        crate::activity::record_http_trace(crate::activity::OutboundHttpTrace {
+            provider: provider.to_string(),
+            method: "GET".into(),
+            url: url.to_string(),
+            http_status: Some(status_code),
+            duration_ms: started.elapsed().as_millis() as i64,
+            response_bytes: 0,
+            error: Some(msg.clone()),
+        });
+        return Err(msg);
+    }
+    match resp.bytes().await {
+        Ok(bytes) => {
+            let vec = bytes.to_vec();
+            crate::activity::record_http_trace(crate::activity::OutboundHttpTrace {
+                provider: provider.to_string(),
+                method: "GET".into(),
+                url: url.to_string(),
+                http_status: Some(status_code),
+                duration_ms: started.elapsed().as_millis() as i64,
+                response_bytes: vec.len(),
+                error: None,
+            });
+            Ok(vec)
+        }
+        Err(e) => {
+            let msg = format!("{provider}读取响应失败: {e}");
+            crate::activity::record_http_trace(crate::activity::OutboundHttpTrace {
+                provider: provider.to_string(),
+                method: "GET".into(),
+                url: url.to_string(),
+                http_status: Some(status_code),
+                duration_ms: started.elapsed().as_millis() as i64,
+                response_bytes: 0,
+                error: Some(msg.clone()),
+            });
+            Err(msg)
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WatchItem {
@@ -559,13 +630,7 @@ async fn fetch_tencent_batch(items: &[WatchItem]) -> HashMap<String, StockQuote>
     let results: Vec<Vec<StockQuote>> = stream::iter(chunks)
         .map(|chunk| async move {
             let url = format!("https://qt.gtimg.cn/q={}", chunk.join(","));
-            let Ok(resp) = http_client().get(&url).send().await else {
-                return Vec::new();
-            };
-            if !resp.status().is_success() {
-                return Vec::new();
-            }
-            let Ok(bytes) = resp.bytes().await else {
+            let Ok(bytes) = traced_get_bytes("腾讯批量实时", &url, None).await else {
                 return Vec::new();
             };
             let mut quotes = Vec::new();
@@ -668,18 +733,9 @@ async fn fetch_tencent_quote(
     max_points: usize,
 ) -> Result<StockQuote, String> {
     let url = format!("https://web.ifzq.gtimg.cn/appstock/app/minute/query?code={tencent_code}");
-    let resp = http_client()
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("腾讯行情请求失败: {e}"))?;
-    if !resp.status().is_success() {
-        return Err(format!("腾讯行情 HTTP {}", resp.status()));
-    }
-    let body: Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("腾讯行情 JSON 解析失败: {e}"))?;
+    let bytes = traced_get_bytes("腾讯实时", &url, None).await?;
+    let body: Value =
+        serde_json::from_slice(&bytes).map_err(|e| format!("腾讯行情 JSON 解析失败: {e}"))?;
     let entry = &body["data"][tencent_code];
     let qt_obj = &entry["qt"];
     let qt = qt_obj[tencent_code]
@@ -813,18 +869,16 @@ async fn fetch_twse_batch_chunk(channels: &[(String, String)]) -> HashMap<String
         .join("|");
     let url =
         format!("https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch={ex_ch}&json=1&delay=0");
-    let Ok(resp) = http_client()
-        .get(&url)
-        .header("Referer", "https://mis.twse.com.tw/stock/fibest.jsp")
-        .send()
-        .await
+    let Ok(bytes) = traced_get_bytes(
+        "TWSE 官方实时",
+        &url,
+        Some("https://mis.twse.com.tw/stock/fibest.jsp"),
+    )
+    .await
     else {
         return out;
     };
-    if !resp.status().is_success() {
-        return out;
-    }
-    let Ok(body) = resp.json::<Value>().await else {
+    let Ok(body) = serde_json::from_slice::<Value>(&bytes) else {
         return out;
     };
     let Some(arr) = body["msgArray"].as_array() else {
@@ -978,18 +1032,9 @@ async fn fetch_yahoo_chart_raw(
     let url = format!(
         "https://query1.finance.yahoo.com/v8/finance/chart/{encoded}?interval={interval}&range={r}&includePrePost={include_pre_post}"
     );
-    let resp = http_client()
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("Yahoo 行情请求失败: {e}"))?;
-    if !resp.status().is_success() {
-        return Err(format!("Yahoo 行情 HTTP {}", resp.status()));
-    }
-    let body: Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("Yahoo JSON 解析失败: {e}"))?;
+    let bytes = traced_get_bytes("Yahoo 实时", &url, None).await?;
+    let body: Value =
+        serde_json::from_slice(&bytes).map_err(|e| format!("Yahoo JSON 解析失败: {e}"))?;
     let result = body["chart"]["result"]
         .as_array()
         .and_then(|a| a.first())
@@ -1476,24 +1521,16 @@ pub async fn search_symbols(query: &str) -> Vec<SearchHit> {
 
     let (t_res, y_res) = tokio::join!(
         async {
-            http_client()
-                .get(&tencent_url)
-                .send()
+            let bytes = traced_get_bytes("腾讯搜索", &tencent_url, None)
                 .await
-                .ok()?
-                .text()
-                .await
-                .ok()
+                .ok()?;
+            String::from_utf8(bytes).ok()
         },
         async {
-            http_client()
-                .get(&yahoo_url)
-                .send()
+            let bytes = traced_get_bytes("Yahoo 搜索", &yahoo_url, None)
                 .await
-                .ok()?
-                .json::<Value>()
-                .await
-                .ok()
+                .ok()?;
+            serde_json::from_slice::<Value>(&bytes).ok()
         }
     );
 
