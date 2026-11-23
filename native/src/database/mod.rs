@@ -478,9 +478,19 @@ mod tests {
     /// for the same model; opening them folds the duplicates together and
     /// rebuilds the table with the case-insensitive key.
     #[test]
+    #[serial_test::serial]
     fn opening_an_old_database_folds_the_case_duplicate_pricing_rows() {
+        struct HomeGuard(Option<std::ffi::OsString>);
+        impl Drop for HomeGuard {
+            fn drop(&mut self) {
+                match self.0.take() {
+                    Some(value) => std::env::set_var("OBSERVATORY_TEST_HOME", value),
+                    None => std::env::remove_var("OBSERVATORY_TEST_HOME"),
+                }
+            }
+        }
         let temp = tempfile::tempdir().expect("tempdir");
-        let previous = std::env::var_os("OBSERVATORY_TEST_HOME");
+        let _home_guard = HomeGuard(std::env::var_os("OBSERVATORY_TEST_HOME"));
         std::env::set_var("OBSERVATORY_TEST_HOME", temp.path());
         let path = temp.path().join("observatory.db");
         {
@@ -538,11 +548,6 @@ mod tests {
                 )
                 .expect("count rows");
             assert_eq!(count, 1);
-        }
-
-        match previous {
-            Some(value) => std::env::set_var("OBSERVATORY_TEST_HOME", value),
-            None => std::env::remove_var("OBSERVATORY_TEST_HOME"),
         }
     }
 }
