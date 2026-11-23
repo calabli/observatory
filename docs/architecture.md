@@ -4,14 +4,14 @@ This document explains how Observatory is built: the processes, the modules, the
 
 ## 1. Stack
 
-| Layer         | Technology                                                                                     |
-| ------------- | ---------------------------------------------------------------------------------------------- |
-| Desktop shell | Tauri 2 (`src-tauri/`): windows, tray, single instance, updater                                |
-| Engine        | Rust library `observatory-usage-core` (`native/`): collectors, SQLite, statistics, LAN service |
-| Storage       | SQLite via `rusqlite` (bundled), WAL mode                                                      |
-| Async runtime | Tokio; `axum` for the LAN HTTP service, `reqwest` (rustls) for outbound calls                  |
-| Frontend      | React 18 + TypeScript + Vite, TanStack Query for data fetching, Radix Select, lucide icons     |
-| Tests         | `cargo test` (unit + `native/tests/` integration), `node --test` for pure frontend logic       |
+| Layer         | Technology                                                                                                        |
+| ------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Desktop shell | Tauri 2 (`src-tauri/`): windows, tray, single instance, updater                                                   |
+| Engine        | Rust library `observatory-usage-core` (`native/`): collectors, SQLite, statistics, LAN service                    |
+| Storage       | SQLite via `rusqlite` (bundled), WAL mode                                                                         |
+| Async runtime | Tokio; `axum` for the LAN HTTP service, `reqwest` (rustls) for outbound calls                                     |
+| Frontend      | React 18 + TypeScript + Vite, TanStack Query for data fetching, Radix Select, lucide icons                        |
+| Tests         | `cargo test` (unit + `native/tests/` integration), `node --test` for pure frontend logic, Playwright for UI flows |
 
 ## 2. Repository Layout
 
@@ -28,7 +28,7 @@ src/                    React frontend
   tray/                 Quick panel rendered in the tray window
   lib/                  models.dev price import and auto-sync
   types/usage.ts        Shared wire types for usage data
-  theme/                CC Switch-derived tokens and the sidebar redesign
+  theme/                CC Switch-derived tokens, the sidebar redesign and the widget theme (widget.css, imported last)
 native/                 Rust engine crate
   src/api.rs            UsageBackend: open, background loops, the op dispatcher
   src/main.rs           `observatory-engine` binary: JSON-lines over stdio (dev only)
@@ -46,8 +46,12 @@ native/                 Rust engine crate
   src/network_overview.rs Adapter snapshot and egress IP
   tests/                Integration tests against real databases and HTTP servers
 src-tauri/              Tauri shell (main.rs), config, icons, NSIS template
-scripts/                Vite dev bridge (usageBridge.ts), cargo wrapper, macOS local installer (mac-install.mjs)
+scripts/                Vite dev bridge (usageBridge.ts), cargo wrapper, macOS local installer (mac-install.mjs),
+                        version bump (bump-version.mjs), release notes (release-notes.mjs), stock list refresh (refresh-universes.mjs)
 tests/                  Frontend unit tests (*.test.mjs)
+tests-ui/               Playwright UI tests (config in playwright.config.ts)
+.github/workflows/      release.yml (tagged releases), ci-cache.yml (Rust caches on main), pages.yml (promo page)
+CHANGELOG.md            Release notes; the release takes the section matching its tag
 packages/index.html     Promo page published to GitHub Pages
 docs/                   This documentation and API examples
 ```

@@ -138,6 +138,8 @@ On first launch, if the database is empty and `~/.cc-switch/cc-switch.db` exists
 - Cost is an estimate from a local price table, not the provider's invoice.
 - Collector coverage depends on each tool's version and log format.
 - The macOS build is ad-hoc signed and not notarized.
+- Market data comes from free public endpoints (Tencent, TWSE MIS, Yahoo Finance) that offer no service guarantee and may throttle or block a client. When that happens the app backs off and shows the last good quotes marked "（缓存）"; Taiwan traded value is an estimate, and cross-currency comparisons use daily exchange rates.
+- The CSI 300 and S&P 500 pools change with index reviews; `npm run universes:refresh` checks them, but the Taiwan and Hong Kong pools are maintained by hand.
 
 ## 10. Roadmap Candidates
 

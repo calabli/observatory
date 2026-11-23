@@ -26,6 +26,7 @@ Built with Tauri 2, React, TypeScript, Rust and SQLite. Releases are published f
 | [docs/architecture.md](docs/architecture.md)                         | Technical architecture: processes, engine, data model, collection pipeline, LAN service, testing, release |
 | [docs/read-only-usage-http-api.md](docs/read-only-usage-http-api.md) | HTTP API reference, with a Postman collection in `docs/examples/`                                         |
 | [docs/subscriptions-and-quota.md](docs/subscriptions-and-quota.md)   | How subscription cycles and quota queries work                                                            |
+| [CHANGELOG.md](CHANGELOG.md)                                         | Release notes for every version                                                                           |
 
 ## Development
 
@@ -51,13 +52,14 @@ Checks:
 npm run typecheck && npm run lint && npm run format:check
 npm test
 npm run native:test
+npm run test:ui        # browser tests in the installed Chrome; needs npm run native:build
 ```
 
-Builds: `npm run desktop:build` (debug executable), `npm run desktop:release` (optimized), and `npm run mac:install` (macOS local install to `/Applications/Observatory.app` with temporary bundle cleanup). Installers are produced by the release workflow when a `v*` tag is pushed; see [docs/architecture.md](docs/architecture.md#12-build-and-release).
+Builds: `npm run desktop:build` (debug executable), `npm run desktop:release` (optimized), and `npm run mac:install` (macOS local install to `/Applications/Observatory.app` with temporary bundle cleanup). To release, add notes under `## Unreleased` in `CHANGELOG.md`, run `npm run version:bump -- <x.y.z>` (it updates every version entry and turns those notes into the new version's section), commit and push a `v<x.y.z>` tag; the release workflow builds the installers and publishes them with those notes. See [docs/architecture.md](docs/architecture.md#12-build-and-release).
 
 ## Privacy
 
-Observatory stores usage metadata only in `observatory.db`. It never imports or exports API keys, provider configuration or conversation contents. On-demand session drill-down (titles, project directories, git branches and Agent tool-call trace waterfalls) reads local session logs directly from disk without persisting conversation bodies to the database. LAN sharing is off by default; when enabled it uses plain HTTP, so only turn it on in trusted networks.
+Observatory stores usage metadata only in `observatory.db`. It never imports or exports API keys, provider configuration or conversation contents. On-demand session drill-down (titles, project directories, git branches and Agent tool-call trace waterfalls) reads local session logs directly from disk without persisting conversation bodies to the database. LAN sharing is off by default; when enabled it uses plain HTTP, so only turn it on in trusted networks. The only requests to outside services are for public data: market quotes, charts and search (Tencent, TWSE, Yahoo Finance), daily exchange rates (ExchangeRate-API), models.dev prices and the egress IP lookup (ipify), made while the page that needs them is open (models.dev also by the optional automatic price sync) and logged in the Activity Log. They carry stock symbols or search text, never usage data.
 
 ## Sources and Licensing
 
