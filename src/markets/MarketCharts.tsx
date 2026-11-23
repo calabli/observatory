@@ -20,18 +20,18 @@ export function MiniSparkline({
   width?: number;
   height?: number;
 }) {
+  // No intraday points: say so instead of drawing a flat line, which reads as
+  // "the price did not move". Pools over 24 stocks fetch batch quotes, which carry
+  // no intraday points; clicking the row opens the full chart.
   if (points.length < 2) {
     return (
-      <svg width={width} height={height} className="markets-mini-svg">
-        <line
-          x1={2}
-          y1={height / 2}
-          x2={width - 2}
-          y2={height / 2}
-          stroke="var(--line)"
-          strokeDasharray="2 2"
-        />
-      </svg>
+      <span
+        className="markets-mini-empty"
+        style={{ width, height }}
+        title="无分时数据：超过 24 只的股票池用批量报价实时刷新，不含分时走势；点击该行查看走势图"
+      >
+        —
+      </span>
     );
   }
   const prices = points.map((p) => p.price);

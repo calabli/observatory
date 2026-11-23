@@ -269,3 +269,60 @@ export function toneColor(tone: "up" | "down" | "flat"): string {
 export const MARKET_ORDER = ["US", "TW", "CN", "HK", "GLOBAL"];
 
 export const GROUP_HEADER_H = 24;
+
+/**
+ * Tile weight for one stock, or null when the measure the mode sizes by is
+ * missing (no market cap, no traded value). Each mode has its own scale, so a
+ * missing value must never fall back to another mode's number: a market-cap
+ * weight is ~1-150 while a traded-value weight is in the tens of thousands.
+ */
+export function tileWeight(
+  item: WatchItem,
+  q: StockQuote | undefined,
+  mode: TreemapSizeMode,
+  fx: FxRates = FALLBACK_FX_TO_USD,
+): number | null {
+  if (mode === "equal") return 1;
+  if (mode === "move") {
+    return Math.abs(q?.changePercent ?? 0) + 0.6;
+  }
+  if (mode === "cap") {
+    const capUsdB = marketCapUsdBillions(item, q, fx);
+    // Smooth Finviz-style dampening: mega-caps dominate clearly while 500th-ranked names stay clickable.
+    return capUsdB != null && capUsdB > 0
+      ? Math.pow(Math.max(capUsdB, 1.5), 0.6)
+      : null;
+  }
+  // Compare in USD so CNY / HKD / TWD amounts are not inflated in mixed pools.
+  const t = turnoverOf(q);
+  const currency = q?.currency ?? "";
+  const rate = fx[currency] ?? FALLBACK_FX_TO_USD[currency] ?? 1;
+  const turnoverUsd = t ? t.value / rate : 0;
+  return turnoverUsd > 0 ? Math.pow(turnoverUsd, 0.42) : null;
+}
+
+/**
+ * Weights for a set of stocks: a stock whose measure is missing gets the median
+ * weight of the others, so it stays a normal-sized, clickable tile instead of
+ * dwarfing or vanishing next to them.
+ */
+export function tileWeights(
+  items: WatchItem[],
+  quoteBySymbol: Map<string, StockQuote>,
+  mode: TreemapSizeMode,
+  fx: FxRates = FALLBACK_FX_TO_USD,
+): Map<string, number> {
+  const raw = items.map(
+    (it) =>
+      [
+        it.symbol,
+        tileWeight(it, quoteBySymbol.get(it.symbol), mode, fx),
+      ] as const,
+  );
+  const known = raw
+    .map(([, w]) => w)
+    .filter((w): w is number => w != null)
+    .sort((a, b) => a - b);
+  const median = known.length ? known[Math.floor(known.length / 2)] : 1;
+  return new Map(raw.map(([symbol, w]) => [symbol, w ?? median]));
+}

@@ -121,10 +121,19 @@
 }
 
 /* Indices Strip */
+/* One row of index cards, so the heat map below gets the height; the cards
+   shrink (names ellipsize) and only wrap on narrow windows. */
 .markets-indices-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   gap: 10px;
+}
+@media (max-width: 900px) {
+  .markets-indices-grid {
+    grid-auto-flow: row;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  }
 }
 
 #observatory-root .markets-index-card {
@@ -850,7 +859,13 @@
   text-align: center;
   cursor: pointer;
   overflow: hidden;
+  /* Within one pool, refreshed sizes glide and price colors fade. */
   transition:
+    left 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    top 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    width 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    height 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 0.6s ease,
     filter 0.12s ease,
     box-shadow 0.12s ease;
 }
@@ -1207,4 +1222,129 @@
   opacity: 0.5;
   outline: 1px dashed var(--muted);
   outline-offset: -2px;
+}
+
+/* Heat-map view: keep everything above the map on single rows so the map can
+   fill the rest of the window (MarketHeatmap sizes it to the space left). */
+.markets-page.heatmap-mode {
+  gap: 10px;
+}
+.markets-page.heatmap-mode .markets-toolbar {
+  flex-wrap: nowrap;
+  align-items: center;
+}
+.markets-page.heatmap-mode .markets-title-block {
+  flex: 1;
+  min-width: 0;
+}
+.markets-page.heatmap-mode .markets-sub {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The pool description is also each pool button's tooltip. */
+.markets-page.heatmap-mode .markets-pool-desc {
+  display: none;
+}
+@media (max-width: 1500px) {
+  .markets-page.heatmap-mode .markets-hm-legend {
+    display: none;
+  }
+}
+
+/* ---------- Heat map animation ----------
+   A pool's quotes are swapped in as one snapshot (MarketsWorkspace keeps the
+   previous map until all of them have arrived). */
+.markets-hm-group {
+  transition:
+    left 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    top 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    width 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    height 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.markets-hm-layer {
+  position: absolute;
+  inset: 0;
+  animation: markets-hm-in 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes markets-hm-in {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+/* A new pool is loading: keep the current map, dimmed, under a progress bar. */
+.markets-hm-canvas.pending .markets-hm-layer {
+  opacity: 0.45;
+  filter: saturate(0.6);
+  transition:
+    opacity 0.25s ease,
+    filter 0.25s ease;
+  pointer-events: none;
+}
+.markets-hm-progress {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  left: 0;
+  height: 3px;
+  width: 35%;
+  border-radius: 3px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--accent-violet, #7d6eff),
+    var(--accent-pink, #ff3ca0),
+    transparent
+  );
+  animation: markets-hm-progress 1.1s ease-in-out infinite;
+}
+@keyframes markets-hm-progress {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(290%);
+  }
+}
+/* First load: a shimmer instead of a map of empty tiles. */
+.markets-hm-skeleton {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, #162033 30%, #1e2a40 50%, #162033 70%);
+  background-size: 300% 100%;
+  animation: markets-hm-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes markets-hm-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .markets-hm-layer,
+  .markets-hm-progress,
+  .markets-hm-skeleton {
+    animation: none;
+  }
+  #observatory-root .markets-hm-tile,
+  .markets-hm-group {
+    transition: none;
+  }
+}
+
+/* Trend cell without intraday points (see MiniSparkline). */
+.markets-mini-empty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: help;
 }

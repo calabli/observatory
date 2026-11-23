@@ -79,8 +79,15 @@ test("Markets lists the built-in pools and switches views", async ({
     page.getByRole("button", { name: /中概股 \(53\)/ }),
   ).toBeVisible();
   await page.getByRole("button", { name: /中概股 \(53\)/ }).click();
-  await expect(page.getByText("美股上市的中国公司 53 家")).toBeVisible();
+  // The heat map fits in the window: its bottom edge is visible without scrolling.
+  const canvas = page.locator(".markets-hm-canvas");
+  await expect(canvas).toBeVisible();
+  const box = await canvas.boundingBox();
+  const viewport = page.viewportSize();
+  expect(box && viewport && box.y + box.height <= viewport.height).toBe(true);
+  // In list view the pool description is shown (in heat-map view it is a tooltip).
   await page.getByRole("button", { name: /列表/ }).click();
+  await expect(page.getByText("美股上市的中国公司 53 家")).toBeVisible();
   await expect(page.locator("table")).toBeVisible();
 });
 

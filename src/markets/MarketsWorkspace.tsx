@@ -312,16 +312,51 @@ export function MarketsWorkspace() {
     [fxQuery.data],
   );
 
+  // One line in heat-map view (full text on hover) so the map gets the height.
+  const sourcesNote =
+    "A 股 / 港股走腾讯实时（1–3s）· 台股走 TWSE 官方实时（5s）· 美股走 Yahoo 实时（含盘前/盘后），仅在页面可见时自动刷新 · " +
+    (fxQuery.data
+      ? `跨币种比较用 ${fxQuery.data.source} 汇率${fxQuery.data.updatedAt ? `（${fmtLastTrade(fxQuery.data.updatedAt)}）` : ""}`
+      : "跨币种比较暂用内置近似汇率");
+
+  // The pool's stocks and their quotes are shown as one snapshot: after a pool or
+  // view switch the previous complete picture stays on screen until every quote
+  // of the new one has arrived, then both swap at once (no half-filled map).
+  const viewKey = `${poolId}|${poolKey}|${viewMode}`;
+  const [shown, setShown] = useState<{
+    key: string;
+    items: WatchItem[];
+    quotes: StockQuote[];
+  } | null>(null);
+  useEffect(() => {
+    if (activePoolItems.length === 0) {
+      setShown({ key: viewKey, items: [], quotes: [] });
+    } else if (quotesQuery.data && !quotesQuery.isPlaceholderData) {
+      setShown({
+        key: viewKey,
+        items: activePoolItems,
+        quotes: quotesQuery.data,
+      });
+    }
+  }, [
+    quotesQuery.data,
+    quotesQuery.isPlaceholderData,
+    viewKey,
+    activePoolItems,
+  ]);
+  const shownItems = shown?.items ?? activePoolItems;
+  const poolPending = shown !== null && shown.key !== viewKey;
+
   const quoteBySymbol = useMemo(() => {
     const map = new Map<string, StockQuote>();
     for (const q of indicesQuery.data ?? []) {
       map.set(q.symbol, q);
     }
-    for (const q of quotesQuery.data ?? []) {
+    for (const q of shown?.quotes ?? []) {
       map.set(q.symbol, q);
     }
     return map;
-  }, [indicesQuery.data, quotesQuery.data]);
+  }, [indicesQuery.data, shown]);
 
   const knownItems = useMemo(
     () => [...indexItems, ...activePoolItems],
@@ -381,7 +416,7 @@ export function MarketsWorkspace() {
   }, [activePreset]);
 
   const filteredWatchlist = useMemo(() => {
-    let base = activePoolItems;
+    let base = shownItems;
     if (isCustomWatchlist) {
       if (filter !== "ALL") base = base.filter((w) => w.market === filter);
     } else if (sectorFilter !== "ALL") {
@@ -395,7 +430,7 @@ export function MarketsWorkspace() {
         w.name.toLowerCase().includes(q) ||
         (w.sector?.toLowerCase().includes(q) ?? false),
     );
-  }, [activePoolItems, isCustomWatchlist, filter, sectorFilter, poolQuery]);
+  }, [shownItems, isCustomWatchlist, filter, sectorFilter, poolQuery]);
 
   const addSymbol = (hit: { symbol: string; name: string; market: string }) => {
     if (!config) return;
@@ -463,20 +498,18 @@ export function MarketsWorkspace() {
     : "—";
 
   return (
-    <div className="markets-page">
+    <div
+      className={`markets-page${viewMode === "heatmap" ? " heatmap-mode" : ""}`}
+    >
       <div className="markets-toolbar">
-        <div>
+        <div className="markets-title-block">
           <div className="markets-heading">
             <TrendingUp size={17} />
             <span>全球主要市场实时行情</span>
             <span className="markets-badge neutral">免注册 · 零 Key</span>
           </div>
-          <p className="markets-sub">
-            A 股 / 港股走腾讯实时（1–3s）· 台股走 TWSE 官方实时（5s）· 美股走
-            Yahoo 实时（含盘前/盘后），仅在页面可见时自动刷新 ·{" "}
-            {fxQuery.data
-              ? `跨币种比较用 ${fxQuery.data.source} 汇率${fxQuery.data.updatedAt ? `（${fmtLastTrade(fxQuery.data.updatedAt)}）` : ""}`
-              : "跨币种比较暂用内置近似汇率"}
+          <p className="markets-sub" title={sourcesNote}>
+            {sourcesNote}
           </p>
         </div>
         <div className="markets-controls">
@@ -773,6 +806,9 @@ export function MarketsWorkspace() {
               isRefreshing={isAnyFetching}
               lastUpdatedStr={lastUpdatedStr}
               fx={fx}
+              swapKey={shown?.key ?? "loading"}
+              pending={poolPending}
+              loading={shown === null}
             />
           ) : (
             <div className="markets-table-wrap">

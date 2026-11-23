@@ -36,26 +36,50 @@ fn http_client() -> &'static reqwest::Client {
 }
 
 /// Tencent's firewall sometimes blocks a client for a while (it answers with an HTTP
-/// error or an HTML challenge page). After a failed request we stop calling Tencent for
-/// a growing pause (1, 2, 4 ... up to 15 minutes) instead of tripping the block on every
-/// poll; CN / HK quotes take the Yahoo route meanwhile.
+/// error or an HTML challenge page). After a failed request we stop calling that
+/// Tencent service for a growing pause (1, 2, 4 ... up to 15 minutes) instead of
+/// tripping the block on every poll; CN / HK quotes take the Yahoo route meanwhile.
+///
+/// The batch quote service (`qt.gtimg.cn`) and the per-stock intraday service
+/// (`web.ifzq.gtimg.cn`) are blocked independently, so each has its own pause: one
+/// shared pause let a blocked intraday service switch off the working batch service
+/// too, which removed market cap and traded value from every quote.
 struct Backoff {
     until: Option<std::time::Instant>,
     failures: u32,
 }
 
-static TENCENT_BACKOFF: std::sync::Mutex<Backoff> = std::sync::Mutex::new(Backoff {
+#[derive(Clone, Copy, Debug)]
+enum TencentService {
+    /// `qt.gtimg.cn` batch quotes (price, market cap, traded value).
+    Batch,
+    /// `web.ifzq.gtimg.cn` per-stock quote with intraday points.
+    Minute,
+}
+
+static TENCENT_BATCH_BACKOFF: std::sync::Mutex<Backoff> = std::sync::Mutex::new(Backoff {
     until: None,
     failures: 0,
 });
+static TENCENT_MINUTE_BACKOFF: std::sync::Mutex<Backoff> = std::sync::Mutex::new(Backoff {
+    until: None,
+    failures: 0,
+});
+
+fn backoff_of(service: TencentService) -> &'static std::sync::Mutex<Backoff> {
+    match service {
+        TencentService::Batch => &TENCENT_BATCH_BACKOFF,
+        TencentService::Minute => &TENCENT_MINUTE_BACKOFF,
+    }
+}
 
 fn backoff_delay(failures: u32) -> Duration {
     let secs = 60u64.saturating_mul(1 << failures.saturating_sub(1).min(4));
     Duration::from_secs(secs.min(15 * 60))
 }
 
-fn tencent_available() -> bool {
-    TENCENT_BACKOFF
+fn tencent_available(service: TencentService) -> bool {
+    backoff_of(service)
         .lock()
         .map(|b| {
             b.until
@@ -64,8 +88,8 @@ fn tencent_available() -> bool {
         .unwrap_or(true)
 }
 
-fn tencent_report(ok: bool) {
-    if let Ok(mut b) = TENCENT_BACKOFF.lock() {
+fn tencent_report(service: TencentService, ok: bool) {
+    if let Ok(mut b) = backoff_of(service).lock() {
         if ok {
             b.failures = 0;
             b.until = None;
@@ -73,7 +97,7 @@ fn tencent_report(ok: bool) {
             b.failures = b.failures.saturating_add(1);
             b.until = Some(std::time::Instant::now() + backoff_delay(b.failures));
             log::warn!(
-                "腾讯行情请求失败，暂停 {} 秒后再试",
+                "腾讯行情 {service:?} 请求失败，暂停 {} 秒后再试",
                 backoff_delay(b.failures).as_secs()
             );
         }
@@ -690,6 +714,12 @@ fn parse_tencent_batch_line(
     })
 }
 
+/// Tencent's firewall answers bursts of batch requests with HTTP 501 (a 500-stock
+/// pool is ~10 requests per refresh), so only a couple run at a time.
+const TENCENT_BATCH_CONCURRENCY: usize = 2;
+const TENCENT_CHUNK_ATTEMPTS: usize = 2;
+const TENCENT_RETRY_PAUSE: Duration = Duration::from_millis(800);
+
 /// Batch-fetch up to hundreds of CN / HK / US real-time quotes + market caps via `qt.gtimg.cn`.
 async fn fetch_tencent_batch(items: &[WatchItem]) -> HashMap<String, StockQuote> {
     let mut code_to_item: HashMap<String, WatchItem> = HashMap::new();
@@ -709,7 +739,7 @@ async fn fetch_tencent_batch(items: &[WatchItem]) -> HashMap<String, StockQuote>
             Some(_) => {}
         }
     }
-    if codes.is_empty() || !tencent_available() {
+    if codes.is_empty() || !tencent_available(TencentService::Batch) {
         return HashMap::new();
     }
 
@@ -718,10 +748,22 @@ async fn fetch_tencent_batch(items: &[WatchItem]) -> HashMap<String, StockQuote>
     let results: Vec<Option<Vec<StockQuote>>> = stream::iter(chunks)
         .map(|chunk| async move {
             let url = format!("https://qt.gtimg.cn/q={}", chunk.join(","));
-            let bytes = match traced_get_bytes("腾讯批量实时", &url, None).await {
-                Ok(bytes) if !looks_blocked(&bytes) => bytes,
-                _ => return None,
-            };
+            // A refused chunk is retried once after a pause; dropping it would
+            // blank a whole sector, since pools list stocks sector by sector.
+            let mut bytes = None;
+            for attempt in 0..TENCENT_CHUNK_ATTEMPTS {
+                if attempt > 0 {
+                    tokio::time::sleep(TENCENT_RETRY_PAUSE).await;
+                }
+                match traced_get_bytes("腾讯批量实时", &url, None).await {
+                    Ok(b) if !looks_blocked(&b) => {
+                        bytes = Some(b);
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+            let bytes = bytes?;
             let mut quotes = Vec::new();
             for line in bytes.split(|&b| b == b'\n') {
                 if line.is_empty() {
@@ -733,13 +775,13 @@ async fn fetch_tencent_batch(items: &[WatchItem]) -> HashMap<String, StockQuote>
             }
             Some(quotes)
         })
-        .buffer_unordered(8)
+        .buffer_unordered(TENCENT_BATCH_CONCURRENCY)
         .collect()
         .await;
     if results.iter().any(Option::is_some) {
-        tencent_report(true);
+        tencent_report(TencentService::Batch, true);
     } else if !results.is_empty() {
-        tencent_report(false);
+        tencent_report(TencentService::Batch, false);
     }
 
     let mut out = HashMap::new();
@@ -1299,15 +1341,15 @@ pub async fn fetch_quotes(items: Vec<WatchItem>, skip_sparkline: bool) -> Vec<St
         .iter()
         .filter_map(|it| to_twse_channel(&it.symbol).map(|ch| (it.symbol.clone(), ch)))
         .collect();
-    // Small lists take the per-symbol route, where US quotes come from Yahoo, which
-    // reports no traded value. One Tencent batch request for just the US symbols fills
-    // in the exact amount (see `turnover_by_symbol` below).
-    let us_items: Vec<WatchItem> = if use_fast_batch {
+    // Small lists take the per-symbol route (intraday points), where quotes can come
+    // from Yahoo, which reports no market cap or traded value. One Tencent batch
+    // request for the list's CN / HK / US symbols fills both in (see `batch_extras`).
+    let batchable: Vec<WatchItem> = if use_fast_batch {
         Vec::new()
     } else {
         items
             .iter()
-            .filter(|it| market_of(it) == "US")
+            .filter(|it| matches!(market_of(it), "US" | "CN" | "HK"))
             .cloned()
             .collect()
     };
@@ -1316,15 +1358,16 @@ pub async fn fetch_quotes(items: Vec<WatchItem>, skip_sparkline: bool) -> Vec<St
             tokio::join!(fetch_twse_batch(&tw_channels), fetch_tencent_batch(&items));
         (twse, tencent, HashMap::new())
     } else {
-        let (twse, us) = tokio::join!(
+        let (twse, extra) = tokio::join!(
             fetch_twse_batch(&tw_channels),
-            fetch_tencent_batch(&us_items)
+            fetch_tencent_batch(&batchable)
         );
-        (twse, HashMap::new(), us)
+        (twse, HashMap::new(), extra)
     };
-    let turnover_by_symbol: HashMap<String, f64> = us_batch_map
+    // (market cap, traded value) per symbol from that extra batch request.
+    let batch_extras: HashMap<String, (Option<f64>, Option<f64>)> = us_batch_map
         .into_iter()
-        .filter_map(|(symbol, q)| q.turnover.map(|t| (symbol, t)))
+        .map(|(symbol, q)| (symbol, (q.market_cap, q.turnover)))
         .collect();
 
     // 2. Resolve each item: return fast-batch hit directly when available; otherwise fall back to
@@ -1357,20 +1400,20 @@ pub async fn fetch_quotes(items: Vec<WatchItem>, skip_sparkline: bool) -> Vec<St
         } else {
             false
         };
-        let turnover = turnover_by_symbol.get(&item.symbol).copied();
+        let extras = batch_extras.get(&item.symbol).copied().unwrap_or_default();
         tasks.push((
             idx,
             item,
             batch_hit,
             twse_hit,
             allow_network_fallback,
-            turnover,
+            extras,
         ));
     }
 
     let indexed: Vec<(usize, StockQuote)> = stream::iter(tasks)
         .map(
-            |(idx, item, batch_hit, twse_hit, allow_network_fallback, turnover)| async move {
+            |(idx, item, batch_hit, twse_hit, allow_network_fallback, extras)| async move {
                 if let Some(q) = batch_hit {
                     return (idx, q);
                 }
@@ -1378,6 +1421,10 @@ pub async fn fetch_quotes(items: Vec<WatchItem>, skip_sparkline: bool) -> Vec<St
                     return (idx, error_quote(&item, "批量行情暂未返回"));
                 }
                 let mut quote = fetch_single_routed(&item, twse_hit, use_fast_batch).await;
+                let (market_cap, turnover) = extras;
+                if quote.market_cap.is_none() {
+                    quote.market_cap = market_cap;
+                }
                 if quote.turnover.is_none() {
                     quote.turnover = turnover;
                 }
@@ -1413,8 +1460,22 @@ fn with_last_good(
     }
     quotes
         .into_iter()
-        .map(|q| {
+        .map(|mut q| {
             if q.price.is_some() && q.error.is_none() {
+                // Yahoo quotes carry no market cap. Reuse the last known one, scaled
+                // by the price change (the share count does not move intraday), so
+                // a fallback quote still sizes correctly on the heat map.
+                if q.market_cap.is_none() {
+                    if let Some(prev) = cache.get(&q.symbol) {
+                        if let (Some(cap), Some(prev_price), Some(price)) =
+                            (prev.market_cap, prev.price, q.price)
+                        {
+                            if prev_price > 0.0 {
+                                q.market_cap = Some(cap * price / prev_price);
+                            }
+                        }
+                    }
+                }
                 cache.insert(q.symbol.clone(), q.clone());
                 q
             } else if let Some(prev) = cache.get(&q.symbol) {
@@ -1453,15 +1514,17 @@ async fn fetch_single_routed(
 
     // Route A: A-shares & Hong Kong -> Tencent UTF-8 real-time (1-3s lag), fallback Yahoo.
     if matches!(market, "CN" | "HK") {
-        if let Some(code) = to_tencent_code(&item.symbol).filter(|_| tencent_available()) {
+        if let Some(code) =
+            to_tencent_code(&item.symbol).filter(|_| tencent_available(TencentService::Minute))
+        {
             match fetch_tencent_quote(&item.symbol, &item.name, &code, 48).await {
                 Ok(q) => {
-                    tencent_report(true);
+                    tencent_report(TencentService::Minute, true);
                     return q;
                 }
                 // An unknown symbol is not a sign of a block; failed requests are.
                 Err(e) if e.contains("无报价数据") => {}
-                Err(_) => tencent_report(false),
+                Err(_) => tencent_report(TencentService::Minute, false),
             }
         }
         if let Ok(q) = fetch_yahoo_quote(&item.symbol, &item.name, 48).await {
@@ -1615,9 +1678,15 @@ pub async fn fetch_chart(symbol: &str, range: &str) -> Result<StockChartDetail, 
         return Err(AppError::InvalidInput("symbol is required".into()));
     }
     let market = detect_market(sym);
-    if range == "1d" && matches!(market, "CN" | "HK") && tencent_available() {
+    if range == "1d" && matches!(market, "CN" | "HK") && tencent_available(TencentService::Minute) {
         if let Some(code) = to_tencent_code(sym) {
-            if let Ok(q) = fetch_tencent_quote(sym, "", &code, 260).await {
+            let fetched = fetch_tencent_quote(sym, "", &code, 260).await;
+            match &fetched {
+                Ok(_) => tencent_report(TencentService::Minute, true),
+                Err(e) if e.contains("无报价数据") => {}
+                Err(_) => tencent_report(TencentService::Minute, false),
+            }
+            if let Ok(q) = fetched {
                 if !q.sparkline.is_empty() {
                     return Ok(StockChartDetail {
                         symbol: sym.to_string(),
@@ -1947,6 +2016,18 @@ mod tests {
     }
 
     #[test]
+    fn a_blocked_tencent_service_does_not_pause_the_other() {
+        tencent_report(TencentService::Minute, false);
+        assert!(!tencent_available(TencentService::Minute));
+        assert!(
+            tencent_available(TencentService::Batch),
+            "batch quotes keep working while the intraday service is blocked"
+        );
+        tencent_report(TencentService::Minute, true);
+        assert!(tencent_available(TencentService::Minute));
+    }
+
+    #[test]
     fn tencent_backoff_grows_and_caps() {
         assert_eq!(backoff_delay(1).as_secs(), 60);
         assert_eq!(backoff_delay(2).as_secs(), 120);
@@ -1975,6 +2056,14 @@ mod tests {
         assert_eq!(failed[0].price, Some(86.0));
         assert!(failed[0].error.is_none());
         assert_eq!(failed[0].source, "腾讯批量实时（缓存）");
+        // A later quote without a market cap (Yahoo) reuses the last one, scaled by price.
+        good.market_cap = Some(2_000e9);
+        with_last_good(vec![good.clone()], &mut cache);
+        let mut yahoo = good.clone();
+        yahoo.market_cap = None;
+        yahoo.price = Some(86.0 * 1.1);
+        let filled = with_last_good(vec![yahoo], &mut cache);
+        assert!((filled[0].market_cap.unwrap() - 2_200e9).abs() < 1.0);
         // A symbol never fetched successfully keeps its error.
         let other = WatchItem {
             symbol: "XYZ".into(),

@@ -6,6 +6,18 @@ rename it to the new version (`## [x.y.z] - YYYY-MM-DD`) before tagging.
 
 ## Unreleased
 
+## [0.1.15] - 2026-11-24
+
+- Markets: Tencent's batch quote service and its per-stock intraday service now back off independently. A blocked intraday service had paused the working batch service too, so every quote fell back to Yahoo and lost its market cap and traded value (shown as "—", with equal-sized heat-map tiles).
+- Markets: small watchlists get market cap as well as traded value from one Tencent batch request when their prices come from Yahoo.
+- Markets list: a stock without intraday points shows a labelled "—" in the trend column instead of a flat dashed line that looked like an unchanged price.
+
+- Markets heat map: a stock without a market cap (Yahoo fallback quotes) no longer gets an oversized tile; it takes the median size, and the engine reuses its last known market cap scaled by price. AMD no longer outsizes NVIDIA.
+- Markets heat map and list swap in a pool's quotes as one complete snapshot: the previous map stays (dimmed, with a progress bar) until every quote has arrived, the first load shows a shimmer instead of empty tiles, the new map fades in, and on refresh tiles glide to their new sizes and colors fade (off when the system asks for reduced motion).
+
+- Markets heat map fits the window: it takes the height left below the controls (which stay on single rows in heat-map view), so every stock is visible without scrolling; fullscreen is unchanged.
+- Markets: Tencent batch requests run two at a time and a refused batch is retried, so a firewall response (HTTP 501) no longer blanks whole sectors such as S&P 500 Financials.
+
 ## [0.1.14] - 2026-11-24
 
 - Startup is lighter: pages other than the overview load on first visit (the startup bundle went from 1 MB to about 320 KB), and the ZCode icon is no longer bundled at 1024 px.

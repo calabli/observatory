@@ -6,50 +6,28 @@ import {
   fmtSigned,
   fmtTurnover,
   fmtVolume,
-  FALLBACK_FX_TO_USD,
   type FxRates,
   GROUP_HEADER_H,
   isStale,
   MARKET_META,
   MARKET_ORDER,
-  marketCapUsdBillions,
   STALE_HINT,
   type StockQuote,
   toneColor,
   type TreemapSizeMode,
   trendTone,
-  turnoverOf,
   type WatchItem,
+  tileWeights,
 } from "./marketsShared";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { heatTileColor, layoutSquarified } from "./treemap";
 import { MARKET_PRESETS } from "./presets";
 import { Maximize2, Minimize2, RefreshCw, Search } from "lucide-react";
 
-export function tileWeight(
-  item: WatchItem,
-  q: StockQuote | undefined,
-  mode: TreemapSizeMode,
-  fx: FxRates = FALLBACK_FX_TO_USD,
-): number {
-  if (mode === "equal") return 1;
-  if (mode === "move") {
-    return Math.abs(q?.changePercent ?? 0) + 0.6;
-  }
-  if (mode === "cap") {
-    const capUsdB = marketCapUsdBillions(item, q, fx);
-    if (capUsdB != null && capUsdB > 0) {
-      // Smooth Finviz-style dampening: mega-caps dominate clearly while 500th-ranked names stay clickable.
-      return Math.pow(Math.max(capUsdB, 1.5), 0.6);
-    }
-  }
-  // Compare in USD so CNY / HKD / TWD amounts are not inflated in mixed pools.
-  const t = turnoverOf(q);
-  const currency = q?.currency ?? "";
-  const rate = fx[currency] ?? FALLBACK_FX_TO_USD[currency] ?? 1;
-  const turnoverUsd = t ? t.value / rate : 0;
-  return turnoverUsd > 0 ? Math.pow(turnoverUsd, 0.42) : 1;
-}
+/** Smallest map height; below it a tiny window scrolls rather than squashing tiles. */
+const HEATMAP_MIN_H = 280;
+/** Space kept under the map so its border is not flush with the window edge. */
+const HEATMAP_BOTTOM_GAP = 20;
 
 export function MarketHeatmap({
   items,
@@ -73,6 +51,9 @@ export function MarketHeatmap({
   isRefreshing,
   lastUpdatedStr,
   fx,
+  swapKey,
+  pending,
+  loading,
 }: {
   items: WatchItem[];
   quoteBySymbol: Map<string, StockQuote>;
@@ -96,6 +77,12 @@ export function MarketHeatmap({
   lastUpdatedStr: string;
   /** Live USD rates for comparing sizes across currencies. */
   fx: FxRates;
+  /** Identifies the pool snapshot on screen; a new key fades the map in. */
+  swapKey: string;
+  /** A new pool's quotes are loading; the current map stays, dimmed. */
+  pending: boolean;
+  /** Nothing to show yet (first load). */
+  loading: boolean;
 }) {
   const [tip, setTip] = useState<{
     x: number;
@@ -117,22 +104,48 @@ export function MarketHeatmap({
     return () => window.removeEventListener("resize", sync);
   }, [isFullscreen]);
 
+  // Outside fullscreen the map fills the rest of the window below it, so every
+  // stock is visible without scrolling; the layout uses the canvas's real pixel
+  // size, which keeps tiles in proportion and label thresholds in real pixels.
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const [fit, setFit] = useState<{ w: number; h: number } | null>(null);
+  const hasCanvas = items.length > 0;
+  useLayoutEffect(() => {
+    const el = canvasRef.current;
+    if (isFullscreen || !el) return;
+    const measure = () => {
+      const rect = el.getBoundingClientRect();
+      const top = rect.top + window.scrollY;
+      const w = Math.floor(rect.width);
+      const h = Math.max(
+        HEATMAP_MIN_H,
+        Math.floor(window.innerHeight - top - HEATMAP_BOTTOM_GAP),
+      );
+      setFit((prev) =>
+        prev && prev.w === w && prev.h === h ? prev : { w, h },
+      );
+    };
+    measure();
+    // Width changes come from the window or the sidebar; the top moves when
+    // content above the map (index strip, toolbars) loads or wraps.
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    observer.observe(document.body);
+    window.addEventListener("resize", measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [isFullscreen, hasCanvas]);
+
   const canvasTier =
     items.length > 200 ? "mega" : items.length > 80 ? "large" : "normal";
   const mapW = isFullscreen
     ? Math.max(960, viewport.w)
-    : canvasTier === "mega"
-      ? 1680
-      : canvasTier === "large"
-        ? 1500
-        : 1400;
+    : Math.max(1, fit?.w ?? 1400);
   const mapH = isFullscreen
     ? Math.max(520, viewport.h - 56)
-    : canvasTier === "mega"
-      ? 920
-      : canvasTier === "large"
-        ? 760
-        : 660;
+    : Math.max(1, fit?.h ?? 660);
 
   const breadth = useMemo(() => {
     let rise = 0;
@@ -156,13 +169,14 @@ export function MarketHeatmap({
   }, [items, quoteBySymbol]);
 
   const layout = useMemo(() => {
+    const weights = tileWeights(items, quoteBySymbol, sizeMode, fx);
     if (items.length === 0) {
       return { groups: [], tiles: [] };
     }
     if (groupBy === "none") {
       const nodes = items.map((item) => ({
         id: item.symbol,
-        weight: tileWeight(item, quoteBySymbol.get(item.symbol), sizeMode, fx),
+        weight: weights.get(item.symbol) ?? 1,
         data: item,
       }));
       return {
@@ -204,11 +218,7 @@ export function MarketHeatmap({
           : `${key} (${list.length})`;
       const groupWeight =
         sizeMode === "cap" && groupBy === "sector"
-          ? list.reduce(
-              (acc, it) =>
-                acc + tileWeight(it, quoteBySymbol.get(it.symbol), "cap", fx),
-              0,
-            )
+          ? list.reduce((acc, it) => acc + (weights.get(it.symbol) ?? 1), 0)
           : Math.max(1, list.length);
       return {
         id: key,
@@ -226,7 +236,7 @@ export function MarketHeatmap({
       const innerH = Math.max(0, gr.h - GROUP_HEADER_H - pad);
       const childNodes = gr.data.items.map((item) => ({
         id: item.symbol,
-        weight: tileWeight(item, quoteBySymbol.get(item.symbol), sizeMode, fx),
+        weight: weights.get(item.symbol) ?? 1,
         data: item,
       }));
       const children = layoutSquarified(
@@ -468,58 +478,72 @@ export function MarketHeatmap({
             : "当前分类暂无自选股，可在右上角搜索代码添加"}
         </div>
       ) : (
-        <div className={`markets-hm-canvas ${canvasTier}`}>
-          {groupBy !== "none"
-            ? layout.groups.map(({ rect: gr, children }) => {
-                const avgColor = toneColor(
-                  trendTone(gr.data.avgPct, colorScheme),
-                );
-                const canZoom = groupBy === "sector" && !!onSelectSector;
-                return (
-                  <div
-                    key={gr.id}
-                    className="markets-hm-group"
-                    style={{
-                      left: `${(gr.x / mapW) * 100}%`,
-                      top: `${(gr.y / mapH) * 100}%`,
-                      width: `${(gr.w / mapW) * 100}%`,
-                      height: `${(gr.h / mapH) * 100}%`,
-                    }}
-                  >
-                    {canZoom ? (
-                      <button
-                        type="button"
-                        className="markets-hm-group-head clickable"
-                        title={`点击放大查看「${gr.data.key}」板块`}
-                        onClick={() => onSelectSector(gr.data.key)}
+        <div
+          ref={canvasRef}
+          className={`markets-hm-canvas ${canvasTier}${pending ? " pending" : ""}`}
+          style={isFullscreen || !fit ? undefined : { height: fit.h }}
+          aria-busy={pending || loading}
+        >
+          {pending && <div className="markets-hm-progress" aria-hidden />}
+          {loading ? (
+            <div className="markets-hm-skeleton" aria-label="正在获取行情" />
+          ) : (
+            // Keyed by the snapshot, so a new pool fades in as a whole; within one
+            // pool, tiles keep their keys and glide to new sizes and colors.
+            <div className="markets-hm-layer" key={swapKey}>
+              {groupBy !== "none"
+                ? layout.groups.map(({ rect: gr, children }) => {
+                    const avgColor = toneColor(
+                      trendTone(gr.data.avgPct, colorScheme),
+                    );
+                    const canZoom = groupBy === "sector" && !!onSelectSector;
+                    return (
+                      <div
+                        key={gr.id}
+                        className="markets-hm-group"
+                        style={{
+                          left: `${(gr.x / mapW) * 100}%`,
+                          top: `${(gr.y / mapH) * 100}%`,
+                          width: `${(gr.w / mapW) * 100}%`,
+                          height: `${(gr.h / mapH) * 100}%`,
+                        }}
                       >
-                        <span>{gr.data.label}</span>
-                        <span style={{ color: avgColor }}>
-                          均 {fmtSigned(gr.data.avgPct, "%")}
-                        </span>
-                      </button>
-                    ) : (
-                      <div className="markets-hm-group-head">
-                        <span>{gr.data.label}</span>
-                        <span style={{ color: avgColor }}>
-                          均 {fmtSigned(gr.data.avgPct, "%")}
-                        </span>
+                        {canZoom ? (
+                          <button
+                            type="button"
+                            className="markets-hm-group-head clickable"
+                            title={`点击放大查看「${gr.data.key}」板块`}
+                            onClick={() => onSelectSector(gr.data.key)}
+                          >
+                            <span>{gr.data.label}</span>
+                            <span style={{ color: avgColor }}>
+                              均 {fmtSigned(gr.data.avgPct, "%")}
+                            </span>
+                          </button>
+                        ) : (
+                          <div className="markets-hm-group-head">
+                            <span>{gr.data.label}</span>
+                            <span style={{ color: avgColor }}>
+                              均 {fmtSigned(gr.data.avgPct, "%")}
+                            </span>
+                          </div>
+                        )}
+                        <div className="markets-hm-group-body">
+                          {children.map((child) =>
+                            renderTile(child, {
+                              x: gr.x + 2,
+                              y: gr.y + GROUP_HEADER_H,
+                              w: Math.max(1, gr.w - 4),
+                              h: Math.max(1, gr.h - GROUP_HEADER_H - 2),
+                            }),
+                          )}
+                        </div>
                       </div>
-                    )}
-                    <div className="markets-hm-group-body">
-                      {children.map((child) =>
-                        renderTile(child, {
-                          x: gr.x + 2,
-                          y: gr.y + GROUP_HEADER_H,
-                          w: Math.max(1, gr.w - 4),
-                          h: Math.max(1, gr.h - GROUP_HEADER_H - 2),
-                        }),
-                      )}
-                    </div>
-                  </div>
-                );
-              })
-            : layout.tiles.map((tile) => renderTile(tile))}
+                    );
+                  })
+                : layout.tiles.map((tile) => renderTile(tile))}
+            </div>
+          )}
         </div>
       )}
 
