@@ -1,4 +1,6 @@
 import React, {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useRef,
@@ -48,23 +50,54 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { UsageWorkspace } from "./usage/UsageWorkspace";
+// Page stylesheets are imported here, not in the lazily loaded pages, so they stay
+// in the main bundle in this order and widget.css (imported last) still overrides them.
+import "./usage/multiDeviceScan.css";
 import { useLocalDayKey } from "./usage/useLocalDayKey";
-import { InsightsWorkspace } from "./insights/InsightsWorkspace";
-import { MarketsWorkspace } from "./markets/MarketsWorkspace";
-import { SubscriptionWorkspace } from "./subscriptions/SubscriptionWorkspace";
+import "./insights/insights.css";
+import "./markets/markets.css";
+import "./subscriptions/subscriptions.css";
 import { DeviceManager } from "./usage/DeviceManager";
 import { TrayPanel } from "./tray/TrayPanel";
-import { NetworkOverview } from "./network/NetworkOverview";
+import "./network/network.css";
 import { UpdateControl } from "./UpdateControl";
 import packageInfo from "../package.json";
 import { usageCall } from "./native/usageClient";
-import { ActivityLog } from "./activity/ActivityLog";
+import "./activity/activity.css";
 import { waveColor } from "./theme/wave";
 import { formatTokens } from "./usage/ui";
 // Loaded last so it overrides every page stylesheet imported above.
 import "./theme/widget.css";
 import type { NativeStatus, Dashboard, LanStatus } from "./usage/types";
+
+// Pages other than the overview load on first visit, keeping their code out of the
+// startup bundle (and out of the tray panel, which shares this entry).
+const UsageWorkspace = lazy(() =>
+  import("./usage/UsageWorkspace").then((m) => ({ default: m.UsageWorkspace })),
+);
+const InsightsWorkspace = lazy(() =>
+  import("./insights/InsightsWorkspace").then((m) => ({
+    default: m.InsightsWorkspace,
+  })),
+);
+const MarketsWorkspace = lazy(() =>
+  import("./markets/MarketsWorkspace").then((m) => ({
+    default: m.MarketsWorkspace,
+  })),
+);
+const SubscriptionWorkspace = lazy(() =>
+  import("./subscriptions/SubscriptionWorkspace").then((m) => ({
+    default: m.SubscriptionWorkspace,
+  })),
+);
+const NetworkOverview = lazy(() =>
+  import("./network/NetworkOverview").then((m) => ({
+    default: m.NetworkOverview,
+  })),
+);
+const ActivityLog = lazy(() =>
+  import("./activity/ActivityLog").then((m) => ({ default: m.ActivityLog })),
+);
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
 });
@@ -953,25 +986,27 @@ function App() {
               </div>
             </div>
           )}
-        {page === "overview" ? (
-          overview
-        ) : page === "usage" ? (
-          usage
-        ) : page === "insights" ? (
-          <InsightsWorkspace
-            sources={nativeStatus?.sources ?? nativeInfo.data?.sources ?? []}
-          />
-        ) : page === "subscriptions" ? (
-          <SubscriptionWorkspace />
-        ) : page === "markets" ? (
-          <MarketsWorkspace />
-        ) : page === "network" ? (
-          <NetworkOverview />
-        ) : page === "activity" ? (
-          <ActivityLog />
-        ) : (
-          devices
-        )}
+        <Suspense fallback={<div className="panel page-loading">加载中…</div>}>
+          {page === "overview" ? (
+            overview
+          ) : page === "usage" ? (
+            usage
+          ) : page === "insights" ? (
+            <InsightsWorkspace
+              sources={nativeStatus?.sources ?? nativeInfo.data?.sources ?? []}
+            />
+          ) : page === "subscriptions" ? (
+            <SubscriptionWorkspace />
+          ) : page === "markets" ? (
+            <MarketsWorkspace />
+          ) : page === "network" ? (
+            <NetworkOverview />
+          ) : page === "activity" ? (
+            <ActivityLog />
+          ) : (
+            devices
+          )}
+        </Suspense>
         <footer className="app-footer">
           <span className="inline">
             <ShieldCheck size={13} />

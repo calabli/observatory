@@ -61,8 +61,8 @@ The app has a collapsible left sidebar with three groups.
 
 **Markets (市场行情)** — A watch board for US, Taiwan, mainland China and Hong Kong stocks plus major global indices, using free public quote endpoints (Tencent, TWSE MIS, Yahoo Finance) chosen per market for the lowest delay.
 
-- _Indices strip_ and a _stock pool_: built-in pools (S&P 500, CSI 300, Taiwan 150, Hong Kong 100, US-listed Chinese companies 中概股, the global AI supply chain) or a custom watchlist, shown as a list with sparklines or as a treemap heat map sized by market cap, traded value, move or equally.
-- _Detail chart_ for the selected symbol over 1 day, 5 days, 1 month, 3 months or 1 year, with volume and traded value. Traded value is exact for A-shares, Hong Kong and US stocks; Taiwan stocks show an estimate (price × volume) marked "≈".
+- _Indices strip_ and a _stock pool_: built-in pools (S&P 500, CSI 300, Taiwan 150, Hong Kong 100, US-listed Chinese companies 中概股, the global AI supply chain) or a custom watchlist, shown as a list with sparklines or as a treemap heat map sized by market cap, traded value, move or equally. Sizes across currencies are compared in USD using live daily exchange rates (ExchangeRate-API), falling back to built-in approximate rates; the page says which it is using.
+- _Detail chart_ for the selected symbol over 1 day, 5 days, 1 month, 3 months or 1 year, with volume and traded value. Traded value is exact for A-shares, Hong Kong and US stocks (including small watchlists whose US prices come from Yahoo); Taiwan stocks show an estimate (price × volume) marked "≈".
 - _Stale quotes_: a stock with no trade for more than 10 days is grayed on the heat map, labelled "停牌或退市？" with its last trade date, and left out of the up/down counts and sector averages.
 - _Search_ by code or name across markets; a bare four-digit code is also offered as a Taiwan listing.
 - _Settings_: red-up/green-down (CN) or green-up/red-down (US) colors and a refresh interval of 5, 15 or 30 seconds or manual. Polling stops while the window is hidden; pools over 100 symbols refresh at most every 15 seconds. One request accepts at most 600 symbols.

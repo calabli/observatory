@@ -1,7 +1,8 @@
 // Set the app version everywhere it is recorded, in one step:
 //   npm run version:bump -- 0.1.13
 // package.json, package-lock.json, both Cargo.toml files, the Cargo.lock entries for
-// this repository's own crates, and tauri.conf.json. The release workflow requires
+// this repository's own crates, and tauri.conf.json; the CHANGELOG.md "Unreleased"
+// notes become the new version's section. The release workflow requires
 // the pushed tag to match package.json, so run this before tagging.
 import fs from "node:fs";
 import path from "node:path";
@@ -69,5 +70,28 @@ for (const [file, pattern] of targets) {
   }
   texts.set(full, text.replace(pattern, `$1${next}$2`));
 }
+// The notes collected under "## Unreleased" become this version's section, and an
+// empty Unreleased heading stays on top for the next round.
+const changelog = path.join(root, "CHANGELOG.md");
+const notes = fs.readFileSync(changelog, "utf8");
+const unreleased = /^## Unreleased\n/m;
+if (!unreleased.test(notes)) {
+  console.error(
+    'CHANGELOG.md has no "## Unreleased" section. Nothing was changed.',
+  );
+  process.exit(1);
+}
+if (notes.includes(`## [${next}]`)) {
+  console.error(
+    `CHANGELOG.md already has a ${next} section. Nothing was changed.`,
+  );
+  process.exit(1);
+}
+const today = new Date().toLocaleDateString("sv-SE"); // YYYY-MM-DD, local time
+texts.set(
+  changelog,
+  notes.replace(unreleased, `## Unreleased\n\n## [${next}] - ${today}\n`),
+);
+
 for (const [full, text] of texts) fs.writeFileSync(full, text);
 console.log(`Version ${current} -> ${next} in ${texts.size} files.`);

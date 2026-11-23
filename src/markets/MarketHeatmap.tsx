@@ -6,7 +6,8 @@ import {
   fmtSigned,
   fmtTurnover,
   fmtVolume,
-  FX_TO_USD,
+  FALLBACK_FX_TO_USD,
+  type FxRates,
   GROUP_HEADER_H,
   isStale,
   MARKET_META,
@@ -29,13 +30,14 @@ export function tileWeight(
   item: WatchItem,
   q: StockQuote | undefined,
   mode: TreemapSizeMode,
+  fx: FxRates = FALLBACK_FX_TO_USD,
 ): number {
   if (mode === "equal") return 1;
   if (mode === "move") {
     return Math.abs(q?.changePercent ?? 0) + 0.6;
   }
   if (mode === "cap") {
-    const capUsdB = marketCapUsdBillions(item, q);
+    const capUsdB = marketCapUsdBillions(item, q, fx);
     if (capUsdB != null && capUsdB > 0) {
       // Smooth Finviz-style dampening: mega-caps dominate clearly while 500th-ranked names stay clickable.
       return Math.pow(Math.max(capUsdB, 1.5), 0.6);
@@ -43,7 +45,9 @@ export function tileWeight(
   }
   // Compare in USD so CNY / HKD / TWD amounts are not inflated in mixed pools.
   const t = turnoverOf(q);
-  const turnoverUsd = t ? t.value / (FX_TO_USD[q?.currency ?? ""] ?? 1) : 0;
+  const currency = q?.currency ?? "";
+  const rate = fx[currency] ?? FALLBACK_FX_TO_USD[currency] ?? 1;
+  const turnoverUsd = t ? t.value / rate : 0;
   return turnoverUsd > 0 ? Math.pow(turnoverUsd, 0.42) : 1;
 }
 
@@ -68,6 +72,7 @@ export function MarketHeatmap({
   onRefresh,
   isRefreshing,
   lastUpdatedStr,
+  fx,
 }: {
   items: WatchItem[];
   quoteBySymbol: Map<string, StockQuote>;
@@ -89,6 +94,8 @@ export function MarketHeatmap({
   onRefresh: () => void;
   isRefreshing: boolean;
   lastUpdatedStr: string;
+  /** Live USD rates for comparing sizes across currencies. */
+  fx: FxRates;
 }) {
   const [tip, setTip] = useState<{
     x: number;
@@ -155,7 +162,7 @@ export function MarketHeatmap({
     if (groupBy === "none") {
       const nodes = items.map((item) => ({
         id: item.symbol,
-        weight: tileWeight(item, quoteBySymbol.get(item.symbol), sizeMode),
+        weight: tileWeight(item, quoteBySymbol.get(item.symbol), sizeMode, fx),
         data: item,
       }));
       return {
@@ -199,7 +206,7 @@ export function MarketHeatmap({
         sizeMode === "cap" && groupBy === "sector"
           ? list.reduce(
               (acc, it) =>
-                acc + tileWeight(it, quoteBySymbol.get(it.symbol), "cap"),
+                acc + tileWeight(it, quoteBySymbol.get(it.symbol), "cap", fx),
               0,
             )
           : Math.max(1, list.length);
@@ -219,7 +226,7 @@ export function MarketHeatmap({
       const innerH = Math.max(0, gr.h - GROUP_HEADER_H - pad);
       const childNodes = gr.data.items.map((item) => ({
         id: item.symbol,
-        weight: tileWeight(item, quoteBySymbol.get(item.symbol), sizeMode),
+        weight: tileWeight(item, quoteBySymbol.get(item.symbol), sizeMode, fx),
         data: item,
       }));
       const children = layoutSquarified(
@@ -233,7 +240,7 @@ export function MarketHeatmap({
     });
 
     return { groups, tiles: [] };
-  }, [items, quoteBySymbol, groupBy, sizeMode, mapW, mapH]);
+  }, [items, quoteBySymbol, groupBy, sizeMode, mapW, mapH, fx]);
 
   const legendStops =
     colorScheme === "cn"

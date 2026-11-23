@@ -35,6 +35,59 @@ fn http_client() -> &'static reqwest::Client {
     })
 }
 
+/// Tencent's firewall sometimes blocks a client for a while (it answers with an HTTP
+/// error or an HTML challenge page). After a failed request we stop calling Tencent for
+/// a growing pause (1, 2, 4 ... up to 15 minutes) instead of tripping the block on every
+/// poll; CN / HK quotes take the Yahoo route meanwhile.
+struct Backoff {
+    until: Option<std::time::Instant>,
+    failures: u32,
+}
+
+static TENCENT_BACKOFF: std::sync::Mutex<Backoff> = std::sync::Mutex::new(Backoff {
+    until: None,
+    failures: 0,
+});
+
+fn backoff_delay(failures: u32) -> Duration {
+    let secs = 60u64.saturating_mul(1 << failures.saturating_sub(1).min(4));
+    Duration::from_secs(secs.min(15 * 60))
+}
+
+fn tencent_available() -> bool {
+    TENCENT_BACKOFF
+        .lock()
+        .map(|b| {
+            b.until
+                .is_none_or(|until| std::time::Instant::now() >= until)
+        })
+        .unwrap_or(true)
+}
+
+fn tencent_report(ok: bool) {
+    if let Ok(mut b) = TENCENT_BACKOFF.lock() {
+        if ok {
+            b.failures = 0;
+            b.until = None;
+        } else {
+            b.failures = b.failures.saturating_add(1);
+            b.until = Some(std::time::Instant::now() + backoff_delay(b.failures));
+            log::warn!(
+                "腾讯行情请求失败，暂停 {} 秒后再试",
+                backoff_delay(b.failures).as_secs()
+            );
+        }
+    }
+}
+
+/// A Tencent response that is an HTML page (the firewall's challenge) instead of quotes.
+fn looks_blocked(bytes: &[u8]) -> bool {
+    bytes
+        .iter()
+        .find(|b| !b.is_ascii_whitespace())
+        .is_some_and(|b| *b == b'<')
+}
+
 async fn traced_get_bytes(
     provider: &str,
     url: &str,
@@ -656,17 +709,18 @@ async fn fetch_tencent_batch(items: &[WatchItem]) -> HashMap<String, StockQuote>
             Some(_) => {}
         }
     }
-    if codes.is_empty() {
+    if codes.is_empty() || !tencent_available() {
         return HashMap::new();
     }
 
     let chunks: Vec<Vec<String>> = codes.chunks(55).map(|c| c.to_vec()).collect();
     let map_ref = &code_to_item;
-    let results: Vec<Vec<StockQuote>> = stream::iter(chunks)
+    let results: Vec<Option<Vec<StockQuote>>> = stream::iter(chunks)
         .map(|chunk| async move {
             let url = format!("https://qt.gtimg.cn/q={}", chunk.join(","));
-            let Ok(bytes) = traced_get_bytes("腾讯批量实时", &url, None).await else {
-                return Vec::new();
+            let bytes = match traced_get_bytes("腾讯批量实时", &url, None).await {
+                Ok(bytes) if !looks_blocked(&bytes) => bytes,
+                _ => return None,
             };
             let mut quotes = Vec::new();
             for line in bytes.split(|&b| b == b'\n') {
@@ -677,14 +731,19 @@ async fn fetch_tencent_batch(items: &[WatchItem]) -> HashMap<String, StockQuote>
                     quotes.push(q);
                 }
             }
-            quotes
+            Some(quotes)
         })
         .buffer_unordered(8)
         .collect()
         .await;
+    if results.iter().any(Option::is_some) {
+        tencent_report(true);
+    } else if !results.is_empty() {
+        tencent_report(false);
+    }
 
     let mut out = HashMap::new();
-    for batch in results {
+    for batch in results.into_iter().flatten() {
         for q in batch {
             out.insert(q.symbol.clone(), q);
         }
@@ -1222,6 +1281,15 @@ async fn fetch_yahoo_quote(
 /// Largest quote request accepted; the biggest built-in pool (S&P 500) has 503.
 pub const MAX_QUOTE_ITEMS: usize = 600;
 
+/// The item's market, falling back to detection from the symbol.
+fn market_of(item: &WatchItem) -> &str {
+    if item.market.is_empty() {
+        detect_market(&item.symbol)
+    } else {
+        item.market.as_str()
+    }
+}
+
 pub async fn fetch_quotes(items: Vec<WatchItem>, skip_sparkline: bool) -> Vec<StockQuote> {
     let use_fast_batch = skip_sparkline || items.len() > 24;
 
@@ -1231,11 +1299,33 @@ pub async fn fetch_quotes(items: Vec<WatchItem>, skip_sparkline: bool) -> Vec<St
         .iter()
         .filter_map(|it| to_twse_channel(&it.symbol).map(|ch| (it.symbol.clone(), ch)))
         .collect();
-    let (twse_map, tencent_batch_map) = if use_fast_batch {
-        tokio::join!(fetch_twse_batch(&tw_channels), fetch_tencent_batch(&items))
+    // Small lists take the per-symbol route, where US quotes come from Yahoo, which
+    // reports no traded value. One Tencent batch request for just the US symbols fills
+    // in the exact amount (see `turnover_by_symbol` below).
+    let us_items: Vec<WatchItem> = if use_fast_batch {
+        Vec::new()
     } else {
-        (fetch_twse_batch(&tw_channels).await, HashMap::new())
+        items
+            .iter()
+            .filter(|it| market_of(it) == "US")
+            .cloned()
+            .collect()
     };
+    let (twse_map, tencent_batch_map, us_batch_map) = if use_fast_batch {
+        let (twse, tencent) =
+            tokio::join!(fetch_twse_batch(&tw_channels), fetch_tencent_batch(&items));
+        (twse, tencent, HashMap::new())
+    } else {
+        let (twse, us) = tokio::join!(
+            fetch_twse_batch(&tw_channels),
+            fetch_tencent_batch(&us_items)
+        );
+        (twse, HashMap::new(), us)
+    };
+    let turnover_by_symbol: HashMap<String, f64> = us_batch_map
+        .into_iter()
+        .filter_map(|(symbol, q)| q.turnover.map(|t| (symbol, t)))
+        .collect();
 
     // 2. Resolve each item: return fast-batch hit directly when available; otherwise fall back to
     //    per-symbol routed fetcher (full sparklines + US pre/post market + Yahoo fallback).
@@ -1267,19 +1357,30 @@ pub async fn fetch_quotes(items: Vec<WatchItem>, skip_sparkline: bool) -> Vec<St
         } else {
             false
         };
-        tasks.push((idx, item, batch_hit, twse_hit, allow_network_fallback));
+        let turnover = turnover_by_symbol.get(&item.symbol).copied();
+        tasks.push((
+            idx,
+            item,
+            batch_hit,
+            twse_hit,
+            allow_network_fallback,
+            turnover,
+        ));
     }
 
     let indexed: Vec<(usize, StockQuote)> = stream::iter(tasks)
         .map(
-            |(idx, item, batch_hit, twse_hit, allow_network_fallback)| async move {
+            |(idx, item, batch_hit, twse_hit, allow_network_fallback, turnover)| async move {
                 if let Some(q) = batch_hit {
                     return (idx, q);
                 }
                 if !allow_network_fallback {
                     return (idx, error_quote(&item, "批量行情暂未返回"));
                 }
-                let quote = fetch_single_routed(&item, twse_hit, use_fast_batch).await;
+                let mut quote = fetch_single_routed(&item, twse_hit, use_fast_batch).await;
+                if quote.turnover.is_none() {
+                    quote.turnover = turnover;
+                }
                 (idx, quote)
             },
         )
@@ -1289,7 +1390,42 @@ pub async fn fetch_quotes(items: Vec<WatchItem>, skip_sparkline: bool) -> Vec<St
 
     let mut ordered = indexed;
     ordered.sort_by_key(|(idx, _)| *idx);
-    ordered.into_iter().map(|(_, q)| q).collect()
+    let quotes: Vec<StockQuote> = ordered.into_iter().map(|(_, q)| q).collect();
+    static LAST_GOOD: std::sync::LazyLock<std::sync::Mutex<HashMap<String, StockQuote>>> =
+        std::sync::LazyLock::new(Default::default);
+    match LAST_GOOD.lock() {
+        Ok(mut cache) => with_last_good(quotes, &mut cache),
+        Err(_) => quotes,
+    }
+}
+
+/// Remember each symbol's last good quote and show it, marked as cached, when a
+/// later fetch fails, so a blocked or flaky source leaves the last known prices on
+/// screen instead of a page of errors. The quote keeps its original time, so the
+/// page can still tell how old it is.
+fn with_last_good(
+    quotes: Vec<StockQuote>,
+    cache: &mut HashMap<String, StockQuote>,
+) -> Vec<StockQuote> {
+    // Bounded: more symbols than every built-in pool together.
+    if cache.len() > 4000 {
+        cache.clear();
+    }
+    quotes
+        .into_iter()
+        .map(|q| {
+            if q.price.is_some() && q.error.is_none() {
+                cache.insert(q.symbol.clone(), q.clone());
+                q
+            } else if let Some(prev) = cache.get(&q.symbol) {
+                let mut cached = prev.clone();
+                cached.source = format!("{}（缓存）", prev.source);
+                cached
+            } else {
+                q
+            }
+        })
+        .collect()
 }
 
 type TwseTuple = (
@@ -1317,9 +1453,15 @@ async fn fetch_single_routed(
 
     // Route A: A-shares & Hong Kong -> Tencent UTF-8 real-time (1-3s lag), fallback Yahoo.
     if matches!(market, "CN" | "HK") {
-        if let Some(code) = to_tencent_code(&item.symbol) {
-            if let Ok(q) = fetch_tencent_quote(&item.symbol, &item.name, &code, 48).await {
-                return q;
+        if let Some(code) = to_tencent_code(&item.symbol).filter(|_| tencent_available()) {
+            match fetch_tencent_quote(&item.symbol, &item.name, &code, 48).await {
+                Ok(q) => {
+                    tencent_report(true);
+                    return q;
+                }
+                // An unknown symbol is not a sign of a block; failed requests are.
+                Err(e) if e.contains("无报价数据") => {}
+                Err(_) => tencent_report(false),
             }
         }
         if let Ok(q) = fetch_yahoo_quote(&item.symbol, &item.name, 48).await {
@@ -1473,7 +1615,7 @@ pub async fn fetch_chart(symbol: &str, range: &str) -> Result<StockChartDetail, 
         return Err(AppError::InvalidInput("symbol is required".into()));
     }
     let market = detect_market(sym);
-    if range == "1d" && matches!(market, "CN" | "HK") {
+    if range == "1d" && matches!(market, "CN" | "HK") && tencent_available() {
         if let Some(code) = to_tencent_code(sym) {
             if let Ok(q) = fetch_tencent_quote(sym, "", &code, 260).await {
                 if !q.sparkline.is_empty() {
@@ -1575,6 +1717,77 @@ fn us_symbol_from_tencent(code: &str) -> String {
         _ => lower.as_str(),
     };
     base.replace('.', "-").to_ascii_uppercase()
+}
+
+// ---------------------------------------------------------------------------
+// Exchange rates (ExchangeRate-API open endpoint: free, no key, updated daily)
+// ---------------------------------------------------------------------------
+
+/// Currencies the Markets page converts to USD to compare market cap and traded value.
+const FX_CURRENCIES: [&str; 5] = ["CNY", "HKD", "TWD", "JPY", "EUR"];
+/// The source updates once a day; refetch at most every six hours.
+const FX_CACHE_SECS: u64 = 6 * 3600;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FxRates {
+    /// Units of each currency per 1 USD.
+    pub rates: HashMap<String, f64>,
+    /// When the source last updated the rates (Unix seconds).
+    pub updated_at: Option<i64>,
+    pub source: String,
+}
+
+/// Pick the currencies we use from an ExchangeRate-API `latest/USD` response.
+fn parse_fx_rates(body: &Value) -> Result<FxRates, String> {
+    if body["result"].as_str() != Some("success") {
+        return Err(format!(
+            "汇率接口返回 {}",
+            body["error-type"].as_str().unwrap_or("未知错误")
+        ));
+    }
+    let rates: HashMap<String, f64> = FX_CURRENCIES
+        .iter()
+        .filter_map(|code| {
+            body["rates"][*code]
+                .as_f64()
+                .filter(|v| v.is_finite() && *v > 0.0)
+                .map(|v| (code.to_string(), v))
+        })
+        .collect();
+    if rates.is_empty() {
+        return Err("汇率接口没有返回可用汇率".into());
+    }
+    Ok(FxRates {
+        rates,
+        updated_at: body["time_last_update_unix"].as_i64(),
+        source: "ExchangeRate-API".into(),
+    })
+}
+
+/// Current USD exchange rates, cached in memory for [`FX_CACHE_SECS`].
+pub async fn fetch_fx_rates() -> Result<FxRates, AppError> {
+    static CACHE: std::sync::Mutex<Option<(std::time::Instant, FxRates)>> =
+        std::sync::Mutex::new(None);
+    if let Some((at, rates)) = CACHE.lock().ok().and_then(|c| c.clone()) {
+        if at.elapsed() < Duration::from_secs(FX_CACHE_SECS) {
+            return Ok(rates);
+        }
+    }
+    let bytes = traced_get_bytes(
+        "ExchangeRate-API",
+        "https://open.er-api.com/v6/latest/USD",
+        None,
+    )
+    .await
+    .map_err(AppError::Message)?;
+    let body: Value = serde_json::from_slice(&bytes)
+        .map_err(|e| AppError::Message(format!("汇率 JSON 解析失败: {e}")))?;
+    let rates = parse_fx_rates(&body).map_err(AppError::Message)?;
+    if let Ok(mut cache) = CACHE.lock() {
+        *cache = Some((std::time::Instant::now(), rates.clone()));
+    }
+    Ok(rates)
 }
 
 pub async fn search_symbols(query: &str) -> Vec<SearchHit> {
@@ -1731,6 +1944,66 @@ mod tests {
         assert!((q.price.unwrap() - 125.53).abs() < 1e-6);
         assert!((q.change_percent.unwrap() - (-14.01)).abs() < 1e-6);
         assert!((q.market_cap.unwrap() - 3_031_172_910_000.0).abs() < 1e5);
+    }
+
+    #[test]
+    fn tencent_backoff_grows_and_caps() {
+        assert_eq!(backoff_delay(1).as_secs(), 60);
+        assert_eq!(backoff_delay(2).as_secs(), 120);
+        assert_eq!(backoff_delay(3).as_secs(), 240);
+        assert_eq!(backoff_delay(5).as_secs(), 900);
+        assert_eq!(backoff_delay(40).as_secs(), 900);
+        assert!(looks_blocked(b"  <!DOCTYPE html><html>"));
+        assert!(!looks_blocked(b"v_usBABA=\"200~"));
+    }
+
+    #[test]
+    fn failed_quotes_fall_back_to_the_last_good_one() {
+        let item = WatchItem {
+            symbol: "BABA".into(),
+            name: "阿里巴巴".into(),
+            market: "US".into(),
+        };
+        let mut good = error_quote(&item, "");
+        good.error = None;
+        good.price = Some(86.0);
+        good.source = "腾讯批量实时".into();
+        let mut cache = HashMap::new();
+        let first = with_last_good(vec![good.clone()], &mut cache);
+        assert_eq!(first[0].source, "腾讯批量实时");
+        let failed = with_last_good(vec![error_quote(&item, "行情源暂不可用")], &mut cache);
+        assert_eq!(failed[0].price, Some(86.0));
+        assert!(failed[0].error.is_none());
+        assert_eq!(failed[0].source, "腾讯批量实时（缓存）");
+        // A symbol never fetched successfully keeps its error.
+        let other = WatchItem {
+            symbol: "XYZ".into(),
+            ..item
+        };
+        let none = with_last_good(vec![error_quote(&other, "x")], &mut cache);
+        assert!(none[0].error.is_some());
+    }
+
+    #[test]
+    fn fx_rates_keep_known_currencies_and_reject_failures() {
+        let ok = serde_json::json!({
+            "result": "success",
+            "time_last_update_unix": 1_795_000_000,
+            "rates": {"USD": 1, "CNY": 6.68, "HKD": 7.84, "TWD": 32.97, "GBP": 0.79, "JPY": 0}
+        });
+        let fx = parse_fx_rates(&ok).unwrap();
+        assert_eq!(fx.rates.get("CNY"), Some(&6.68));
+        assert_eq!(fx.rates.get("TWD"), Some(&32.97));
+        assert!(
+            !fx.rates.contains_key("GBP"),
+            "only currencies the page uses"
+        );
+        assert!(!fx.rates.contains_key("JPY"), "zero is not a rate");
+        assert_eq!(fx.updated_at, Some(1_795_000_000));
+        let failed = serde_json::json!({"result": "error", "error-type": "quota-reached"});
+        assert!(parse_fx_rates(&failed)
+            .unwrap_err()
+            .contains("quota-reached"));
     }
 
     #[test]

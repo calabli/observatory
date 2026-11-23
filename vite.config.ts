@@ -36,6 +36,8 @@ export default defineConfig({
   build: {
     modulePreload: false,
     assetsInlineLimit: 1000000,
-    rollupOptions: { output: { inlineDynamicImports: true } },
+    // Pages are split into their own chunks (see the lazy imports in main.tsx) so
+    // startup and the tray panel load only the shell; Tauri serves dist/ through
+    // its asset protocol, which loads the chunks like any web server.
   },
 });

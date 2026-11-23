@@ -29,14 +29,6 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NOTES: |
-            - Markets: new **中概股** pool of 53 US-listed Chinese companies in 9 sectors. Exact traded value (成交额) for A-shares, Hong Kong and US stocks in the detail panel, heat-map tooltip and "按成交额" sizing (Taiwan shows a "≈" estimate). Stocks with no trade for over 10 days are flagged as possibly suspended or delisted and left out of the up/down counts.
-            - AI usage: the model speed chart sorts by usage or speed, shows 8 models with "show all", and grays low-sample models.
-            - Multi-device: an unreachable device now says why (port not listening, timeout or firewall, unreachable network, dropped connection).
-            - The local database releases free space automatically (incremental vacuum, switched once on existing databases).
-            - Maintenance: large pages split into smaller modules, new tests for the heat map and report builder, zero clippy warnings, docs checked by Prettier, `npm run version:bump`, and release actions on checkout/setup-node v7.
-
-            The macOS build is not notarized.
         run: |
           set -euo pipefail
           version=$(node -p "require('./package.json').version")
@@ -45,6 +37,8 @@ jobs:
             echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $version"
             exit 1
           fi
+          # Notes come from the matching CHANGELOG.md section; a missing one fails here.
+          NOTES=$(node scripts/release-notes.mjs "$version")
           # Reuse the release that already exists for this tag (drafts included)
           # when the workflow is re-run, instead of creating another one.
           ids=$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate \
@@ -67,10 +61,12 @@ jobs:
           echo "id=$id" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
-  # Lint and tests run beside the release builds instead of in front of them;
-  # the release is only published (manifest job) when they pass.
-  check:
-    runs-on: windows-latest
+  # Lint and tests run beside the release builds instead of in front of them, split
+  # into three parallel jobs; the release is only published (manifest job) when all
+  # pass. Rust caches are saved by ci-cache.yml on main (a cache saved by a tag run
+  # is scoped to that tag and could never be reused), so tag runs only restore them.
+  check-frontend:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -80,9 +76,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: native -> target
       - run: npm ci
       - run: npm test
       - run: npm run typecheck
@@ -92,11 +85,33 @@ jobs:
         run: |
           cargo fmt --manifest-path native/Cargo.toml --check
           cargo fmt --manifest-path src-tauri/Cargo.toml --check
+
+  check-core:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: check-core
+          workspaces: native -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       # One cargo invocation so the library and the test binaries compile once.
       - name: Run usage-core tests
         run: cargo test --manifest-path native/Cargo.toml --locked --lib --test pairing_codes --test scan_jobs --test lan_pair_scan --test lan_storage --test usage_http_api --test subscriptions --test write_epoch --test lan_hardening --test lan_sync_loop --test activity_log --test rollup_prune --test pricing_case --test pricing_backfill_scope
-      # The shell has its own tests for the window behaviour; they are cheap
-      # but the shell pulls in the whole Tauri dependency tree.
+
+  # The shell has its own tests for the window behaviour; they are cheap but the
+  # shell pulls in the whole Tauri dependency tree, so they get their own job.
+  check-shell:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: check-shell
+          workspaces: src-tauri -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Run desktop shell tests
         run: cargo test --manifest-path src-tauri/Cargo.toml --locked
 
@@ -122,10 +137,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
+          shared-key: build-${{ runner.os }}
           # native/target holds the macOS-only tests below.
           workspaces: |
             src-tauri -> target
             native -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
       # Without the updater signing key the build would fail outright; build
       # the installers without updater artifacts instead and say so.
@@ -178,7 +195,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Failed to upload portable executable' }
 
   manifest:
-    needs: [release, check, build]
+    needs: [release, check-frontend, check-core, check-shell, build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

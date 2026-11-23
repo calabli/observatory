@@ -40,7 +40,6 @@ import {
 import { formatSubscriptionPrice } from "../subscriptions/format";
 import { ReportExportModal } from "./ReportExportModal";
 import { SessionDetailModal } from "./SessionDetailModal";
-import "./insights.css";
 
 export function InsightsWorkspace({ sources }: { sources: SourceStatus[] }) {
   const qc = useQueryClient();

@@ -37,7 +37,6 @@ import {
 import { formatSubscriptionPrice } from "./format";
 import { aggregateConsistently } from "./aggregate";
 import { filterAndSort } from "./list";
-import "./subscriptions.css";
 
 type Subscription = {
   id: string;

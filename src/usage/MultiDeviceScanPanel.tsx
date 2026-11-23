@@ -1,6 +1,5 @@
 import { CheckCircle2, Circle, CircleAlert, LoaderCircle } from "lucide-react";
 import type { DeviceScan, ScanBatch, ScanState } from "./multiDeviceScan";
-import "./multiDeviceScan.css";
 
 const labels: Record<ScanState, string> = {
   waiting: "等待中",

@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { usageCall } from "../native/usageClient";
 import { calculateRate, type Counters } from "./networkRate";
-import "./network.css";
 
 type NetInterface = {
   id: string;

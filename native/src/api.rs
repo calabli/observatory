@@ -525,6 +525,9 @@ impl UsageBackend {
                 }
                 _ => "error",
             };
+            if !crate::activity::should_log_api_out(op, &req_args, status) {
+                return result;
+            }
             let resp_body = result.as_ref().ok().cloned();
             let err_text = result.as_ref().err().map(ToString::to_string);
             let db = self.db.clone();
@@ -759,6 +762,7 @@ impl UsageBackend {
                     .to_string();
                 to_json(crate::markets::search_symbols(&query).await)
             }
+            "markets_fx" => to_json(crate::markets::fetch_fx_rates().await?),
             "status" => self.call_blocking(move |db| Self::status_impl(db)).await,
             "preferences_save" => {
                 let interval = args

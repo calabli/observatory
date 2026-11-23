@@ -37,6 +37,56 @@ fn is_polling_op(op: &str) -> bool {
     matches!(op, "markets_quotes" | "markets_chart")
 }
 
+/// A successful poll identical to one already logged within this window is not
+/// logged again; a failure, or a change from failure back to success, always is.
+const POLL_LOG_INTERVAL: std::time::Duration = std::time::Duration::from_secs(600);
+
+/// Last logged time and status per polled request (op + arguments).
+type PollLog = HashMap<u64, (std::time::Instant, &'static str)>;
+
+/// Whether an outbound call should be written to the activity log. Market quote and
+/// chart polls repeat every few seconds; logging each one buried everything else, so
+/// only the first success per request in [`POLL_LOG_INTERVAL`], every failure, and
+/// every status change are kept. Other outbound ops are always logged.
+pub fn should_log_api_out(op: &str, args: &Value, status: &'static str) -> bool {
+    static SEEN: std::sync::LazyLock<Mutex<PollLog>> =
+        std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+    if !is_polling_op(op) {
+        return true;
+    }
+    let Ok(mut seen) = SEEN.lock() else {
+        return true;
+    };
+    decide_poll_log(&mut seen, op, args, status, std::time::Instant::now())
+}
+
+fn decide_poll_log(
+    seen: &mut PollLog,
+    op: &str,
+    args: &Value,
+    status: &'static str,
+    now: std::time::Instant,
+) -> bool {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    op.hash(&mut hasher);
+    args.to_string().hash(&mut hasher);
+    let key = hasher.finish();
+    let log = match seen.get(&key) {
+        _ if status != "ok" => true,
+        Some((at, last)) => *last != status || now.duration_since(*at) >= POLL_LOG_INTERVAL,
+        None => true,
+    };
+    if log {
+        seen.insert(key, (now, status));
+        // Keep the table small: drop entries no poll has refreshed for a while.
+        if seen.len() > 512 {
+            seen.retain(|_, (at, _)| now.duration_since(*at) < POLL_LOG_INTERVAL);
+        }
+    }
+    log
+}
+
 /// Preview caps (request, response) for an outbound op.
 fn preview_limits(op: &str) -> (usize, usize) {
     if is_polling_op(op) {
@@ -528,6 +578,7 @@ pub fn api_out_label(op: &str) -> Option<&'static str> {
         "markets_quotes" => "拉取市场行情",
         "markets_chart" => "拉取行情走势图",
         "markets_search" => "搜索股票代码",
+        "markets_fx" => "拉取汇率",
         "modelsdev_fetch" => "拉取 models.dev 价格",
         "network_international_ipv4" => "查询国际出口 IP",
         _ => return None,
@@ -828,6 +879,74 @@ mod tests {
             list(&db, Some("api_out"), None, 50, false).unwrap().len(),
             4
         );
+    }
+
+    #[test]
+    fn repeated_successful_polls_are_logged_once_per_interval() {
+        let mut seen = PollLog::new();
+        let t0 = std::time::Instant::now();
+        let args = json!({"items": [{"symbol": "NVDA"}]});
+        let other = json!({"items": [{"symbol": "AAPL"}]});
+        let at = |secs| t0 + std::time::Duration::from_secs(secs);
+        assert!(decide_poll_log(
+            &mut seen,
+            "markets_quotes",
+            &args,
+            "ok",
+            at(0)
+        ));
+        assert!(!decide_poll_log(
+            &mut seen,
+            "markets_quotes",
+            &args,
+            "ok",
+            at(5)
+        ));
+        // A different request is its own entry.
+        assert!(decide_poll_log(
+            &mut seen,
+            "markets_quotes",
+            &other,
+            "ok",
+            at(5)
+        ));
+        // Failures are always logged, and so is the recovery after one.
+        assert!(decide_poll_log(
+            &mut seen,
+            "markets_quotes",
+            &args,
+            "error",
+            at(10)
+        ));
+        assert!(decide_poll_log(
+            &mut seen,
+            "markets_quotes",
+            &args,
+            "error",
+            at(15)
+        ));
+        assert!(decide_poll_log(
+            &mut seen,
+            "markets_quotes",
+            &args,
+            "ok",
+            at(20)
+        ));
+        assert!(!decide_poll_log(
+            &mut seen,
+            "markets_quotes",
+            &args,
+            "ok",
+            at(300)
+        ));
+        // After the interval a success is logged again.
+        assert!(decide_poll_log(
+            &mut seen,
+            "markets_quotes",
+            &args,
+            "ok",
+            at(20 + 600)
+        ));
     }
 
     #[test]

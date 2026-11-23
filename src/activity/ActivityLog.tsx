@@ -2,7 +2,6 @@ import { Fragment, useEffect, useState } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Check, ChevronDown, ChevronRight, Copy } from "lucide-react";
 import { usageCall } from "../native/usageClient";
-import "./activity.css";
 
 type Kind = "scan" | "api_out" | "api_in" | "sync" | "action";
 type Entry = {

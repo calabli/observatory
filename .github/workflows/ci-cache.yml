@@ -1,0 +1,75 @@
+name: Warm Rust caches
+# GitHub scopes a cache saved by a tag-triggered run to that tag, so release runs
+# could never reuse each other's Rust builds and compiled everything from scratch
+# (about 9 minutes per platform). This workflow builds the same targets on main,
+# where every later tag run can restore the caches (release.yml only restores).
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "native/**"
+      - "src-tauri/**"
+      - "package-lock.json"
+      - ".github/workflows/ci-cache.yml"
+concurrency:
+  group: ci-cache
+  cancel-in-progress: true
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+jobs:
+  # Must match the cache keys and build commands of the jobs in release.yml.
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - os: macos-15
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: build-${{ runner.os }}
+          workspaces: |
+            src-tauri -> target
+            native -> target
+      - run: npm ci
+      - name: Build the app without bundling
+        # bash on every OS: PowerShell would mangle the quoted JSON.
+        shell: bash
+        run: npx tauri build --target ${{ matrix.target }} --no-bundle --config '{"bundle":{"createUpdaterArtifacts":false}}'
+      - name: Compile the macOS-only tests
+        if: runner.os == 'macOS'
+        run: cargo test --manifest-path native/Cargo.toml --locked --test usage_integration --no-run
+
+  check-core:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: check-core
+          workspaces: native -> target
+      - run: cargo test --manifest-path native/Cargo.toml --locked --lib --test pairing_codes --test scan_jobs --test lan_pair_scan --test lan_storage --test usage_http_api --test subscriptions --test write_epoch --test lan_hardening --test lan_sync_loop --test activity_log --test rollup_prune --test pricing_case --test pricing_backfill_scope --no-run
+
+  check-shell:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: check-shell
+          workspaces: src-tauri -> target
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked --no-run

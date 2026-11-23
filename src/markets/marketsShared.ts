@@ -136,7 +136,14 @@ export function fmtMarketCap(
   return `${prefix}${v.toLocaleString()}`;
 }
 
-export const FX_TO_USD: Record<string, number> = {
+/** Units of each currency per 1 USD. */
+export type FxRates = Record<string, number>;
+
+/**
+ * Used until live rates arrive (`markets_fx`, refreshed daily) or when they cannot be
+ * fetched. Rough values: only for comparing sizes across markets, never for prices.
+ */
+export const FALLBACK_FX_TO_USD: FxRates = {
   USD: 1,
   CNY: 7.2,
   HKD: 7.8,
@@ -148,10 +155,11 @@ export const FX_TO_USD: Record<string, number> = {
 export function marketCapUsdBillions(
   item: WatchItem,
   q: StockQuote | undefined,
+  fx: FxRates = FALLBACK_FX_TO_USD,
 ): number | null {
   if (q?.marketCap != null && Number.isFinite(q.marketCap) && q.marketCap > 0) {
-    const fx = FX_TO_USD[q.currency] ?? 1;
-    return q.marketCap / fx / 1e9;
+    const rate = fx[q.currency] ?? FALLBACK_FX_TO_USD[q.currency] ?? 1;
+    return q.marketCap / rate / 1e9;
   }
   if (item.capHint != null && item.capHint > 0) {
     return item.capHint;

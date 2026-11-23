@@ -24,3 +24,5 @@ desktop-dist/
 # Local build artifacts and verification screenshots
 Observatory-*-Windows-x64-portable.exe
 .ui-shots/
+test-results/
+playwright-report/

@@ -3,7 +3,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type ChartRange,
   fmtClock,
+  FALLBACK_FX_TO_USD,
   fmtLastTrade,
+  type FxRates,
   fmtMarketCap,
   fmtPrice,
   fmtSigned,
@@ -43,7 +45,6 @@ import {
 } from "lucide-react";
 import { InteractivePriceChart, MiniSparkline } from "./MarketCharts";
 import { MarketHeatmap } from "./MarketHeatmap";
-import "./markets.css";
 
 export function MarketsWorkspace() {
   const qc = useQueryClient();
@@ -292,6 +293,25 @@ export function MarketsWorkspace() {
     retry: false,
   });
 
+  // Live USD rates for comparing sizes across markets; the built-in values cover
+  // the gap before they load or if the source is unreachable.
+  const fxQuery = useQuery({
+    queryKey: ["markets", "fx"],
+    queryFn: () =>
+      usageCall<{
+        rates: FxRates;
+        updatedAt: number | null;
+        source: string;
+      }>("markets_fx"),
+    staleTime: 6 * 3600_000,
+    refetchInterval: 6 * 3600_000,
+    retry: false,
+  });
+  const fx = useMemo(
+    () => ({ ...FALLBACK_FX_TO_USD, ...(fxQuery.data?.rates ?? {}) }),
+    [fxQuery.data],
+  );
+
   const quoteBySymbol = useMemo(() => {
     const map = new Map<string, StockQuote>();
     for (const q of indicesQuery.data ?? []) {
@@ -453,7 +473,10 @@ export function MarketsWorkspace() {
           </div>
           <p className="markets-sub">
             A 股 / 港股走腾讯实时（1–3s）· 台股走 TWSE 官方实时（5s）· 美股走
-            Yahoo 实时（含盘前/盘后），仅在页面可见时自动刷新
+            Yahoo 实时（含盘前/盘后），仅在页面可见时自动刷新 ·{" "}
+            {fxQuery.data
+              ? `跨币种比较用 ${fxQuery.data.source} 汇率${fxQuery.data.updatedAt ? `（${fmtLastTrade(fxQuery.data.updatedAt)}）` : ""}`
+              : "跨币种比较暂用内置近似汇率"}
           </p>
         </div>
         <div className="markets-controls">
@@ -749,6 +772,7 @@ export function MarketsWorkspace() {
               onRefresh={manualRefresh}
               isRefreshing={isAnyFetching}
               lastUpdatedStr={lastUpdatedStr}
+              fx={fx}
             />
           ) : (
             <div className="markets-table-wrap">

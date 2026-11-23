@@ -13,19 +13,27 @@ const builtApp = path.join(bundleDir, "Observatory.app");
 const builtTar = path.join(bundleDir, "Observatory.app.tar.gz");
 const targetApp = "/Applications/Observatory.app";
 
-// Clear any bundle left by an earlier build first: tauri build exits non-zero at the
-// end when updater signing keys are absent locally, so the bundle's presence is the
-// success signal, and a stale one would hide a failed build.
+// Clear any bundle left by an earlier build first, so only this build's output can
+// be installed.
 fs.rmSync(builtApp, { recursive: true, force: true });
 fs.rmSync(builtTar, { force: true });
-const build = spawnSync("npx", ["tauri", "build", "--bundles", "app"], {
-  cwd: root,
-  stdio: "inherit",
-});
-if (!fs.existsSync(builtApp)) {
-  console.error(
-    "tauri build did not produce Observatory.app; nothing installed.",
-  );
+// A local install never self-updates, so skip the signed update package: it needs
+// the release signing key, which is absent locally and made the build exit with an
+// error after the app was already built.
+const build = spawnSync(
+  "npx",
+  [
+    "tauri",
+    "build",
+    "--bundles",
+    "app",
+    "--config",
+    JSON.stringify({ bundle: { createUpdaterArtifacts: false } }),
+  ],
+  { cwd: root, stdio: "inherit" },
+);
+if (build.status !== 0 || !fs.existsSync(builtApp)) {
+  console.error("tauri build failed; nothing installed.");
   process.exit(build.status || 1);
 }
 
