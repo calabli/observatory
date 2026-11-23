@@ -27,6 +27,11 @@ import {
   localDayStart,
   useLocalDayKey,
 } from "../usage/useLocalDayKey";
+import {
+  INSIGHTS_RANGES,
+  presetRange,
+  RANGE_PRESETS,
+} from "../usage/timeRange";
 import type { LanStatus, SourceStatus } from "../usage/types";
 import { buildHtmlReport, buildMarkdownReport } from "./reportBuilder";
 import "./insights.css";
@@ -217,7 +222,7 @@ interface InsightsData {
   subscriptions: SubscriptionRoi[];
 }
 
-type RangeKey = "7d" | "14d" | "30d" | "month";
+type RangeKey = (typeof INSIGHTS_RANGES)[number];
 type HeatMode = "cost" | "requests" | "speed";
 type StabMode = "ttft" | "speed";
 type SessionSort = "cost" | "turns" | "context" | "recent";
@@ -225,12 +230,6 @@ type SessionSort = "cost" | "turns" | "context" | "recent";
 const BUDGET_KEY = "observatory.insights.monthly-budget";
 const DAILY_BUDGET_KEY = "observatory.insights.daily-budget";
 const WEEKDAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
-const RANGE_LABELS: Record<RangeKey, string> = {
-  "7d": "近 7 天",
-  "14d": "近 14 天",
-  "30d": "近 30 天",
-  month: "本月",
-};
 
 const APP_COLORS: Record<string, string> = {
   claude: "var(--accent-orange)",
@@ -264,16 +263,9 @@ function projectBase(dir: string | null | undefined): string {
   return parts[parts.length - 1] || trimmed;
 }
 
-function rangeStartDate(range: RangeKey, dayKey = localDayKey()): number {
-  const start = localDayStart(dayKey);
-  if (range === "month") {
-    start.setDate(1);
-    return Math.floor(start.getTime() / 1000);
-  }
-  const days = range === "7d" ? 7 : range === "14d" ? 14 : 30;
-  start.setDate(start.getDate() - (days - 1));
-  return Math.floor(start.getTime() / 1000);
-}
+/** Rolling ranges stay open-ended so forecasts measure up to now. */
+const rangeBounds = (range: RangeKey, dayKey = localDayKey()) =>
+  presetRange(range, localDayStart(dayKey), "open");
 
 function fmtUsd(v: number): string {
   if (v >= 100) return `$${v.toFixed(1)}`;
@@ -354,16 +346,13 @@ export function InsightsWorkspace({ sources }: { sources: SourceStatus[] }) {
     [visibleSources],
   );
 
-  const startDate = useMemo(
-    () => rangeStartDate(range, dayKey),
-    [range, dayKey],
-  );
+  const bounds = useMemo(() => rangeBounds(range, dayKey), [range, dayKey]);
 
   const query = useQuery({
     queryKey: ["usage", "insights", range, dayKey, app, effectiveMultiDevice],
     queryFn: () =>
       usageCall<InsightsData>("insights", {
-        startDate: rangeStartDate(range),
+        ...rangeBounds(range),
         appType: app || undefined,
         multiDevice: effectiveMultiDevice,
       }),
@@ -575,21 +564,14 @@ export function InsightsWorkspace({ sources }: { sources: SourceStatus[] }) {
             role="group"
             aria-label="时间范围"
           >
-            {(
-              [
-                ["7d", "近 7 天"],
-                ["14d", "近 14 天"],
-                ["30d", "近 30 天"],
-                ["month", "本月"],
-              ] as const
-            ).map(([k, label]) => (
+            {INSIGHTS_RANGES.map((k) => (
               <button
                 key={k}
                 type="button"
                 className={`insights-pill-btn${range === k ? " active" : ""}`}
                 onClick={() => setRange(k)}
               >
-                {label}
+                {RANGE_PRESETS[k].label}
               </button>
             ))}
           </div>
@@ -1280,7 +1262,7 @@ export function InsightsWorkspace({ sources }: { sources: SourceStatus[] }) {
       {reportOpen && data && (
         <ReportExportModal
           data={data}
-          rangeLabel={RANGE_LABELS[range]}
+          rangeLabel={RANGE_PRESETS[range].label}
           scopeLabel={
             app
               ? (sourceName.get(app) ?? app)
@@ -1302,7 +1284,8 @@ export function InsightsWorkspace({ sources }: { sources: SourceStatus[] }) {
           appName={
             sourceName.get(selectedSession.appType) ?? selectedSession.appType
           }
-          startDate={startDate}
+          startDate={bounds.startDate}
+          endDate={bounds.endDate}
           multiDevice={effectiveMultiDevice}
           onClose={() => setSelectedSession(null)}
         />
@@ -2256,6 +2239,7 @@ function SessionDetailModal({
   appType,
   appName,
   startDate,
+  endDate,
   multiDevice,
   onClose,
 }: {
@@ -2263,6 +2247,7 @@ function SessionDetailModal({
   appType: string;
   appName: string;
   startDate: number;
+  endDate?: number;
   multiDevice: boolean;
   onClose: () => void;
 }) {
@@ -2281,6 +2266,7 @@ function SessionDetailModal({
       sessionId,
       appType,
       startDate,
+      endDate,
       multiDevice,
     ],
     queryFn: () =>
@@ -2288,6 +2274,7 @@ function SessionDetailModal({
         sessionId,
         appType,
         startDate,
+        endDate,
         multiDevice,
       }),
   });

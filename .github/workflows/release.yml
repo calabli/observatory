@@ -30,13 +30,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NOTES: |
-            - AI usage: the time filter adds **昨天** (yesterday) and **最近 3 天** (last 3 days).
-            - Dropdowns now share one height and chevron in the macOS app (WebKit ignored the height of native selects), including the multi-device picker.
-            - Activity Log: successful market polls no longer flood the combined view (hidden with "hide routine"; the 接口请求 filter still lists them), and polls store short previews so the database no longer churns tens of MB.
-            - Insights: the change versus the previous period compares the same elapsed length instead of a partial period against a full one.
-            - Markets: watchlist saves no longer reset usage caches or make paired devices re-sync; quick successive edits are kept; duplicate spellings of a symbol all get batch quotes; US share classes survive search (BRK-B); quote requests are capped at 600 symbols.
-            - Agent trace skips local transcript lookups when only peer devices are selected; the tray quick panel is created at startup so it never opens blank.
-            - `npm run mac:install` no longer installs a stale bundle after a failed build.
+            - Insights: the time range adds **今天** (today), **昨天** (yesterday) and **近 3 天** (last 3 days). Yesterday is a closed day compared against the day before.
+            - All preset time ranges (labels and day spans) are now defined in one table shared by the AI usage page, Insights and the tray panel, so they stay consistent. The AI usage dropdown uses the shorter "近 N 天" labels; previously saved selections still load.
+            - Insights counts records up to and including the last second of a closed range, matching the usage statistics.
 
             The macOS build is not notarized.
         run: |

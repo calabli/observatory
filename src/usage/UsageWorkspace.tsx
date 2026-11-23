@@ -39,7 +39,14 @@ import {
 import { AppGlyph } from "./AppGlyph";
 import { AppSelect } from "./AppSelect";
 import { formatRequestSpeed } from "./requestSpeed";
-import { customTimeRange, presetDayRange, type DayPreset } from "./timeRange";
+import {
+  customTimeRange,
+  parseRangePreset,
+  presetRange,
+  RANGE_PRESETS,
+  USAGE_RANGES,
+  type RangePreset,
+} from "./timeRange";
 import { localDayKey, localDayStart, useLocalDayKey } from "./useLocalDayKey";
 import { rankApps, type RankingMetric } from "./appRanking";
 import { sortStats, type StatsSortKey } from "./statsSort";
@@ -54,7 +61,7 @@ type Props = {
   onBusy?: (busy: boolean) => void;
   onStatus?: (status: NativeStatus) => void;
 };
-type Range = DayPreset | "all" | "custom";
+type Range = RangePreset | "all" | "custom";
 type UsageScope = "local" | "multi";
 type ScanFeedback = { notice: string; errors: string[] };
 let activeMultiScan = false;
@@ -103,7 +110,7 @@ const saveView = (value: unknown) => {
 };
 function loadView(): {
   scope?: string;
-  range?: Range;
+  range?: string;
   app?: string;
   model?: string;
   provider?: string;
@@ -124,7 +131,7 @@ function bounds(
   if (range === "custom") {
     return customTimeRange(start, end) ?? {};
   }
-  return presetDayRange(range, localDayStart(dayKey));
+  return presetRange(range, localDayStart(dayKey));
 }
 const dateInput = (date = new Date()) =>
   [
@@ -299,7 +306,11 @@ function UsageWorkspaceImpl({
     saved.scope === "multi" ? "multi" : "local",
   );
   const [selectedDevices, setSelectedDevices] = useState<string[] | null>(null);
-  const [range, setRange] = useState<Range>(saved.range ?? "today");
+  const [range, setRange] = useState<Range>(() =>
+    saved.range === "all" || saved.range === "custom"
+      ? saved.range
+      : (parseRangePreset(saved.range, USAGE_RANGES, true) ?? "today"),
+  );
   const [app, setApp] = useState(saved.app ?? "");
   const [model, setModel] = useState(saved.model ?? "");
   const [provider, setProvider] = useState(saved.provider ?? "");
@@ -740,11 +751,11 @@ function UsageWorkspaceImpl({
             value={range}
             onChange={(e) => change(() => setRange(e.target.value as Range))}
           >
-            <option value="today">今天</option>
-            <option value="yesterday">昨天</option>
-            <option value="days3">最近 3 天</option>
-            <option value="week">最近 7 天</option>
-            <option value="month">最近 30 天</option>
+            {USAGE_RANGES.map((key) => (
+              <option key={key} value={key}>
+                {RANGE_PRESETS[key].label}
+              </option>
+            ))}
             <option value="all">全部时间</option>
             <option value="custom">自定义时间</option>
           </select>

@@ -45,6 +45,7 @@ The app has a collapsible left sidebar with three groups.
 
 **Insights (洞察)** — Deep cost, efficiency and session-level review across one machine or all paired devices:
 
+- *Time range*: today, yesterday, last 3 / 7 / 14 / 30 days, or this month. Rolling ranges run up to now; yesterday is a closed day. The same labels and day spans are used on every page.
 - *KPIs & budget alerts*: Prompt cache savings (reusing effective model pricing resolution for tiered/dated IDs), average context volume per request, 30-day cost forecast anchored on each source's active usage span, a change versus the previous period that compares the same elapsed length (so a partly finished day or month is not set against a full one), and inline daily + monthly budget thresholds with 80% warning and 100% over-budget banners.
 - *Subscription ROI*: compares active subscription bills against equivalent API value in the selected range and current billing cycle (non-USD subscriptions keep their native currency without estimated exchange-rate conversion).
 - *Visual analytics (with interactive hover tooltips)*: 7×24 local coding rhythm matrix (cost, requests, output speed), session health scatter (turns × cost × average context), model latency/speed stability dumbbell (auto-selecting speed when TTFT is absent), 100% stacked daily token-mix flow, and status-code health with automatic diagnosis.

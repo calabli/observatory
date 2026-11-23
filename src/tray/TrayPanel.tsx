@@ -8,22 +8,20 @@ import { usageCall } from "../native/usageClient";
 import { AppGlyph } from "../usage/AppGlyph";
 import { formatMoney, formatTokens, timeLabel } from "../usage/ui";
 import { trendTokens } from "../usage/chartData";
+import { presetRange, RANGE_PRESETS, TRAY_RANGES } from "../usage/timeRange";
 import { useLocalDayKey } from "../usage/useLocalDayKey";
 import type { Dashboard, LanStatus, NativeStatus } from "../usage/types";
 import "./tray.css";
 
 type TrayData = Pick<Dashboard, "summary" | "byApp" | "trends">;
-const intervals = (range: "today" | "week") => {
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  if (range === "week") start.setDate(start.getDate() - 6);
-  return {
-    startDate: Math.floor(start.getTime() / 1000),
-    endDate: Math.floor(Date.now() / 1000),
-  };
+type TrayRange = (typeof TRAY_RANGES)[number];
+const intervals = (range: TrayRange) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return presetRange(range, today, "now");
 };
 export function TrayPanel() {
-  const [range, setRange] = useState<"today" | "week">("today");
+  const [range, setRange] = useState<TrayRange>("today");
   const [scope, setScope] = useState("all");
   const [dayKey, syncDayKey] = useLocalDayKey();
   const [visible, setVisible] = useState(
@@ -181,18 +179,15 @@ export function TrayPanel() {
               <span>按所选设备汇总</span>
             </div>
             <div className="tray-range" aria-label="统计时间">
-              <button
-                aria-pressed={range === "today"}
-                onClick={() => setRange("today")}
-              >
-                今天
-              </button>
-              <button
-                aria-pressed={range === "week"}
-                onClick={() => setRange("week")}
-              >
-                近 7 天
-              </button>
+              {TRAY_RANGES.map((key) => (
+                <button
+                  key={key}
+                  aria-pressed={range === key}
+                  onClick={() => setRange(key)}
+                >
+                  {RANGE_PRESETS[key].label}
+                </button>
+              ))}
             </div>
           </div>
           <div className="tray-device">

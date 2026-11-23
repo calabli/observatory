@@ -171,7 +171,8 @@ fn push_detail_filters(
         params.push(SqlValue::Integer(s));
     }
     if let Some(e) = end_date {
-        conds.push(format!("{alias}.created_at < ?"));
+        // Inclusive, like the usage statistics: a closed day ends at 23:59:59.
+        conds.push(format!("{alias}.created_at <= ?"));
         params.push(SqlValue::Integer(e));
     }
     if let Some(app) = app_type.filter(|a| !a.is_empty()) {
