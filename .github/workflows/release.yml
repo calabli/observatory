@@ -100,17 +100,6 @@ jobs:
       - name: Run desktop shell tests
         run: cargo test --manifest-path src-tauri/Cargo.toml --locked
 
-  check-macos:
-    runs-on: macos-15
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: native -> target
-      - name: Verify macOS network snapshot, tray totals and projections
-        run: cargo test --manifest-path native/Cargo.toml --locked --test usage_integration -- network_snapshot_exposes_valid_local_interface_data tray_summary_counts_only_local_today peer_snapshots_support_filters_replace_and_disabled_devices
-
   build:
     needs: release
     strategy:
@@ -133,7 +122,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri -> target
+          # native/target holds the macOS-only tests below.
+          workspaces: |
+            src-tauri -> target
+            native -> target
       - run: npm ci
       # Without the updater signing key the build would fail outright; build
       # the installers without updater artifacts instead and say so.
@@ -167,6 +159,12 @@ jobs:
           dmg=$(find "$bundle/dmg" -maxdepth 1 -name '*.dmg' -print -quit)
           test -n "$dmg"
           hdiutil verify "$dmg"
+      # These tests need a real macOS host. They run in the build job so a
+      # release waits for one macOS runner instead of two (Apple Silicon runners
+      # are often queued); a failure still blocks the manifest job from publishing.
+      - name: Verify macOS network snapshot, tray totals and projections
+        if: runner.os == 'macOS'
+        run: cargo test --manifest-path native/Cargo.toml --locked --test usage_integration -- network_snapshot_exposes_valid_local_interface_data tray_summary_counts_only_local_today peer_snapshots_support_filters_replace_and_disabled_devices
       - name: Upload portable Windows executable
         if: runner.os == 'Windows'
         shell: pwsh
@@ -180,7 +178,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Failed to upload portable executable' }
 
   manifest:
-    needs: [release, check, check-macos, build]
+    needs: [release, check, build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
