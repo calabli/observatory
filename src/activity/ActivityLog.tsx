@@ -520,11 +520,15 @@ export function ActivityLog() {
     document.addEventListener("visibilitychange", onChange);
     return () => document.removeEventListener("visibilitychange", onChange);
   }, []);
+  // Market polls are filtered on the backend so they cannot fill whole pages;
+  // the 接口请求 filter still shows every one.
+  const hidePolling = hideRoutine && kind === "";
   const list = useInfiniteQuery({
-    queryKey: ["activity", "list", kind],
+    queryKey: ["activity", "list", kind, hidePolling],
     queryFn: ({ pageParam }) =>
       usageCall<Entry[]>("activity_list", {
         kind: kind || undefined,
+        hidePolling,
         beforeId: pageParam,
         limit: PAGE,
       }),
@@ -562,7 +566,7 @@ export function ActivityLog() {
               checked={hideRoutine}
               onChange={(e) => setHideRoutine(e.target.checked)}
             />
-            隐藏无变化的例行同步
+            隐藏例行同步与行情轮询
           </label>
           <div className="segmented" role="group" aria-label="按类型筛选">
             {KINDS.map((k) => (

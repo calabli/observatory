@@ -1124,7 +1124,7 @@ dependencies = [
 
 [[package]]
 name = "observatory-usage-core"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "axum",
  "chrono",

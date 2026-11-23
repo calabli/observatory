@@ -381,6 +381,17 @@ export function MarketsWorkspace() {
   const saveCfg = useMutation({
     mutationFn: (next: MarketsConfig) =>
       usageCall<MarketsConfig>("markets_config_save", next),
+    // Apply the edit right away so a second quick edit builds on this one
+    // instead of the config from before the first save returned.
+    onMutate: (next) => {
+      const previous = qc.getQueryData<MarketsConfig>(["markets", "config"]);
+      qc.setQueryData(["markets", "config"], next);
+      return { previous };
+    },
+    onError: (_error, _next, context) => {
+      if (context?.previous)
+        qc.setQueryData(["markets", "config"], context.previous);
+    },
     onSuccess: (saved) => {
       qc.setQueryData(["markets", "config"], saved);
     },

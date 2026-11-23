@@ -39,7 +39,7 @@ import {
 import { AppGlyph } from "./AppGlyph";
 import { AppSelect } from "./AppSelect";
 import { formatRequestSpeed } from "./requestSpeed";
-import { customTimeRange } from "./timeRange";
+import { customTimeRange, presetDayRange, type DayPreset } from "./timeRange";
 import { localDayKey, localDayStart, useLocalDayKey } from "./useLocalDayKey";
 import { rankApps, type RankingMetric } from "./appRanking";
 import { sortStats, type StatsSortKey } from "./statsSort";
@@ -54,7 +54,7 @@ type Props = {
   onBusy?: (busy: boolean) => void;
   onStatus?: (status: NativeStatus) => void;
 };
-type Range = "today" | "week" | "month" | "all" | "custom";
+type Range = DayPreset | "all" | "custom";
 type UsageScope = "local" | "multi";
 type ScanFeedback = { notice: string; errors: string[] };
 let activeMultiScan = false;
@@ -124,15 +124,7 @@ function bounds(
   if (range === "custom") {
     return customTimeRange(start, end) ?? {};
   }
-  const day = localDayStart(dayKey);
-  const last = new Date(day);
-  last.setDate(last.getDate() + 1);
-  if (range === "week") day.setDate(day.getDate() - 6);
-  if (range === "month") day.setDate(day.getDate() - 29);
-  return {
-    startDate: Math.floor(day.getTime() / 1000),
-    endDate: Math.floor(last.getTime() / 1000) - 1,
-  };
+  return presetDayRange(range, localDayStart(dayKey));
 }
 const dateInput = (date = new Date()) =>
   [
@@ -749,6 +741,8 @@ function UsageWorkspaceImpl({
             onChange={(e) => change(() => setRange(e.target.value as Range))}
           >
             <option value="today">今天</option>
+            <option value="yesterday">昨天</option>
+            <option value="days3">最近 3 天</option>
             <option value="week">最近 7 天</option>
             <option value="month">最近 30 天</option>
             <option value="all">全部时间</option>

@@ -27,6 +27,27 @@ pub const RETENTION_DAYS: i64 = 7;
 pub const API_OUT_MAX_ROWS: i64 = 500;
 const MAX_REQUEST_PREVIEW_BYTES: usize = 64 * 1024;
 const MAX_RESPONSE_PREVIEW_BYTES: usize = 128 * 1024;
+/// Market polls repeat every few seconds; keeping full previews for each would churn
+/// tens of MB through SQLite, so they keep only a short head of the payload.
+const POLLING_REQUEST_PREVIEW_BYTES: usize = 2 * 1024;
+const POLLING_RESPONSE_PREVIEW_BYTES: usize = 8 * 1024;
+
+/// Outbound ops the UI polls on a timer.
+fn is_polling_op(op: &str) -> bool {
+    matches!(op, "markets_quotes" | "markets_chart")
+}
+
+/// Preview caps (request, response) for an outbound op.
+fn preview_limits(op: &str) -> (usize, usize) {
+    if is_polling_op(op) {
+        (
+            POLLING_REQUEST_PREVIEW_BYTES,
+            POLLING_RESPONSE_PREVIEW_BYTES,
+        )
+    } else {
+        (MAX_REQUEST_PREVIEW_BYTES, MAX_RESPONSE_PREVIEW_BYTES)
+    }
+}
 
 /// One upstream HTTP call made while serving an outbound API operation.
 #[derive(Debug, Clone, Serialize)]
@@ -147,16 +168,22 @@ pub fn list(
     kind: Option<&str>,
     before_id: Option<i64>,
     limit: u32,
+    hide_polling: bool,
 ) -> Result<Vec<Entry>, AppError> {
     let limit = limit.clamp(1, 500);
     db.with_read_connection(|conn| {
+        // Successful market polls arrive every few seconds; when asked, they are
+        // dropped in SQL so a page of them cannot crowd out scans and syncs.
+        // Keep the op list in step with `is_polling_op`.
         let mut stmt = conn.prepare(
             "SELECT id, ts, kind, title, status, duration_ms, summary, detail IS NOT NULL
              FROM activity_log
              WHERE (?1 IS NULL OR kind = ?1) AND (?2 IS NULL OR id < ?2)
+               AND NOT (?4 AND kind = 'api_out' AND status = 'ok'
+                        AND json_extract(summary, '$.op') IN ('markets_quotes', 'markets_chart'))
              ORDER BY id DESC LIMIT ?3",
         )?;
-        let rows = stmt.query_map(params![kind, before_id, limit], |row| {
+        let rows = stmt.query_map(params![kind, before_id, limit, hide_polling], |row| {
             let summary: String = row.get(6)?;
             Ok(Entry {
                 id: row.get(0)?,
@@ -556,12 +583,13 @@ pub fn record_api_out(
     error: Option<&str>,
     http_calls: &[OutboundHttpTrace],
 ) {
+    let (request_limit, response_limit) = preview_limits(op);
     let safe_req = sanitize_request_payload(request_args);
     let (request_text, request_bytes, request_truncated) =
-        format_json_preview(&safe_req, MAX_REQUEST_PREVIEW_BYTES);
+        format_json_preview(&safe_req, request_limit);
     let (response_text, response_bytes, response_truncated, item_count) = match response_body {
         Some(val) => {
-            let (text, bytes, trunc) = format_json_preview(val, MAX_RESPONSE_PREVIEW_BYTES);
+            let (text, bytes, trunc) = format_json_preview(val, response_limit);
             let count = if let Some(arr) = val.as_array() {
                 Some(arr.len())
             } else if let Some(pts) = val.get("points").and_then(Value::as_array) {
@@ -762,5 +790,56 @@ mod tests {
         assert!(truncated);
         assert!(total_bytes > 64);
         assert!(preview.contains("已截断"));
+    }
+
+    #[test]
+    fn hide_polling_drops_only_successful_market_polls() {
+        let db = Database::memory().unwrap();
+        let api_out = |op: &str, status: &'static str| Event {
+            kind: "api_out",
+            title: op.to_string(),
+            status,
+            duration_ms: Some(1),
+            summary: json!({ "op": op }),
+            detail: None,
+        };
+        record(&db, api_out("markets_quotes", "ok"));
+        record(&db, api_out("markets_chart", "ok"));
+        record(&db, api_out("markets_quotes", "error"));
+        record(&db, api_out("modelsdev_fetch", "ok"));
+        let titles = |hide: bool| -> Vec<String> {
+            list(&db, None, None, 50, hide)
+                .unwrap()
+                .into_iter()
+                .map(|e| format!("{}:{}", e.title, e.status))
+                .collect()
+        };
+        assert_eq!(titles(false).len(), 4);
+        assert_eq!(
+            titles(true),
+            vec![
+                "modelsdev_fetch:ok".to_string(),
+                "markets_quotes:error".to_string()
+            ]
+        );
+        assert_eq!(
+            list(&db, Some("api_out"), None, 50, false).unwrap().len(),
+            4
+        );
+    }
+
+    #[test]
+    fn polling_ops_keep_short_previews() {
+        assert_eq!(
+            preview_limits("markets_quotes"),
+            (
+                POLLING_REQUEST_PREVIEW_BYTES,
+                POLLING_RESPONSE_PREVIEW_BYTES
+            )
+        );
+        assert_eq!(
+            preview_limits("modelsdev_fetch"),
+            (MAX_REQUEST_PREVIEW_BYTES, MAX_RESPONSE_PREVIEW_BYTES)
+        );
     }
 }

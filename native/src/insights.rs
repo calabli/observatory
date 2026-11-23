@@ -355,10 +355,14 @@ pub fn query_insights_on_conn(
             .and_then(|dt| Local.from_local_datetime(&dt).earliest())
             .map(|dt| dt.timestamp())
             .unwrap_or(s - span_days * 86_400);
+        // Compare like with like: the current period runs from `s` to now, so only the same
+        // length of the previous period counts (a full previous window against a
+        // partly elapsed current one would always read as a drop early in the day).
+        let prev_end = prev_start.saturating_add(effective_end - s).min(s);
         let prev = Database::usage_summary_impl(
             conn,
             Some(prev_start),
-            Some(s),
+            Some(prev_end),
             app_type,
             None,
             None,
@@ -1539,5 +1543,53 @@ mod tests {
         assert_eq!(detail.turns.len(), 3);
         assert_eq!(detail.turns[0].output_tokens, 400);
         assert_eq!(detail.turns[2].status_code, 429);
+    }
+
+    #[test]
+    fn previous_period_covers_only_the_elapsed_length() {
+        let db = Database::memory().unwrap();
+        let today = Local::now()
+            .date_naive()
+            .and_hms_opt(0, 0, 0)
+            .and_then(|dt| Local.from_local_datetime(&dt).earliest())
+            .unwrap()
+            .timestamp();
+        let yesterday = Local
+            .timestamp_opt(today, 0)
+            .single()
+            .and_then(|dt| dt.date_naive().checked_sub_days(chrono::Days::new(1)))
+            .and_then(|d| d.and_hms_opt(0, 0, 0))
+            .and_then(|dt| Local.from_local_datetime(&dt).earliest())
+            .unwrap()
+            .timestamp();
+        {
+            let conn = db.conn.lock().unwrap();
+            // Yesterday 01:00 falls inside the matching two hours; 05:00 does not.
+            for (id, at, cost) in [
+                ("prev-in", yesterday + 3_600, "1"),
+                ("prev-out", yesterday + 5 * 3_600, "4"),
+                ("now", today + 3_600, "2"),
+            ] {
+                conn.execute(
+                    "INSERT INTO proxy_request_logs (
+                        request_id, provider_id, app_type, model, request_model,
+                        input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+                        input_cost_usd, output_cost_usd, cache_read_cost_usd, cache_creation_cost_usd, total_cost_usd,
+                        latency_ms, status_code, session_id, is_streaming, cost_multiplier,
+                        created_at, data_source, input_token_semantics
+                    ) VALUES (?1, 'p1', 'agy', 'm', 'm', 10, 10, 0, 0,
+                        '0', '0', '0', '0', ?3, 0, 200, 's', 1, '1', ?2, 'agy_session', ?4)",
+                    rusqlite::params![id, at, cost, INPUT_TOKEN_SEMANTICS_FRESH],
+                )
+                .unwrap();
+            }
+        }
+        let data = db
+            .with_read_connection(|conn| {
+                query_insights_on_conn(conn, Some(today), Some(today + 7_200), None, &[])
+            })
+            .unwrap();
+        assert!((data.forecast.current_cost_usd - 2.0).abs() < 1e-9);
+        assert!((data.forecast.previous_cost_usd - 1.0).abs() < 1e-9);
     }
 }

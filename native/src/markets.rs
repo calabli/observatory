@@ -260,7 +260,9 @@ pub fn load_config(db: &Database) -> Result<MarketsConfig, AppError> {
 
 pub fn save_config(db: &Database, cfg: &MarketsConfig) -> Result<(), AppError> {
     let raw = serde_json::to_string(cfg).map_err(|e| AppError::InvalidInput(e.to_string()))?;
-    db.set_setting(WATCHLIST_SETTINGS_KEY, &raw)
+    // UI preference, not usage data: a quiet write keeps the usage caches and the
+    // LAN export fingerprint from changing on every watchlist edit.
+    db.set_setting_quietly(WATCHLIST_SETTINGS_KEY, &raw)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -611,14 +613,20 @@ fn parse_tencent_batch_line(
 /// Batch-fetch up to hundreds of CN / HK / US real-time quotes + market caps via `qt.gtimg.cn`.
 async fn fetch_tencent_batch(items: &[WatchItem]) -> HashMap<String, StockQuote> {
     let mut code_to_item: HashMap<String, WatchItem> = HashMap::new();
+    // Other spellings of an already-queued code (`700.HK` next to `0700.HK`).
+    let mut aliases: Vec<(String, WatchItem)> = Vec::new();
     let mut codes: Vec<String> = Vec::new();
     for item in items {
         let Some(code) = to_tencent_batch_code(&item.symbol) else {
             continue;
         };
-        if !code_to_item.contains_key(&code) {
-            codes.push(code.clone());
-            code_to_item.insert(code, item.clone());
+        match code_to_item.get(&code) {
+            None => {
+                codes.push(code.clone());
+                code_to_item.insert(code, item.clone());
+            }
+            Some(first) if first.symbol != item.symbol => aliases.push((code, item.clone())),
+            Some(_) => {}
         }
     }
     if codes.is_empty() {
@@ -653,6 +661,20 @@ async fn fetch_tencent_batch(items: &[WatchItem]) -> HashMap<String, StockQuote>
         for q in batch {
             out.insert(q.symbol.clone(), q);
         }
+    }
+    for (code, alias) in aliases {
+        let Some(mut q) = code_to_item
+            .get(&code)
+            .and_then(|first| out.get(&first.symbol))
+            .cloned()
+        else {
+            continue;
+        };
+        q.symbol = alias.symbol.clone();
+        if !alias.name.is_empty() {
+            q.name = alias.name.clone();
+        }
+        out.insert(alias.symbol, q);
     }
     out
 }
@@ -1028,7 +1050,10 @@ async fn fetch_yahoo_chart_raw(
     include_pre_post: bool,
 ) -> Result<(Value, Vec<ChartPoint>), String> {
     let (r, interval) = yahoo_interval_for_range(range);
-    let encoded: String = url::form_urlencoded::byte_serialize(symbol.as_bytes()).collect();
+    // Path segment, not a form value: a space must be %20, not `+`.
+    let encoded = url::form_urlencoded::byte_serialize(symbol.as_bytes())
+        .collect::<String>()
+        .replace('+', "%20");
     let url = format!(
         "https://query1.finance.yahoo.com/v8/finance/chart/{encoded}?interval={interval}&range={r}&includePrePost={include_pre_post}"
     );
@@ -1163,6 +1188,9 @@ async fn fetch_yahoo_quote(
 // ---------------------------------------------------------------------------
 // Unified multi-market router
 // ---------------------------------------------------------------------------
+
+/// Largest quote request accepted; the biggest built-in pool (S&P 500) has 503.
+pub const MAX_QUOTE_ITEMS: usize = 600;
 
 pub async fn fetch_quotes(items: Vec<WatchItem>, skip_sparkline: bool) -> Vec<StockQuote> {
     let use_fast_batch = skip_sparkline || items.len() > 24;
@@ -1492,10 +1520,7 @@ fn parse_tencent_smartbox(raw: &str) -> Vec<SearchHit> {
                 };
                 (format!("{padded}.HK"), "HK", "HKEX")
             }
-            "us" => {
-                let clean = code.split('.').next().unwrap_or(code).to_ascii_uppercase();
-                (clean, "US", "US")
-            }
+            "us" => (us_symbol_from_tencent(code), "US", "US"),
             _ => continue,
         };
         hits.push(SearchHit {
@@ -1506,6 +1531,18 @@ fn parse_tencent_smartbox(raw: &str) -> Vec<SearchHit> {
         });
     }
     hits
+}
+
+/// Tencent US codes carry an exchange suffix (`aapl.oq`, `brk.b.n`); drop only that
+/// suffix so share classes survive, in the dash form Yahoo uses (`BRK-B`).
+fn us_symbol_from_tencent(code: &str) -> String {
+    const EXCHANGE_SUFFIXES: [&str; 5] = ["oq", "n", "am", "ps", "op"];
+    let lower = code.to_ascii_lowercase();
+    let base = match lower.rsplit_once('.') {
+        Some((head, tail)) if EXCHANGE_SUFFIXES.contains(&tail) => head,
+        _ => lower.as_str(),
+    };
+    base.replace('.', "-").to_ascii_uppercase()
 }
 
 pub async fn search_symbols(query: &str) -> Vec<SearchHit> {
@@ -1662,6 +1699,14 @@ mod tests {
         assert!((q.price.unwrap() - 125.53).abs() < 1e-6);
         assert!((q.change_percent.unwrap() - (-14.01)).abs() < 1e-6);
         assert!((q.market_cap.unwrap() - 3_031_172_910_000.0).abs() < 1e5);
+    }
+
+    #[test]
+    fn tencent_us_codes_keep_share_classes() {
+        assert_eq!(us_symbol_from_tencent("aapl.oq"), "AAPL");
+        assert_eq!(us_symbol_from_tencent("brk.b.n"), "BRK-B");
+        assert_eq!(us_symbol_from_tencent("BRK.B"), "BRK-B");
+        assert_eq!(us_symbol_from_tencent("tsla"), "TSLA");
     }
 
     #[test]

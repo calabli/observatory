@@ -14,7 +14,8 @@ Built with Tauri 2, React, TypeScript, Rust and SQLite. Releases are published f
 - **Multi-device**: pair devices on the LAN with a one-time code and see combined usage. Off by default.
 - **Read-only HTTP API** for dashboards and scripts, authenticated with an API key.
 - **Network overview**: adapters, addresses, gateway, DNS and live transfer rates.
-- **Activity log**: what each scan read, who called the local service, device syncs and key actions.
+- **Markets**: real-time quotes for US, Taiwan, mainland China and Hong Kong stocks and global indices, built-in stock pools with market-cap treemap heat maps, detail charts and cross-market search.
+- **Activity log**: what each scan read, who called the local service, outbound requests to outside services, device syncs and key actions.
 - **Tray / menu-bar panel** with today's totals; the app keeps collecting after the window is closed.
 
 ## Documentation

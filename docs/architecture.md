@@ -21,6 +21,7 @@ src/                    React frontend
   native/usageClient.ts The single call path into the engine (`usageCall`)
   usage/                AI usage page, devices, pricing, multi-device scan
   insights/             Insights analytics, Agent trace waterfall, HTML/Markdown report builder
+  markets/              Markets page, built-in stock pools (universes.json), treemap layout
   subscriptions/        Subscriptions & quota page and its cycle math
   network/              Network page and rate calculation
   activity/             Activity log page
@@ -33,12 +34,13 @@ native/                 Rust engine crate
   src/main.rs           `observatory-engine` binary: JSON-lines over stdio (dev only)
   src/insights.rs       Insights aggregates, project cost attribution, session metadata cache
   src/trace.rs          On-demand Agent single-task call-chain trace extraction (read-only)
+  src/markets.rs        Quote, chart and symbol search fetchers (Tencent, TWSE MIS, Yahoo) and watchlist config
   src/database/         Connection management, schema, CC Switch import, price seed
   src/services/         Collectors (`session_usage_*.rs`), statistics, pricing
   src/session_manager/  Per-tool session file parsers used by the collectors
   src/proxy/usage/      Token parsing and cost calculation
   src/lan_usage/        LAN service, discovery, pairing, sync client, projection, public API
-  src/activity.rs       Activity log recording
+  src/activity.rs       Activity log recording, including outbound request traces
   src/subscriptions.rs  Subscription storage and weekly cycles
   src/scan_jobs.rs      In-memory remote scan jobs
   src/network_overview.rs Adapter snapshot and egress IP
@@ -77,7 +79,7 @@ Both modes use the same data directory, and `engine.lock` (an exclusive file loc
 | Label | Purpose |
 | --- | --- |
 | `main` | The app. Close hides it when the tray exists (exiting macOS fullscreen cleanly before hiding so Space transitions never leave a blank window), otherwise quits. |
-| `tray-panel` | Frameless quick panel loaded as `index.html?surface=tray`. Created lazily on the first tray left-click and always hidden rather than destroyed, keeping startup light while preserving the shortcut. |
+| `tray-panel` | Frameless quick panel loaded as `index.html?surface=tray`. Created hidden when the tray is set up, so its page has loaded by the first click; `ensure_tray_panel` recreates it on demand if it is ever missing. It is hidden rather than destroyed. |
 
 A background thread in the shell refreshes the tray menu text (today's cost, requests, tokens) every 30 s, skipping SQLite queries whenever `today_cache_key` (`(data_epoch, local_day)`) is unchanged.
 
@@ -92,7 +94,7 @@ A background thread in the shell refreshes the tray menu text (today's cost, req
 - *Local scan loop*: ticks every 5 s, caching `(data_epoch, refresh_interval, import_failed)` so idle ticks do zero `spawn_blocking` or SQLite reads; scans when the configured interval (30 s, 60 s or manual) has elapsed since the last completed scan. Uses `try_lock` on the scan lock so it never queues behind a manual scan. Runs `wal_checkpoint(TRUNCATE)` and `PRAGMA optimize` at most hourly, right after a scan.
 - *LAN loops* (`lan_usage::start_background`): starts the HTTP service if sharing is on, then pulls paired devices on the configured interval.
 
-**Dispatcher (`call` → `dispatch`)**: one `match` over string op names. Every op that touches SQLite runs in `spawn_blocking`, because the connection lock is a `std::sync::Mutex` and long aggregates must not stall Tokio workers shared with the LAN service. Ops listed in `activity::action_label` are also written to the activity log with sanitized arguments.
+**Dispatcher (`call` → `dispatch`)**: one `match` over string op names. Every op that touches SQLite runs in `spawn_blocking`, because the connection lock is a `std::sync::Mutex` and long aggregates must not stall Tokio workers shared with the LAN service. Ops listed in `activity::action_label` are also written to the activity log with sanitized arguments. Ops listed in `activity::api_out_label` (market quotes, charts and search, `modelsdev_fetch`, `network_international_ipv4`) run inside `capture_http_traces`, a Tokio task-local collector that every outbound HTTP helper reports to through `record_http_trace`; the call is then recorded as an `api_out` event with its request, upstream calls and a capped response preview (see section 5).
 
 | Group | Ops |
 | --- | --- |
@@ -104,6 +106,7 @@ A background thread in the shell refreshes the tray menu text (today's cost, req
 | LAN | `lan_status`, `lan_settings_save`, `lan_discover`, `lan_connect`, `lan_pair_code`, `lan_device_enabled`, `lan_disconnect`, `lan_incoming_list`, `lan_incoming_revoke`, `scan_remote_start`, `scan_remote_status`, `scan_remote_sync` |
 | Read-only API key | `usage_api_key_status`, `usage_api_key_rotate`, `usage_api_key_revoke` |
 | Network | `network_snapshot`, `network_international_ipv4` |
+| Markets | `markets_config_get`, `markets_config_save`, `markets_quotes`, `markets_chart`, `markets_search` |
 | Activity | `activity_list`, `activity_detail` |
 
 Errors cross the boundary as strings. Errors that need a code and details (for example a precision error with affected dates) are wrapped as `{"observatoryError": {...}}`, which `parseUsageError` in the frontend unwraps.
@@ -121,12 +124,12 @@ Schema: `native/src/database/schema.sql`. The database is metrics-only; it never
 | `model_pricing` | Per-model prices per million tokens, model id case-insensitive. |
 | `settings` | Key-value store: preferences, LAN settings, tokens and grants, API key hash, subscriptions, import state. |
 | `providers` | Provider names kept from the CC Switch import (configuration is always `{}`). |
-| `activity_log` | Activity events; pruned after 7 days. |
+| `activity_log` | Activity events; pruned after 7 days. `api_out` rows are also capped at 500 (checked every 25 writes). Polling ops (`markets_quotes`, `markets_chart`) store 2 KB / 8 KB request / response previews, other outbound ops 64 KB / 128 KB. `activity_list` takes `hidePolling` to drop successful polls in SQL. Writes go through `write_quietly`, so they never move the write epoch. |
 | LAN tables | Paired devices and their latest snapshots (created by `create_lan_usage_tables`). |
 
 **Token semantics.** `input_token_semantics` records whether `input_tokens` already includes cache reads (OpenAI-style) or not. Queries normalize to fresh input through the SQL helpers in `services/sql_helpers.rs`.
 
-**Write epoch.** `Database::write_epoch` increments on every row-level write (SQLite update hook). Caches key on it, so an empty scan round does not invalidate anything.
+**Write epoch.** `Database::write_epoch` increments on every row-level write (SQLite update hook). Caches key on it, so an empty scan round does not invalidate anything. Bookkeeping writes that do not affect statistics (cursor rows, the activity log, the Markets watchlist via `set_setting_quietly`) skip the epoch, which also keeps the LAN export fingerprint unchanged.
 
 ## 6. Collection Pipeline
 
@@ -147,6 +150,8 @@ The scan lock serializes background scans, manual scans, remote-requested scans 
 - Statistics live in `services/usage_stats.rs`. Every aggregate combines detail rows and rollups for the requested range, and refuses a range that splits a rollup-only day.
 - Insights analytics live in `native/src/insights.rs` (reusing `effective_usage_log_filter_for_range` proxy-shadow deduplication, `find_model_pricing` for cache-savings math, and an in-memory cache with per-platform batch reads for session titles, project directories and git branches).
 - Agent task call-chain traces live in `native/src/trace.rs`: `session_trace` parses local session transcripts read-only on demand (Antigravity, Claude Code, Codex, OpenCode, Gemini CLI) to build hierarchical LLM + tool/subagent waterfalls with parallel interval union math, falling back to `proxy_request_logs` turns for other platforms or remote devices. Conversation contents are never written to `observatory.db`.
+- The Insights period-over-period change compares the current range up to now with the same elapsed length of the preceding range (day-aligned start). When that window's last part-day has already been rolled up, it counts only the detail rows still present.
+- `session_trace` reads local transcript files only when the session can be on this machine; with only peer devices selected it builds the waterfall from the synced turns.
 - `dashboard`, `tray_dashboard` and `insights` compute their parts inside one read snapshot (`with_read_connection`), so a concurrent scan cannot make totals, trends and groupings disagree.
 - Results are cached in a 16-entry LRU keyed by `(database instance, write epoch, op + args [+ local date for open-ended ranges])`.
 - `status` caches its two full-table counts by write epoch.
@@ -195,10 +200,12 @@ The public API contract, parameters, errors and examples are in [read-only-usage
 ## 10. Frontend
 
 - **Data access**: all calls go through `usageCall`. Query keys start with `"usage"` so a scan can invalidate everything at once; background status polling (`scan_revision`, `lan_status`) is gated on `document.visibilityState === "visible"`.
-- **Routing**: `main.tsx` keeps the current page in React state; each page is a component (`UsageWorkspace`, `InsightsWorkspace`, `SubscriptionWorkspace`, `DeviceManager`, `NetworkOverview`, `ActivityLog`). The tray window renders `TrayPanel` instead of `App`.
-- **Pure logic is separated for testing**: `usage/appRanking.ts`, `chartData.ts`, `modelDisplay.ts`, `requestSpeed.ts`, `statsSort.ts`, `timeRange.ts`, `multiDeviceScan.ts`, `network/networkRate.ts`, `subscriptions/*.ts` each have a matching test in `tests/`. `insights/reportBuilder.ts` generates both standalone offline HTML reports (with inline SVG charts and hover tooltips) and Markdown reports without external dependencies.
-- **Styling**: `styles.css` (base), `usage/usage.css`, `insights/insights.css`, `theme/ccSwitchTheme.css` (colors from CC Switch), `theme/redesign.css` (sidebar shell). Light/dark follows the system and can be toggled; the choice is passed to the native title bar.
-- **Local storage** holds only view preferences (sidebar state, theme, last filters, Insights budget thresholds).
+- **Routing**: `main.tsx` keeps the current page in React state; each page is a component (`UsageWorkspace`, `InsightsWorkspace`, `SubscriptionWorkspace`, `MarketsWorkspace`, `DeviceManager`, `NetworkOverview`, `ActivityLog`). The tray window renders `TrayPanel` instead of `App`.
+- **Pure logic is separated for testing**: `usage/appRanking.ts`, `chartData.ts`, `modelDisplay.ts`, `requestSpeed.ts`, `statsSort.ts`, `timeRange.ts` (custom ranges and the day presets via `presetDayRange`), `multiDeviceScan.ts`, `network/networkRate.ts`, `subscriptions/*.ts` each have a matching test in `tests/`. `insights/reportBuilder.ts` generates both standalone offline HTML reports (with inline SVG charts and hover tooltips) and Markdown reports without external dependencies.
+- **Styling**: `styles.css` (base), `usage/usage.css`, `insights/insights.css`, `markets/markets.css`, `theme/ccSwitchTheme.css` (colors from CC Switch), `theme/redesign.css` (sidebar shell), and `theme/widget.css`, the widget-style theme imported last in `main.tsx` so it overrides the rest. Light/dark follows the system and can be toggled; the resolved choice is set as `html[data-theme]` and passed to the native title bar.
+- **Form controls**: the macOS app renders in WebKit, which ignores height and padding on `<select>` elements that keep the native look. `widget.css` therefore sets `appearance: none` on every `<select>`, gives it a 32 px pill height and draws a chevron matching `AppSelect` (one SVG per theme). The multi-device `<details>` picker uses the same height and chevron. Check control sizes in the app, not only in a Chromium preview, where native selects do honor the CSS.
+- **Local storage** holds only view preferences (sidebar state, theme, last filters, Insights budget thresholds, the selected Markets pool and view).
+- **Markets** queries poll with `refetchInterval` only while the document is visible. Config saves update the query cache optimistically (and roll back on error) so quick successive edits build on each other.
 
 ## 11. Testing
 
@@ -217,7 +224,7 @@ Tests that touch process-wide environment variables use `serial_test`.
 
 - `npm run desktop:dev` runs the Tauri app against the Vite dev server.
 - `npm run desktop:build` builds a debug executable without installers; `desktop:release` builds an optimized one.
-- `npm run mac:install` (`scripts/mac-install.mjs`) builds the macOS `.app` bundle, installs it to `/Applications/Observatory.app` with `ditto`, and removes the temporary build bundle so Launchpad and Spotlight only index one copy.
+- `npm run mac:install` (`scripts/mac-install.mjs`) deletes any leftover bundle, builds the macOS `.app` bundle, installs it to `/Applications/Observatory.app` with `ditto`, and removes the temporary build bundle so Launchpad and Spotlight only index one copy. `tauri build` exits non-zero locally when updater signing keys are missing, so a freshly produced bundle is the success signal; if none is produced, nothing is installed.
 - Pushing a `v*` tag runs `.github/workflows/release.yml`: it creates one draft release, builds the Windows x64 NSIS installer plus a portable `.exe` and the macOS Apple Silicon DMG, signs updater artifacts, runs lint and tests in parallel, and publishes `latest.json` only when checks pass. The tag must match `package.json`'s version.
 - Version numbers live in `package.json`, `native/Cargo.toml`, `src-tauri/Cargo.toml` and `src-tauri/tauri.conf.json`; keep them in sync.
 - The updater checks `releases/latest/download/latest.json` on GitHub at startup and every six hours.

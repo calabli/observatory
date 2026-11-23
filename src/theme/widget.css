@@ -846,3 +846,51 @@ html[data-theme="dark"] #observatory-root .app-glyph img.dark-ink {
 #observatory-root :is(.panel, .dialog, .usage-dialog) .sp-controls select {
   background: var(--soft);
 }
+
+/* Selects draw their own arrow. With the native look, WebKit (the macOS app)
+   ignores height and padding on <select>, so dropdowns came out thinner than
+   the app picker and buttons beside them. The image longhands are marked
+   important because many rules above reset `background` with the shorthand. */
+#observatory-root select {
+  appearance: none;
+  -webkit-appearance: none;
+  min-height: 32px;
+  padding: 5px 30px 5px 12px;
+  line-height: 20px;
+  /* Same chevron as the app picker (lucide chevron-down, 14px), in --muted. */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%236a6a70' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
+  background-position: calc(100% - 10px) 50% !important;
+  background-size: 14px 14px !important;
+  background-repeat: no-repeat !important;
+}
+html[data-theme="dark"] #observatory-root select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238e8e93' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
+}
+#observatory-root .context-bar select {
+  min-height: 26px;
+  padding-block: 3px;
+}
+
+/* The multi-device picker is a <details>: match the other pills. */
+#observatory-root .usage-device-select summary {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 5px 30px 5px 12px;
+  border: 0;
+  border-radius: 999px;
+  line-height: 20px;
+}
+#observatory-root .usage-device-select summary::after {
+  content: "";
+  top: 50%;
+  right: 10px;
+  width: 14px;
+  height: 14px;
+  transform: translateY(-50%);
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%236a6a70' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")
+    center / 14px no-repeat;
+}
+html[data-theme="dark"] #observatory-root .usage-device-select summary::after {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238e8e93' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}

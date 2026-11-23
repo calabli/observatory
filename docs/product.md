@@ -34,7 +34,7 @@ The app has a collapsible left sidebar with three groups.
 **AI Usage (AI 用量)** — The main analysis page.
 
 - *Scope*: this machine, or several devices (pick any subset of local and paired devices).
-- *Filters*: time range (today, 1/7/14/30 days, all, custom date-time), app, provider, model.
+- *Filters*: time range (today, yesterday, last 3 / 7 / 30 days, all time, custom date-time), app, provider, model. The day presets are whole local calendar days ending at 23:59:59 ("last 3 days" is the day before yesterday through today) and roll over at local midnight.
 - *Metrics*: cost, requests, four token categories (fresh input, output, cache write, cache read), cache hit rate, success rate. The metric bar switches the trend between cost, requests, tokens and hit rate; the trend can be bars or a line.
 - *Breakdowns*: per-app ranking, provider table, model table (with output speed and median first-token time), a calendar heat map.
 - *Requests*: paginated detail list with status-code filter, a detail dialog, and CSV export of the current page. Exact durations (measured) are marked differently from durations estimated from log timestamps.
@@ -45,7 +45,7 @@ The app has a collapsible left sidebar with three groups.
 
 **Insights (洞察)** — Deep cost, efficiency and session-level review across one machine or all paired devices:
 
-- *KPIs & budget alerts*: Prompt cache savings (reusing effective model pricing resolution for tiered/dated IDs), average context volume per request, 30-day cost forecast anchored on each source's active usage span, and inline daily + monthly budget thresholds with 80% warning and 100% over-budget banners.
+- *KPIs & budget alerts*: Prompt cache savings (reusing effective model pricing resolution for tiered/dated IDs), average context volume per request, 30-day cost forecast anchored on each source's active usage span, a change versus the previous period that compares the same elapsed length (so a partly finished day or month is not set against a full one), and inline daily + monthly budget thresholds with 80% warning and 100% over-budget banners.
 - *Subscription ROI*: compares active subscription bills against equivalent API value in the selected range and current billing cycle (non-USD subscriptions keep their native currency without estimated exchange-rate conversion).
 - *Visual analytics (with interactive hover tooltips)*: 7×24 local coding rhythm matrix (cost, requests, output speed), session health scatter (turns × cost × average context), model latency/speed stability dumbbell (auto-selecting speed when TTFT is absent), 100% stacked daily token-mix flow, and status-code health with automatic diagnosis.
 - *Project cost & Sessions explorer*: attributes session spend to local workspace/repository directories (click any project to filter) and provides searchable, sortable session rankings with real titles, project paths, git branches and one-click resume command copy.
@@ -58,14 +58,25 @@ The app has a collapsible left sidebar with three groups.
 
 **Network (网络诊断)** — Local adapters with IPv4/IPv6, state, gateway, DNS, and live receive/transmit rates with interactive chart hover tooltips. Rates are sampled every 3 seconds only while the page is visible; the chart keeps the last 60 samples in memory. The internet egress IPv4 is looked up through ipify only when the user clicks. The recommended adapter can be overridden because VPNs and split routing can make the guess wrong.
 
+**Markets (市场行情)** — A watch board for US, Taiwan, mainland China and Hong Kong stocks plus major global indices, using free public quote endpoints (Tencent, TWSE MIS, Yahoo Finance) chosen per market for the lowest delay.
+
+- *Indices strip* and a *stock pool*: built-in pools (S&P 500, CSI 300, Taiwan 150, Hong Kong 100) or a custom watchlist, shown as a list with sparklines or as a market-cap treemap heat map.
+- *Detail chart* for the selected symbol over 1 day, 5 days, 1 month, 3 months or 1 year.
+- *Search* by code or name across markets; a bare four-digit code is also offered as a Taiwan listing.
+- *Settings*: red-up/green-down (CN) or green-up/red-down (US) colors and a refresh interval of 5, 15 or 30 seconds or manual. Polling stops while the window is hidden; pools over 100 symbols refresh at most every 15 seconds. One request accepts at most 600 symbols.
+- The watchlist and settings are stored locally. Saving them is a preference write: it does not invalidate usage caches or change what paired devices see.
+
 ### 3.3 Records
 
-**Activity Log (活动日志)** — A reverse-chronological log of four kinds of events, kept for 7 days:
+**Activity Log (活动日志)** — A reverse-chronological log of five kinds of events, kept for 7 days:
 
 - *File scan*: what triggered a scan round, files and new records per source, and per-file read offsets.
 - *External call*: every HTTP request that reached the LAN service (caller, address, status, duration, size). Only the credential *type* is recorded, never its value.
 - *Device sync*: each pull from a paired device (skipped because unchanged, rows written, or the error).
+- *Outbound request (接口请求)*: each call this app makes to an outside service (market quotes, charts and search, models.dev prices, the ipify egress lookup), with sanitized request parameters, every upstream HTTP call (provider, URL, status, size, latency, error) and the response body. At most 500 are kept. Market quote and chart polls repeat every few seconds, so they keep only a short preview (2 KB of the request, 8 KB of the response); other calls keep up to 64 KB and 128 KB.
 - *Action*: key user operations and their results. Codes, tokens and keys are shown as "(hidden)".
+
+"Hide routine" (on by default) hides unchanged device syncs, fingerprint checks and successful market polls in the combined view, so they cannot push scans and syncs off the page. The 接口请求 filter always shows every outbound request.
 
 ### 3.4 Tray / Menu Bar
 

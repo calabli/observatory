@@ -220,6 +220,11 @@ fn tray_action(
 }
 
 fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
+    // Create the panel up front so its page has loaded by the first tray click;
+    // `ensure_tray_panel` still recreates it on demand if it is ever gone.
+    if ensure_tray_panel(app.handle()).is_none() {
+        eprintln!("Tray panel could not be created; the tray will open the main window.");
+    }
     let open = MenuItem::with_id(app, "open", "打开观测台", true, None::<&str>)?;
     let heading = MenuItem::with_id(app, "heading", "本机 · 今日用量", false, None::<&str>)?;
     let cost = MenuItem::with_id(app, "cost", "今日估算费用：读取中…", false, None::<&str>)?;

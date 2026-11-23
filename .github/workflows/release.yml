@@ -30,9 +30,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NOTES: |
-            - Added outbound external API call logging (`api_out` / **接口请求**) to the Activity Log module, automatically capturing all market quote/chart/search calls (`qt.gtimg.cn`, `web.ifzq.gtimg.cn`, `smartbox.gtimg.cn`, `mis.twse.com.tw`, Yahoo Finance), `models.dev` pricing fetches, and `ipify` IP lookups.
-            - Recorded full sanitized request parameters, per-request upstream HTTP trace details (provider, method, full URL, HTTP status, response bytes, latency, errors), and formatted response payloads (lazy-loaded with bounded 500-entry retention).
-            - Enhanced the Activity Log UI with a dedicated **接口请求** filter, upstream HTTP breakdown table, and side-by-side scrollable Request Params & Response Body viewers with one-click copy.
+            - AI usage: the time filter adds **昨天** (yesterday) and **最近 3 天** (last 3 days).
+            - Dropdowns now share one height and chevron in the macOS app (WebKit ignored the height of native selects), including the multi-device picker.
+            - Activity Log: successful market polls no longer flood the combined view (hidden with "hide routine"; the 接口请求 filter still lists them), and polls store short previews so the database no longer churns tens of MB.
+            - Insights: the change versus the previous period compares the same elapsed length instead of a partial period against a full one.
+            - Markets: watchlist saves no longer reset usage caches or make paired devices re-sync; quick successive edits are kept; duplicate spellings of a symbol all get batch quotes; US share classes survive search (BRK-B); quote requests are capped at 600 symbols.
+            - Agent trace skips local transcript lookups when only peer devices are selected; the tray quick panel is created at startup so it never opens blank.
+            - `npm run mac:install` no longer installs a stale bundle after a failed build.
 
             The macOS build is not notarized.
         run: |

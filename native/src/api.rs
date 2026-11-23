@@ -587,7 +587,8 @@ impl UsageBackend {
                 let kind = args.get("kind").and_then(Value::as_str).filter(|v| !v.is_empty()).map(str::to_string);
                 let before = args.get("beforeId").and_then(Value::as_i64);
                 let limit = args.get("limit").and_then(Value::as_u64).unwrap_or(100) as u32;
-                self.call_blocking(move |db| to_json(crate::activity::list(db, kind.as_deref(), before, limit)?))
+                let hide_polling = args.get("hidePolling").and_then(Value::as_bool).unwrap_or(false);
+                self.call_blocking(move |db| to_json(crate::activity::list(db, kind.as_deref(), before, limit, hide_polling)?))
                     .await
             }
             "activity_detail" => {
@@ -725,6 +726,12 @@ impl UsageBackend {
                         serde_json::from_value(v)
                             .map_err(|e| AppError::InvalidInput(e.to_string()))
                     })?;
+                if items.len() > crate::markets::MAX_QUOTE_ITEMS {
+                    return Err(AppError::InvalidInput(format!(
+                        "一次最多查询 {} 个代码",
+                        crate::markets::MAX_QUOTE_ITEMS
+                    )));
+                }
                 let skip_sparkline = args
                     .get("skipSparkline")
                     .and_then(Value::as_bool)
@@ -812,6 +819,13 @@ impl UsageBackend {
                     .and_then(Value::as_str)
                     .unwrap_or("")
                     .to_string();
+                // With only peers selected the session cannot be on this machine, so its
+                // transcript files must not be looked up locally.
+                let peers_only = q.multi_device
+                    && q
+                        .device_ids
+                        .as_ref()
+                        .is_some_and(|ids| !ids.iter().any(|id| id == "local"));
                 self.call_blocking(move |db| {
                     let target_db = Self::query_selected_database(db, &q)?;
                     let f = &q.filters;
@@ -822,7 +836,7 @@ impl UsageBackend {
                             f.app_type.as_deref(),
                             f.start_date,
                             f.end_date,
-                            false,
+                            peers_only,
                         )
                     })?;
                     to_json(data)
