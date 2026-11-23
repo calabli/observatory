@@ -48,6 +48,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { UsageWorkspace } from "./usage/UsageWorkspace";
+import { useLocalDayKey } from "./usage/useLocalDayKey";
 import { InsightsWorkspace } from "./insights/InsightsWorkspace";
 import { SubscriptionWorkspace } from "./subscriptions/SubscriptionWorkspace";
 import { DeviceManager } from "./usage/DeviceManager";
@@ -354,17 +355,27 @@ function App() {
         setRefreshInterval(nativeInfo.data.refreshInterval);
     }
   }, [nativeInfo.data]);
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
+  const [dayKey, syncDayKey] = useLocalDayKey();
+  const todayStartSec = () => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return Math.floor(d.getTime() / 1000);
+  };
+  const weekStartSec = () => {
+    const d = new Date();
+    d.setDate(d.getDate() - 6);
+    d.setHours(0, 0, 0, 0);
+    return Math.floor(d.getTime() / 1000);
+  };
   // The overview only needs the summary, trends and per-app grouping: use
   // the lightweight tray_dashboard so the backend does not also compute
   // request pagination, provider/model stats with medians and the filter
   // dropdowns.
   const overviewUsage = useQuery({
-    queryKey: ["usage", "overview", todayStart.getTime()],
+    queryKey: ["usage", "overview", dayKey],
     queryFn: () =>
       usageCall<OverviewUsage>("tray_dashboard", {
-        startDate: Math.floor(todayStart.getTime() / 1000),
+        startDate: todayStartSec(),
         endDate: Math.floor(Date.now() / 1000),
       }),
     enabled: page === "overview",
@@ -380,24 +391,21 @@ function App() {
     refetchInterval: 30000,
     retry: false,
   });
-  const weekStart = new Date();
-  weekStart.setDate(weekStart.getDate() - 6);
-  weekStart.setHours(0, 0, 0, 0);
   const overviewWeek = useQuery({
-    queryKey: ["usage", "overview-week", weekStart.getTime()],
+    queryKey: ["usage", "overview-week", dayKey],
     queryFn: () =>
       usageCall<OverviewUsage>("tray_dashboard", {
-        startDate: Math.floor(weekStart.getTime() / 1000),
+        startDate: weekStartSec(),
         endDate: Math.floor(Date.now() / 1000),
       }),
     enabled: page === "overview",
     staleTime: 60000,
   });
   const overviewAllDevices = useQuery({
-    queryKey: ["usage", "overview-all", todayStart.getTime()],
+    queryKey: ["usage", "overview-all", dayKey],
     queryFn: () =>
       usageCall<Pick<Dashboard, "summary" | "trends">>("tray_dashboard", {
-        startDate: Math.floor(todayStart.getTime() / 1000),
+        startDate: todayStartSec(),
         endDate: Math.floor(Date.now() / 1000),
         multiDevice: true,
       }),
@@ -432,6 +440,7 @@ function App() {
   // Only the overview shows the header refresh button; the other pages own
   // their refresh controls.
   const refreshOverview = () => {
+    syncDayKey();
     setBusy(true);
     void usageCall("sync")
       .then(() => qc.invalidateQueries({ queryKey: ["usage"] }))

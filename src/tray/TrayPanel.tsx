@@ -8,6 +8,7 @@ import { usageCall } from "../native/usageClient";
 import { AppGlyph } from "../usage/AppGlyph";
 import { formatMoney, formatTokens, timeLabel } from "../usage/ui";
 import { trendTokens } from "../usage/chartData";
+import { useLocalDayKey } from "../usage/useLocalDayKey";
 import type { Dashboard, LanStatus, NativeStatus } from "../usage/types";
 import "./tray.css";
 
@@ -24,6 +25,7 @@ const intervals = (range: "today" | "week") => {
 export function TrayPanel() {
   const [range, setRange] = useState<"today" | "week">("today");
   const [scope, setScope] = useState("all");
+  const [dayKey, syncDayKey] = useLocalDayKey();
   const [visible, setVisible] = useState(
     document.visibilityState === "visible",
   );
@@ -36,8 +38,11 @@ export function TrayPanel() {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
   useEffect(() => {
-    const onVisibility = () =>
-      setVisible(document.visibilityState === "visible");
+    const onVisibility = () => {
+      const next = document.visibilityState === "visible";
+      setVisible(next);
+      if (next) syncDayKey();
+    };
     const onStorage = (event: StorageEvent) => {
       if (event.key === "observatory.color-scheme" && event.newValue)
         setTheme(event.newValue);
@@ -59,7 +64,7 @@ export function TrayPanel() {
       window.removeEventListener("storage", onStorage);
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, []);
+  }, [syncDayKey]);
   const status = useQuery({
     queryKey: ["tray", "status"],
     queryFn: () => usageCall<NativeStatus>("status"),
@@ -87,7 +92,7 @@ export function TrayPanel() {
   const peer = enabled.find((d) => d.deviceId === scope);
   const selectedAvailable = scope === "all" || scope === "local" || !!peer;
   const stats = useQuery({
-    queryKey: ["tray", "dashboard", scope, range],
+    queryKey: ["tray", "dashboard", scope, range, dayKey],
     queryFn: () =>
       usageCall<TrayData>("tray_dashboard", {
         ...intervals(range),

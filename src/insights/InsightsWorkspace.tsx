@@ -22,6 +22,11 @@ import { usageCall } from "../native/usageClient";
 import { AppGlyph } from "../usage/AppGlyph";
 import { formatRequestSpeed } from "../usage/requestSpeed";
 import { formatSubscriptionPrice } from "../subscriptions/format";
+import {
+  localDayKey,
+  localDayStart,
+  useLocalDayKey,
+} from "../usage/useLocalDayKey";
 import type { LanStatus, SourceStatus } from "../usage/types";
 import { buildHtmlReport, buildMarkdownReport } from "./reportBuilder";
 import "./insights.css";
@@ -259,18 +264,15 @@ function projectBase(dir: string | null | undefined): string {
   return parts[parts.length - 1] || trimmed;
 }
 
-function rangeBounds(range: RangeKey): { startDate: number; endDate: number } {
-  const now = new Date();
-  const endDate = Math.floor(now.getTime() / 1000) + 1;
+function rangeStartDate(range: RangeKey, dayKey = localDayKey()): number {
+  const start = localDayStart(dayKey);
   if (range === "month") {
-    const start = new Date(now.getFullYear(), now.getMonth(), 1);
-    return { startDate: Math.floor(start.getTime() / 1000), endDate };
+    start.setDate(1);
+    return Math.floor(start.getTime() / 1000);
   }
   const days = range === "7d" ? 7 : range === "14d" ? 14 : 30;
-  const start = new Date(now);
-  start.setHours(0, 0, 0, 0);
   start.setDate(start.getDate() - (days - 1));
-  return { startDate: Math.floor(start.getTime() / 1000), endDate };
+  return Math.floor(start.getTime() / 1000);
 }
 
 function fmtUsd(v: number): string {
@@ -336,10 +338,12 @@ export function InsightsWorkspace({ sources }: { sources: SourceStatus[] }) {
       document.visibilityState === "visible" ? 2000 : false,
     retry: false,
   });
+  const [dayKey, syncDayKey] = useLocalDayKey();
   useEffect(() => {
     if (scanRevision.data?.epoch === undefined) return;
+    syncDayKey();
     void qc.invalidateQueries({ queryKey: ["usage", "insights"] });
-  }, [scanRevision.data?.epoch, qc]);
+  }, [scanRevision.data?.epoch, qc, syncDayKey]);
 
   const visibleSources = useMemo(
     () => sources.filter((s) => s.id !== "claude-desktop"),
@@ -350,14 +354,16 @@ export function InsightsWorkspace({ sources }: { sources: SourceStatus[] }) {
     [visibleSources],
   );
 
-  const { startDate, endDate } = useMemo(() => rangeBounds(range), [range]);
+  const startDate = useMemo(
+    () => rangeStartDate(range, dayKey),
+    [range, dayKey],
+  );
 
   const query = useQuery({
-    queryKey: ["usage", "insights", range, app, effectiveMultiDevice],
+    queryKey: ["usage", "insights", range, dayKey, app, effectiveMultiDevice],
     queryFn: () =>
       usageCall<InsightsData>("insights", {
-        startDate,
-        endDate,
+        startDate: rangeStartDate(range),
         appType: app || undefined,
         multiDevice: effectiveMultiDevice,
       }),
@@ -1297,7 +1303,6 @@ export function InsightsWorkspace({ sources }: { sources: SourceStatus[] }) {
             sourceName.get(selectedSession.appType) ?? selectedSession.appType
           }
           startDate={startDate}
-          endDate={endDate}
           multiDevice={effectiveMultiDevice}
           onClose={() => setSelectedSession(null)}
         />
@@ -2251,7 +2256,6 @@ function SessionDetailModal({
   appType,
   appName,
   startDate,
-  endDate,
   multiDevice,
   onClose,
 }: {
@@ -2259,7 +2263,6 @@ function SessionDetailModal({
   appType: string;
   appName: string;
   startDate: number;
-  endDate: number;
   multiDevice: boolean;
   onClose: () => void;
 }) {
@@ -2278,7 +2281,6 @@ function SessionDetailModal({
       sessionId,
       appType,
       startDate,
-      endDate,
       multiDevice,
     ],
     queryFn: () =>
@@ -2286,7 +2288,6 @@ function SessionDetailModal({
         sessionId,
         appType,
         startDate,
-        endDate,
         multiDevice,
       }),
   });

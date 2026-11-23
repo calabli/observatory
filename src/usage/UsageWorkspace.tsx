@@ -40,6 +40,7 @@ import { AppGlyph } from "./AppGlyph";
 import { AppSelect } from "./AppSelect";
 import { formatRequestSpeed } from "./requestSpeed";
 import { customTimeRange } from "./timeRange";
+import { localDayKey, localDayStart, useLocalDayKey } from "./useLocalDayKey";
 import { rankApps, type RankingMetric } from "./appRanking";
 import { sortStats, type StatsSortKey } from "./statsSort";
 import { modelDisplayName } from "./modelDisplay";
@@ -117,17 +118,17 @@ function bounds(
   range: Range,
   start: string,
   end: string,
+  dayKey = localDayKey(),
 ): { startDate?: number; endDate?: number } {
   if (range === "all") return {};
-  const day = new Date();
-  day.setHours(0, 0, 0, 0);
+  if (range === "custom") {
+    return customTimeRange(start, end) ?? {};
+  }
+  const day = localDayStart(dayKey);
   const last = new Date(day);
   last.setDate(last.getDate() + 1);
   if (range === "week") day.setDate(day.getDate() - 6);
   if (range === "month") day.setDate(day.getDate() - 29);
-  if (range === "custom") {
-    return customTimeRange(start, end) ?? {};
-  }
   return {
     startDate: Math.floor(day.getTime() / 1000),
     endDate: Math.floor(last.getTime() / 1000) - 1,
@@ -371,9 +372,10 @@ function UsageWorkspaceImpl({
     refetchInterval: () =>
       document.visibilityState === "visible" ? 10000 : false,
   });
+  const [dayKey, syncDayKey] = useLocalDayKey();
   const period = useMemo(
-    () => bounds(range, customStart, customEnd),
-    [range, customStart, customEnd],
+    () => bounds(range, customStart, customEnd, dayKey),
+    [range, customStart, customEnd, dayKey],
   );
   const validPeriod =
     range !== "custom" || customTimeRange(customStart, customEnd) !== null;
@@ -405,8 +407,15 @@ function UsageWorkspaceImpl({
     pageSize: size,
   };
   const dashboard = useQuery({
-    queryKey: ["usage", "dashboard", filters],
-    queryFn: () => usageCall<Dashboard>("dashboard", filters),
+    queryKey: ["usage", "dashboard", range, dayKey, filters],
+    queryFn: () => {
+      const liveBounds =
+        range === "custom" ? period : bounds(range, customStart, customEnd);
+      return usageCall<Dashboard>("dashboard", {
+        ...filters,
+        ...liveBounds,
+      });
+    },
     enabled: !!status.data && !!validPeriod,
     staleTime: 5000,
     refetchOnWindowFocus: false,
@@ -439,6 +448,7 @@ function UsageWorkspaceImpl({
    */
   const refresh = useCallback(
     async (automatic = false) => {
+      syncDayKey();
       if (scanRef.current) return scanRef.current;
       if (activeMultiScan) return;
       if (scope !== "multi" && automatic) {
@@ -505,9 +515,10 @@ function UsageWorkspaceImpl({
       scanRef.current = task;
       return task;
     },
-    [qc, onBusy, scope],
+    [qc, onBusy, scope, syncDayKey],
   );
   const refreshMulti = async () => {
+    syncDayKey();
     if (scanRef.current || activeMultiScan || !status.data || !lan.data) return;
     activeMultiScan = true;
     const local = status.data.device;

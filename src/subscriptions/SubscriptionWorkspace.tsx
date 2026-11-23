@@ -247,9 +247,11 @@ function SubscriptionWorkspaceImpl() {
     };
     const timer = setInterval(tick, 30000);
     document.addEventListener("visibilitychange", tick);
+    window.addEventListener("focus", tick);
     return () => {
       clearInterval(timer);
       document.removeEventListener("visibilitychange", tick);
+      window.removeEventListener("focus", tick);
     };
   }, []);
   useEffect(() => {
