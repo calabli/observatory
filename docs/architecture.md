@@ -4,14 +4,14 @@ This document explains how Observatory is built: the processes, the modules, the
 
 ## 1. Stack
 
-| Layer | Technology |
-| --- | --- |
-| Desktop shell | Tauri 2 (`src-tauri/`): windows, tray, single instance, updater |
-| Engine | Rust library `observatory-usage-core` (`native/`): collectors, SQLite, statistics, LAN service |
-| Storage | SQLite via `rusqlite` (bundled), WAL mode |
-| Async runtime | Tokio; `axum` for the LAN HTTP service, `reqwest` (rustls) for outbound calls |
-| Frontend | React 18 + TypeScript + Vite, TanStack Query for data fetching, Radix Select, lucide icons |
-| Tests | `cargo test` (unit + `native/tests/` integration), `node --test` for pure frontend logic |
+| Layer         | Technology                                                                                     |
+| ------------- | ---------------------------------------------------------------------------------------------- |
+| Desktop shell | Tauri 2 (`src-tauri/`): windows, tray, single instance, updater                                |
+| Engine        | Rust library `observatory-usage-core` (`native/`): collectors, SQLite, statistics, LAN service |
+| Storage       | SQLite via `rusqlite` (bundled), WAL mode                                                      |
+| Async runtime | Tokio; `axum` for the LAN HTTP service, `reqwest` (rustls) for outbound calls                  |
+| Frontend      | React 18 + TypeScript + Vite, TanStack Query for data fetching, Radix Select, lucide icons     |
+| Tests         | `cargo test` (unit + `native/tests/` integration), `node --test` for pure frontend logic       |
 
 ## 2. Repository Layout
 
@@ -19,9 +19,9 @@ This document explains how Observatory is built: the processes, the modules, the
 src/                    React frontend
   main.tsx              App shell: sidebar, overview page, page routing, tray entry
   native/usageClient.ts The single call path into the engine (`usageCall`)
-  usage/                AI usage page, devices, pricing, multi-device scan
-  insights/             Insights analytics, Agent trace waterfall, HTML/Markdown report builder
-  markets/              Markets page, built-in stock pools (universes.json), treemap layout
+  usage/                AI usage page (UsageWorkspace + UsageChart, UsagePanels, UsageDialogs, usageShared), devices, pricing, multi-device scan
+  insights/             Insights page (InsightsWorkspace + InsightsCharts, SessionDetailModal, ReportExportModal, insightsShared), HTML/Markdown report builder
+  markets/              Markets page (MarketsWorkspace + MarketHeatmap, MarketCharts, marketsShared), built-in stock pools (presets.ts, universes.json), treemap layout
   subscriptions/        Subscriptions & quota page and its cycle math
   network/              Network page and rate calculation
   activity/             Activity log page
@@ -76,9 +76,9 @@ Both modes use the same data directory, and `engine.lock` (an exclusive file loc
 
 ### Windows
 
-| Label | Purpose |
-| --- | --- |
-| `main` | The app. Close hides it when the tray exists (exiting macOS fullscreen cleanly before hiding so Space transitions never leave a blank window), otherwise quits. |
+| Label        | Purpose                                                                                                                                                                                                                                             |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `main`       | The app. Close hides it when the tray exists (exiting macOS fullscreen cleanly before hiding so Space transitions never leave a blank window), otherwise quits.                                                                                     |
 | `tray-panel` | Frameless quick panel loaded as `index.html?surface=tray`. Created hidden when the tray is set up, so its page has loaded by the first click; `ensure_tray_panel` recreates it on demand if it is ever missing. It is hidden rather than destroyed. |
 
 A background thread in the shell refreshes the tray menu text (today's cost, requests, tokens) every 30 s, skipping SQLite queries whenever `today_cache_key` (`(data_epoch, local_day)`) is unchanged.
@@ -91,23 +91,23 @@ A background thread in the shell refreshes the tray menu text (today's cost, req
 
 **Background loops (`start_background`)**:
 
-- *Local scan loop*: ticks every 5 s, caching `(data_epoch, refresh_interval, import_failed)` so idle ticks do zero `spawn_blocking` or SQLite reads; scans when the configured interval (30 s, 60 s or manual) has elapsed since the last completed scan. Uses `try_lock` on the scan lock so it never queues behind a manual scan. Runs `wal_checkpoint(TRUNCATE)` and `PRAGMA optimize` at most hourly, right after a scan.
-- *LAN loops* (`lan_usage::start_background`): starts the HTTP service if sharing is on, then pulls paired devices on the configured interval.
+- _Local scan loop_: ticks every 5 s, caching `(data_epoch, refresh_interval, import_failed)` so idle ticks do zero `spawn_blocking` or SQLite reads; scans when the configured interval (30 s, 60 s or manual) has elapsed since the last completed scan. Uses `try_lock` on the scan lock so it never queues behind a manual scan. Runs maintenance at most hourly, right after a scan: releases free pages (`PRAGMA incremental_vacuum`; a database created before auto-vacuum is switched to `auto_vacuum=INCREMENTAL` with one `VACUUM`, which took 0.17 s on a 61 MB file), then `wal_checkpoint(TRUNCATE)` and `PRAGMA optimize`. New databases are created in incremental mode.
+- _LAN loops_ (`lan_usage::start_background`): starts the HTTP service if sharing is on, then pulls paired devices on the configured interval.
 
 **Dispatcher (`call` → `dispatch`)**: one `match` over string op names. Every op that touches SQLite runs in `spawn_blocking`, because the connection lock is a `std::sync::Mutex` and long aggregates must not stall Tokio workers shared with the LAN service. Ops listed in `activity::action_label` are also written to the activity log with sanitized arguments. Ops listed in `activity::api_out_label` (market quotes, charts and search, `modelsdev_fetch`, `network_international_ipv4`) run inside `capture_http_traces`, a Tokio task-local collector that every outbound HTTP helper reports to through `record_http_trace`; the call is then recorded as an `api_out` event with its request, upstream calls and a capped response preview (see section 5).
 
-| Group | Ops |
-| --- | --- |
-| Status & settings | `status`, `preferences_save`, `sources_save`, `scan_revision` |
-| Dashboards & Insights | `dashboard`, `tray_dashboard`, `request_detail`, `insights`, `session_turns`, `session_trace` |
-| Scanning | `sync` (local scan + pull peers), `scan_local_only`, `import_cc_switch` |
-| Pricing | `pricing_list`, `pricing_update`, `pricing_batch`, `pricing_delete`, `pricing_backfill`, `modelsdev_fetch`, `modelsdev_config_get`, `modelsdev_config_save`, `modelsdev_record_result` |
-| Subscriptions | `subscriptions_get`, `subscriptions_save`, `subscription_usage`, `subscription_cycle_usage`, `subscription_cycle_series` |
-| LAN | `lan_status`, `lan_settings_save`, `lan_discover`, `lan_connect`, `lan_pair_code`, `lan_device_enabled`, `lan_disconnect`, `lan_incoming_list`, `lan_incoming_revoke`, `scan_remote_start`, `scan_remote_status`, `scan_remote_sync` |
-| Read-only API key | `usage_api_key_status`, `usage_api_key_rotate`, `usage_api_key_revoke` |
-| Network | `network_snapshot`, `network_international_ipv4` |
-| Markets | `markets_config_get`, `markets_config_save`, `markets_quotes`, `markets_chart`, `markets_search` |
-| Activity | `activity_list`, `activity_detail` |
+| Group                 | Ops                                                                                                                                                                                                                                  |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Status & settings     | `status`, `preferences_save`, `sources_save`, `scan_revision`                                                                                                                                                                        |
+| Dashboards & Insights | `dashboard`, `tray_dashboard`, `request_detail`, `insights`, `session_turns`, `session_trace`                                                                                                                                        |
+| Scanning              | `sync` (local scan + pull peers), `scan_local_only`, `import_cc_switch`                                                                                                                                                              |
+| Pricing               | `pricing_list`, `pricing_update`, `pricing_batch`, `pricing_delete`, `pricing_backfill`, `modelsdev_fetch`, `modelsdev_config_get`, `modelsdev_config_save`, `modelsdev_record_result`                                               |
+| Subscriptions         | `subscriptions_get`, `subscriptions_save`, `subscription_usage`, `subscription_cycle_usage`, `subscription_cycle_series`                                                                                                             |
+| LAN                   | `lan_status`, `lan_settings_save`, `lan_discover`, `lan_connect`, `lan_pair_code`, `lan_device_enabled`, `lan_disconnect`, `lan_incoming_list`, `lan_incoming_revoke`, `scan_remote_start`, `scan_remote_status`, `scan_remote_sync` |
+| Read-only API key     | `usage_api_key_status`, `usage_api_key_rotate`, `usage_api_key_revoke`                                                                                                                                                               |
+| Network               | `network_snapshot`, `network_international_ipv4`                                                                                                                                                                                     |
+| Markets               | `markets_config_get`, `markets_config_save`, `markets_quotes`, `markets_chart`, `markets_search`                                                                                                                                     |
+| Activity              | `activity_list`, `activity_detail`                                                                                                                                                                                                   |
 
 Errors cross the boundary as strings. Errors that need a code and details (for example a precision error with affected dates) are wrapped as `{"observatoryError": {...}}`, which `parseUsageError` in the frontend unwraps.
 
@@ -115,17 +115,17 @@ Errors cross the boundary as strings. Errors that need a code and details (for e
 
 Schema: `native/src/database/schema.sql`. The database is metrics-only; it never stores conversation contents or credentials of the tools it reads.
 
-| Table | Contents |
-| --- | --- |
-| `proxy_request_logs` | One row per AI request: app, provider, model, four token counts, costs (decimal strings), latency, first-token time, duration, status, `data_source`, `created_at` (Unix seconds). Kept 30 days. |
-| `usage_daily_rollups` | Per day × app × provider × model aggregates of pruned detail rows and imported CC Switch rollups. |
-| `session_usage_dedup` | Long-term ledger of every imported record id and its semantic id. Survives pruning so replayed logs are not counted twice. |
-| `session_log_sync` | Per-file collector cursors: modification time, line/byte offset, tail fingerprint. |
-| `model_pricing` | Per-model prices per million tokens, model id case-insensitive. |
-| `settings` | Key-value store: preferences, LAN settings, tokens and grants, API key hash, subscriptions, import state. |
-| `providers` | Provider names kept from the CC Switch import (configuration is always `{}`). |
-| `activity_log` | Activity events; pruned after 7 days. `api_out` rows are also capped at 500 (checked every 25 writes). Polling ops (`markets_quotes`, `markets_chart`) store 2 KB / 8 KB request / response previews, other outbound ops 64 KB / 128 KB. `activity_list` takes `hidePolling` to drop successful polls in SQL. Writes go through `write_quietly`, so they never move the write epoch. |
-| LAN tables | Paired devices and their latest snapshots (created by `create_lan_usage_tables`). |
+| Table                 | Contents                                                                                                                                                                                                                                                                                                                                                                             |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `proxy_request_logs`  | One row per AI request: app, provider, model, four token counts, costs (decimal strings), latency, first-token time, duration, status, `data_source`, `created_at` (Unix seconds). Kept 30 days.                                                                                                                                                                                     |
+| `usage_daily_rollups` | Per day × app × provider × model aggregates of pruned detail rows and imported CC Switch rollups.                                                                                                                                                                                                                                                                                    |
+| `session_usage_dedup` | Long-term ledger of every imported record id and its semantic id. Survives pruning so replayed logs are not counted twice.                                                                                                                                                                                                                                                           |
+| `session_log_sync`    | Per-file collector cursors: modification time, line/byte offset, tail fingerprint.                                                                                                                                                                                                                                                                                                   |
+| `model_pricing`       | Per-model prices per million tokens, model id case-insensitive.                                                                                                                                                                                                                                                                                                                      |
+| `settings`            | Key-value store: preferences, LAN settings, tokens and grants, API key hash, subscriptions, import state.                                                                                                                                                                                                                                                                            |
+| `providers`           | Provider names kept from the CC Switch import (configuration is always `{}`).                                                                                                                                                                                                                                                                                                        |
+| `activity_log`        | Activity events; pruned after 7 days. `api_out` rows are also capped at 500 (checked every 25 writes). Polling ops (`markets_quotes`, `markets_chart`) store 2 KB / 8 KB request / response previews, other outbound ops 64 KB / 128 KB. `activity_list` takes `hidePolling` to drop successful polls in SQL. Writes go through `write_quietly`, so they never move the write epoch. |
+| LAN tables            | Paired devices and their latest snapshots (created by `create_lan_usage_tables`).                                                                                                                                                                                                                                                                                                    |
 
 **Token semantics.** `input_token_semantics` records whether `input_tokens` already includes cache reads (OpenAI-style) or not. Queries normalize to fresh input through the SQL helpers in `services/sql_helpers.rs`.
 
@@ -168,30 +168,30 @@ The scan lock serializes background scans, manual scans, remote-requested scans 
 
 ## 9. LAN Service (`native/src/lan_usage/`)
 
-| File | Role |
-| --- | --- |
-| `server.rs` | `axum` router, auth extraction, request logging into the activity log |
-| `discovery.rs` | UDP broadcast discovery on the sharing port (and 17890 for CC Switch peers) |
-| `identity.rs` | Device id, name and share settings |
-| `pairing.rs` | Pairing codes, grants (SHA-256 of tokens), revocation |
-| `client.rs` | Outbound calls: info, pair, revoke, fingerprint, snapshot sync, remote scan |
-| `storage.rs` | Device list, snapshot storage, local export |
-| `projection.rs` | In-memory multi-device query database |
-| `public_api.rs` | Read-only usage API: summaries, cycles, dashboards |
-| `interfaces.rs` | Local interface addresses for discovery |
+| File            | Role                                                                        |
+| --------------- | --------------------------------------------------------------------------- |
+| `server.rs`     | `axum` router, auth extraction, request logging into the activity log       |
+| `discovery.rs`  | UDP broadcast discovery on the sharing port (and 17890 for CC Switch peers) |
+| `identity.rs`   | Device id, name and share settings                                          |
+| `pairing.rs`    | Pairing codes, grants (SHA-256 of tokens), revocation                       |
+| `client.rs`     | Outbound calls: info, pair, revoke, fingerprint, snapshot sync, remote scan |
+| `storage.rs`    | Device list, snapshot storage, local export                                 |
+| `projection.rs` | In-memory multi-device query database                                       |
+| `public_api.rs` | Read-only usage API: summaries, cycles, dashboards                          |
+| `interfaces.rs` | Local interface addresses for discovery                                     |
 
 **Routes** (all on the sharing port, default 17891):
 
-| Route | Auth | Purpose |
-| --- | --- | --- |
-| `GET /api/lan/info` | none | Device id and name, used before pairing |
-| `POST /api/lan/pair` | pairing code | Two-way pairing; returns the access token |
-| `POST /api/lan/revoke` | peer token | Peer revokes its own access |
-| `GET /api/lan/usage/fingerprint` | peer token | Cheap change check before a sync |
-| `GET /api/lan/usage` | peer token | Full snapshot of shared apps |
-| `POST /api/lan/scan`, `/api/lan/scan-status` | peer token | Start or poll a remote scan job (`scan_jobs.rs`, idempotent by requester + key) |
-| `GET /api/v1/usage/summary`, `/cycle`, `/cycles` | API key | Read-only usage API |
-| `POST /api/v1/dashboard/usage`, `/dashboard/models` | API key | Dashboard aggregates |
+| Route                                               | Auth         | Purpose                                                                         |
+| --------------------------------------------------- | ------------ | ------------------------------------------------------------------------------- |
+| `GET /api/lan/info`                                 | none         | Device id and name, used before pairing                                         |
+| `POST /api/lan/pair`                                | pairing code | Two-way pairing; returns the access token                                       |
+| `POST /api/lan/revoke`                              | peer token   | Peer revokes its own access                                                     |
+| `GET /api/lan/usage/fingerprint`                    | peer token   | Cheap change check before a sync                                                |
+| `GET /api/lan/usage`                                | peer token   | Full snapshot of shared apps                                                    |
+| `POST /api/lan/scan`, `/api/lan/scan-status`        | peer token   | Start or poll a remote scan job (`scan_jobs.rs`, idempotent by requester + key) |
+| `GET /api/v1/usage/summary`, `/cycle`, `/cycles`    | API key      | Read-only usage API                                                             |
+| `POST /api/v1/dashboard/usage`, `/dashboard/models` | API key      | Dashboard aggregates                                                            |
 
 Peer requests carry `X-Observatory-Device` and `X-Observatory-Token`; the API uses `X-API-Key`. Pairing runs in one round trip: the initiator first stores a grant for the reverse token, then calls `/api/lan/pair` with the code and that token; if the call fails the previous grant is restored. Transport is plain HTTP (see the security limits in [product.md](product.md#6-multi-device-sharing)).
 
@@ -205,18 +205,20 @@ The public API contract, parameters, errors and examples are in [read-only-usage
 - **Styling**: `styles.css` (base), `usage/usage.css`, `insights/insights.css`, `markets/markets.css`, `theme/ccSwitchTheme.css` (colors from CC Switch), `theme/redesign.css` (sidebar shell), and `theme/widget.css`, the widget-style theme imported last in `main.tsx` so it overrides the rest. Light/dark follows the system and can be toggled; the resolved choice is set as `html[data-theme]` and passed to the native title bar.
 - **Form controls**: the macOS app renders in WebKit, which ignores height and padding on `<select>` elements that keep the native look. `widget.css` therefore sets `appearance: none` on every `<select>`, gives it a 32 px pill height and draws a chevron matching `AppSelect` (one SVG per theme). The multi-device `<details>` picker uses the same height and chevron. Check control sizes in the app, not only in a Chromium preview, where native selects do honor the CSS.
 - **Local storage** holds only view preferences (sidebar state, theme, last filters, Insights budget thresholds, the selected Markets pool and view).
+- **Page layout**: each large page keeps its main component in `*Workspace.tsx`; types, constants and pure helpers live in a `*Shared.ts` module, and sub-components in their own files. Mutable module state (such as the multi-device scan coordinator) stays in the page file.
+- **Markets** quotes carry `turnover` (exact traded value from Tencent for A-shares, Hong Kong and US; the UI falls back to price × volume marked "≈" for TWSE and Yahoo). A quote whose last trade is more than 10 days old is flagged as possibly suspended or delisted and left out of the up/down counts and sector averages.
 - **Markets** queries poll with `refetchInterval` only while the document is visible. Config saves update the query cache optimistically (and roll back on error) so quick successive edits build on each other.
 
 ## 11. Testing
 
-| Command | Covers |
-| --- | --- |
-| `npm run typecheck` | TypeScript |
-| `npm run lint` | ESLint (TypeScript + React hooks rules) |
-| `npm run format:check` | Prettier |
-| `npm test` | Frontend logic tests in `tests/*.test.mjs` |
-| `npm run native:test` | Engine unit tests and `native/tests/` integration tests: CC Switch import and dedup, pruning baselines, cache semantics, pricing backfill scope, subscriptions, pairing codes, LAN hardening, two-instance sync, the HTTP API and the Postman collection |
-| `cargo test --manifest-path src-tauri/Cargo.toml` | Window close behavior of the shell |
+| Command                                           | Covers                                                                                                                                                                                                                                                   |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run typecheck`                               | TypeScript                                                                                                                                                                                                                                               |
+| `npm run lint`                                    | ESLint (TypeScript + React hooks rules)                                                                                                                                                                                                                  |
+| `npm run format:check`                            | Prettier                                                                                                                                                                                                                                                 |
+| `npm test`                                        | Frontend logic tests in `tests/*.test.mjs`                                                                                                                                                                                                               |
+| `npm run native:test`                             | Engine unit tests and `native/tests/` integration tests: CC Switch import and dedup, pruning baselines, cache semantics, pricing backfill scope, subscriptions, pairing codes, LAN hardening, two-instance sync, the HTTP API and the Postman collection |
+| `cargo test --manifest-path src-tauri/Cargo.toml` | Window close behavior of the shell                                                                                                                                                                                                                       |
 
 Tests that touch process-wide environment variables use `serial_test`.
 
@@ -226,7 +228,7 @@ Tests that touch process-wide environment variables use `serial_test`.
 - `npm run desktop:build` builds a debug executable without installers; `desktop:release` builds an optimized one.
 - `npm run mac:install` (`scripts/mac-install.mjs`) deletes any leftover bundle, builds the macOS `.app` bundle, installs it to `/Applications/Observatory.app` with `ditto`, and removes the temporary build bundle so Launchpad and Spotlight only index one copy. `tauri build` exits non-zero locally when updater signing keys are missing, so a freshly produced bundle is the success signal; if none is produced, nothing is installed.
 - Pushing a `v*` tag runs `.github/workflows/release.yml`: it creates one draft release, builds the Windows x64 NSIS installer plus a portable `.exe` and the macOS Apple Silicon DMG, signs updater artifacts, runs lint and tests in parallel, and publishes `latest.json` only when checks pass. The tag must match `package.json`'s version.
-- Version numbers live in `package.json`, `native/Cargo.toml`, `src-tauri/Cargo.toml` and `src-tauri/tauri.conf.json`; keep them in sync.
+- Version numbers live in `package.json`, `package-lock.json`, `native/Cargo.toml`, `src-tauri/Cargo.toml`, both `Cargo.lock` files and `src-tauri/tauri.conf.json`. `npm run version:bump -- <x.y.z>` updates all of them in one step and changes nothing if any entry is missing.
 - The updater checks `releases/latest/download/latest.json` on GitHub at startup and every six hours.
 - Changes under `packages/` publish the promo page through `.github/workflows/pages.yml`.
 

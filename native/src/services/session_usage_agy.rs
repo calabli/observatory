@@ -514,7 +514,10 @@ mod tests {
         let db = Database::memory().unwrap();
         let step1 = json!({"step_index":1,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","created_at":"2026-11-21T13:12:07Z","model":"gemini-4-neon-medium","input_tokens":100,"output_tokens":300,"tool_calls":[{"name":"run_command"}]});
         // First import before followup exists -> latency_ms is 0
-        assert_eq!(import_records(&db, "bf", &[step1.clone()]).unwrap(), (1, 0));
+        assert_eq!(
+            import_records(&db, "bf", std::slice::from_ref(&step1)).unwrap(),
+            (1, 0)
+        );
         // Second import once tool followup exists -> updates latency_ms to 5000
         let step2 = json!({"step_index":2,"source":"MODEL","type":"GENERIC","status":"DONE","created_at":"2026-11-21T13:12:12Z","content":"ok"});
         assert_eq!(

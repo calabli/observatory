@@ -33,6 +33,42 @@ const MAX_EXPORT_BYTES: usize = 256 * 1024 * 1024;
 /// Upper bound for the small responses (identity, pairing, fingerprint, scan status).
 const MAX_SMALL_BYTES: usize = 1024 * 1024;
 
+/// Why a request to a peer got no response, in words the user can act on, followed by
+/// the underlying cause. reqwest's own message only says "error sending request", so the
+/// I/O error is found by walking the source chain.
+pub(crate) fn connect_failure(e: &reqwest::Error, host: &str, port: u16) -> String {
+    use std::error::Error;
+    use std::io::ErrorKind;
+    let mut kind = None;
+    let mut root = e.to_string();
+    let mut source: Option<&dyn Error> = e.source();
+    while let Some(err) = source {
+        root = err.to_string();
+        if let Some(io) = err.downcast_ref::<std::io::Error>() {
+            kind.get_or_insert(io.kind());
+        }
+        source = err.source();
+    }
+    let hint = if e.is_timeout() || kind == Some(ErrorKind::TimedOut) {
+        "连接超时：对方可能已休眠或断网，或被防火墙拦截（Windows 需在防火墙中允许观测台）"
+            .to_string()
+    } else {
+        match kind {
+            Some(ErrorKind::ConnectionRefused) => format!(
+                "对方没有在端口 {port} 上响应：请确认对方已打开观测台并开启局域网共享，且端口没有改变"
+            ),
+            Some(ErrorKind::HostUnreachable | ErrorKind::NetworkUnreachable) => format!(
+                "找不到 {host}：两台设备可能不在同一局域网，或对方的 IP 地址已变化"
+            ),
+            Some(ErrorKind::ConnectionReset | ErrorKind::ConnectionAborted) => {
+                "连接被中断：可能是防火墙或代理拦截了请求".to_string()
+            }
+            _ => format!("无法连接 {host}:{port}"),
+        }
+    };
+    format!("{hint}（{root}）")
+}
+
 /// Read the response body in chunks and abort as soon as the accumulated size exceeds
 /// `limit`. Content-Length is checked first: a declared size above the limit is rejected right
 /// away, and a missing or dishonest declaration is truncated while reading.
@@ -102,7 +138,7 @@ async fn fetch_export_sized(
         .header("x-observatory-token", token)
         .send()
         .await
-        .map_err(|e| AppError::Message(format!("连接 {url} 失败: {e}")))?;
+        .map_err(|e| AppError::Message(connect_failure(&e, host, port)))?;
     if resp.status() == reqwest::StatusCode::FORBIDDEN {
         return Err(AppError::HttpStatus {
             status: 403,
@@ -144,7 +180,7 @@ pub async fn pair(
         .json(&serde_json::json!({"code":code,"deviceId":own.device_id,"deviceName":own.device_name,"port":own_port,"reverseToken":reverse_token}))
         .send()
         .await
-        .map_err(|e| AppError::Message(format!("连接失败: {e}")))?;
+        .map_err(|e| AppError::Message(connect_failure(&e, host, port)))?;
     if !response.status().is_success() {
         return Err(AppError::Message(
             if response.status() == reqwest::StatusCode::BAD_GATEWAY {
@@ -185,7 +221,7 @@ pub async fn scan_request(
         .json(&serde_json::json!({"key":key}))
         .send()
         .await
-        .map_err(|e| AppError::Message(format!("设备连接失败: {e}")))?;
+        .map_err(|e| AppError::Message(connect_failure(&e, &host, port)))?;
     if response.status() == reqwest::StatusCode::FORBIDDEN {
         clear_revoked_token(db, device_id, &token)?;
         return Err(AppError::Message("对端已撤销授权，请重新配对".into()));
@@ -227,7 +263,7 @@ pub async fn fetch_info(host: &str, port: u16) -> Result<DeviceInfo, AppError> {
         .timeout(std::time::Duration::from_secs(10))
         .send()
         .await
-        .map_err(|e| AppError::Message(format!("连接 {url} 失败: {e}")))?;
+        .map_err(|e| AppError::Message(connect_failure(&e, host, port)))?;
     if !resp.status().is_success() {
         return Err(AppError::Message(format!(
             "{url} 返回 HTTP {}",
@@ -437,4 +473,22 @@ pub async fn sync_all(db: &Arc<Database>) -> Vec<(String, Result<usize, String>)
         out.push((device.device_id.clone(), result));
     }
     out
+}
+
+#[cfg(test)]
+mod connect_failure_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_closed_port_is_explained() {
+        // Bind and release a port so nothing is listening on it.
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let err = fetch_info("127.0.0.1", port).await.unwrap_err().to_string();
+        assert!(err.contains(&format!("端口 {port}")), "{err}");
+        assert!(err.contains("局域网共享"), "{err}");
+    }
 }

@@ -23,16 +23,18 @@ jobs:
       id: ${{ steps.create.outputs.id }}
       tag: ${{ steps.create.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Create or reuse the draft release
         id: create
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NOTES: |
-            - Insights: the time range adds **今天** (today), **昨天** (yesterday) and **近 3 天** (last 3 days). Yesterday is a closed day compared against the day before.
-            - All preset time ranges (labels and day spans) are now defined in one table shared by the AI usage page, Insights and the tray panel, so they stay consistent. The AI usage dropdown uses the shorter "近 N 天" labels; previously saved selections still load.
-            - Insights counts records up to and including the last second of a closed range, matching the usage statistics.
+            - Markets: new **中概股** pool of 53 US-listed Chinese companies in 9 sectors. Exact traded value (成交额) for A-shares, Hong Kong and US stocks in the detail panel, heat-map tooltip and "按成交额" sizing (Taiwan shows a "≈" estimate). Stocks with no trade for over 10 days are flagged as possibly suspended or delisted and left out of the up/down counts.
+            - AI usage: the model speed chart sorts by usage or speed, shows 8 models with "show all", and grays low-sample models.
+            - Multi-device: an unreachable device now says why (port not listening, timeout or firewall, unreachable network, dropped connection).
+            - The local database releases free space automatically (incremental vacuum, switched once on existing databases).
+            - Maintenance: large pages split into smaller modules, new tests for the heat map and report builder, zero clippy warnings, docs checked by Prettier, `npm run version:bump`, and release actions on checkout/setup-node v7.
 
             The macOS build is not notarized.
         run: |
@@ -70,8 +72,8 @@ jobs:
   check:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
@@ -101,7 +103,7 @@ jobs:
   check-macos:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -123,8 +125,8 @@ jobs:
     env:
       HAS_SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
@@ -181,7 +183,7 @@ jobs:
     needs: [release, check, check-macos, build]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Publish update manifest and release
         shell: pwsh
         env:

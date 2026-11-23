@@ -166,6 +166,81 @@ const AI_GLOBAL_ITEMS: PresetItem[] = [
   { symbol: "002230.SZ", name: "科大讯飞", market: "CN", sector: "AI 应用" },
 ];
 
+// US-listed Chinese companies (中概股), grouped by sector. Checked against Tencent
+// quotes on 2026-11-24; delisted or stale names (Zeekr, Qudian, Dada) are left out.
+const CHINA_ADR_ITEMS: PresetItem[] = [
+  // 电商零售 (5)
+  { symbol: "BABA", name: "阿里巴巴", market: "US", sector: "电商零售" },
+  { symbol: "PDD", name: "拼多多", market: "US", sector: "电商零售" },
+  { symbol: "JD", name: "京东", market: "US", sector: "电商零售" },
+  { symbol: "VIPS", name: "唯品会", market: "US", sector: "电商零售" },
+  { symbol: "MNSO", name: "名创优品", market: "US", sector: "电商零售" },
+
+  // 互联网与内容 (12)
+  { symbol: "BIDU", name: "百度", market: "US", sector: "互联网与内容" },
+  { symbol: "NTES", name: "网易", market: "US", sector: "互联网与内容" },
+  { symbol: "BILI", name: "哔哩哔哩", market: "US", sector: "互联网与内容" },
+  { symbol: "TME", name: "腾讯音乐", market: "US", sector: "互联网与内容" },
+  { symbol: "IQ", name: "爱奇艺", market: "US", sector: "互联网与内容" },
+  { symbol: "WB", name: "微博", market: "US", sector: "互联网与内容" },
+  { symbol: "ZH", name: "知乎", market: "US", sector: "互联网与内容" },
+  { symbol: "HUYA", name: "虎牙", market: "US", sector: "互联网与内容" },
+  { symbol: "DOYU", name: "斗鱼", market: "US", sector: "互联网与内容" },
+  { symbol: "JOYY", name: "欢聚", market: "US", sector: "互联网与内容" },
+  { symbol: "MOMO", name: "挚文集团", market: "US", sector: "互联网与内容" },
+  { symbol: "BZ", name: "BOSS直聘", market: "US", sector: "互联网与内容" },
+
+  // 智能汽车与出行 (7)
+  { symbol: "NIO", name: "蔚来", market: "US", sector: "智能汽车与出行" },
+  { symbol: "XPEV", name: "小鹏汽车", market: "US", sector: "智能汽车与出行" },
+  { symbol: "LI", name: "理想汽车", market: "US", sector: "智能汽车与出行" },
+  { symbol: "HSAI", name: "禾赛", market: "US", sector: "智能汽车与出行" },
+  { symbol: "PONY", name: "小马智行", market: "US", sector: "智能汽车与出行" },
+  { symbol: "WRD", name: "文远知行", market: "US", sector: "智能汽车与出行" },
+  { symbol: "YMM", name: "满帮", market: "US", sector: "智能汽车与出行" },
+
+  // 金融科技 (6)
+  { symbol: "FUTU", name: "富途控股", market: "US", sector: "金融科技" },
+  { symbol: "TIGR", name: "老虎证券", market: "US", sector: "金融科技" },
+  { symbol: "LU", name: "陆金所", market: "US", sector: "金融科技" },
+  { symbol: "QFIN", name: "奇富科技", market: "US", sector: "金融科技" },
+  { symbol: "FINV", name: "信也科技", market: "US", sector: "金融科技" },
+  { symbol: "LX", name: "乐信", market: "US", sector: "金融科技" },
+
+  // 消费与本地生活 (8)
+  { symbol: "TCOM", name: "携程", market: "US", sector: "消费与本地生活" },
+  { symbol: "YUMC", name: "百胜中国", market: "US", sector: "消费与本地生活" },
+  { symbol: "HTHT", name: "华住", market: "US", sector: "消费与本地生活" },
+  { symbol: "ATAT", name: "亚朵", market: "US", sector: "消费与本地生活" },
+  { symbol: "BEKE", name: "贝壳", market: "US", sector: "消费与本地生活" },
+  { symbol: "ZTO", name: "中通快递", market: "US", sector: "消费与本地生活" },
+  { symbol: "LKNCY", name: "瑞幸咖啡", market: "US", sector: "消费与本地生活" },
+  { symbol: "CHA", name: "霸王茶姬", market: "US", sector: "消费与本地生活" },
+
+  // 教育 (3)
+  { symbol: "TAL", name: "好未来", market: "US", sector: "教育" },
+  { symbol: "EDU", name: "新东方", market: "US", sector: "教育" },
+  { symbol: "GOTU", name: "高途", market: "US", sector: "教育" },
+
+  // 医药生物 (4)
+  { symbol: "ONC", name: "百济神州", market: "US", sector: "医药生物" },
+  { symbol: "LEGN", name: "传奇生物", market: "US", sector: "医药生物" },
+  { symbol: "ZLAB", name: "再鼎医药", market: "US", sector: "医药生物" },
+  { symbol: "HCM", name: "和黄医药", market: "US", sector: "医药生物" },
+
+  // 云与数据中心 (5)
+  { symbol: "KC", name: "金山云", market: "US", sector: "云与数据中心" },
+  { symbol: "GDS", name: "万国数据", market: "US", sector: "云与数据中心" },
+  { symbol: "VNET", name: "世纪互联", market: "US", sector: "云与数据中心" },
+  { symbol: "API", name: "声网", market: "US", sector: "云与数据中心" },
+  { symbol: "TUYA", name: "涂鸦智能", market: "US", sector: "云与数据中心" },
+
+  // 光伏新能源 (3)
+  { symbol: "JKS", name: "晶科能源", market: "US", sector: "光伏新能源" },
+  { symbol: "DQ", name: "大全新能源", market: "US", sector: "光伏新能源" },
+  { symbol: "CSIQ", name: "阿特斯", market: "US", sector: "光伏新能源" },
+];
+
 export const MARKET_PRESETS: MarketPreset[] = [
   {
     id: "us_sp500",
@@ -190,6 +265,12 @@ export const MARKET_PRESETS: MarketPreset[] = [
     label: `港股核心 (${hk100Items.length})`,
     description: `恒生指数 + 恒生科技 + 港股通前 ${hk100Items.length} 家权重蓝筹`,
     items: hk100Items,
+  },
+  {
+    id: "cn_adr",
+    label: `中概股 (${CHINA_ADR_ITEMS.length})`,
+    description: `美股上市的中国公司 ${CHINA_ADR_ITEMS.length} 家：电商、互联网、智能汽车、金融科技、消费、教育、医药、云与新能源（腾讯批量实时）`,
+    items: CHINA_ADR_ITEMS,
   },
   {
     id: "ai",

@@ -21,34 +21,34 @@ The collection is bound to the implementation by a test: `postman_collection_req
 
 Three query endpoints live under `/api/v1/usage/`; the two dashboard endpoints (`POST /api/v1/dashboard/usage` and `/api/v1/dashboard/models`) are described further below:
 
-| Endpoint | Purpose |
-|---|---|
-| `GET /api/v1/usage/summary` | Query usage over a time range. The range is chosen by the caller |
-| `GET /api/v1/usage/cycle` | Query the usage of the **current quota cycle** of an Agent platform. The server computes the range from the subscription rules |
-| `GET /api/v1/usage/cycles` | Query the usage series of the **most recent cycles** of an Agent platform. Used by dashboards for trend bar charts |
+| Endpoint                    | Purpose                                                                                                                        |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /api/v1/usage/summary` | Query usage over a time range. The range is chosen by the caller                                                               |
+| `GET /api/v1/usage/cycle`   | Query the usage of the **current quota cycle** of an Agent platform. The server computes the range from the subscription rules |
+| `GET /api/v1/usage/cycles`  | Query the usage series of the **most recent cycles** of an Agent platform. Used by dashboards for trend bar charts             |
 
 ```json
 {
   "method": "GET",
   "url": "http://127.0.0.1:17891/api/v1/usage/summary?days=7&appType=claude",
-  "headers": {"X-API-Key": "read-only key generated under Manage Devices"}
+  "headers": { "X-API-Key": "read-only key generated under Manage Devices" }
 }
 ```
 
 ### Parameters
 
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `days` | Integer | 7 | An integer from 1–366: calendar days including the end date |
-| `endDate` | Date string | Server's today | `YYYY-MM-DD`, inclusive of that day, must not be later than the server's today |
-| `startDate` | Date string | None | Inclusive of that day, must not be later than `endDate`; cannot be used together with `days` |
-| `startTime` | RFC 3339 | None | Start of the second-level range, inclusive; must carry a UTC offset or `Z`, with whole-second precision |
-| `endTime` | RFC 3339 | Current request time | End of the second-level range, **exclusive**; `startTime` is still required when only `endTime` is given |
-| `appType` | String | None | Several app identifiers separated by commas; `claude` is Claude Code only, `claude-desktop` is queried separately |
-| `model` | String | None | Several effective pricing model IDs separated by commas, used as a filter set shared by the selected platforms |
-| `modelsByApp` | JSON string | None | Arrays of model IDs per platform; `appType` must be provided as well, and it cannot be used together with `model` |
-| `groupBy` | Enum string | `day` | `day`, `week`, `month` |
-| `byModel` | Boolean | `false` | With `true` the response additionally returns `models`: a per-model breakdown of the same window; it cannot be used together with `allTime` |
+| Parameter     | Type        | Default              | Description                                                                                                                                 |
+| ------------- | ----------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `days`        | Integer     | 7                    | An integer from 1–366: calendar days including the end date                                                                                 |
+| `endDate`     | Date string | Server's today       | `YYYY-MM-DD`, inclusive of that day, must not be later than the server's today                                                              |
+| `startDate`   | Date string | None                 | Inclusive of that day, must not be later than `endDate`; cannot be used together with `days`                                                |
+| `startTime`   | RFC 3339    | None                 | Start of the second-level range, inclusive; must carry a UTC offset or `Z`, with whole-second precision                                     |
+| `endTime`     | RFC 3339    | Current request time | End of the second-level range, **exclusive**; `startTime` is still required when only `endTime` is given                                    |
+| `appType`     | String      | None                 | Several app identifiers separated by commas; `claude` is Claude Code only, `claude-desktop` is queried separately                           |
+| `model`       | String      | None                 | Several effective pricing model IDs separated by commas, used as a filter set shared by the selected platforms                              |
+| `modelsByApp` | JSON string | None                 | Arrays of model IDs per platform; `appType` must be provided as well, and it cannot be used together with `model`                           |
+| `groupBy`     | Enum string | `day`                | `day`, `week`, `month`                                                                                                                      |
+| `byModel`     | Boolean     | `false`              | With `true` the response additionally returns `models`: a per-model breakdown of the same window; it cannot be used together with `allTime` |
 
 When `appType` is omitted, all apps that are allowed to be shared are aggregated. Requesting an app that is not shared returns 403; an unsupported app identifier returns 400. Unknown parameters, duplicate parameters, empty filter values, invalid dates, and unsupported groupings return 400.
 
@@ -70,11 +70,11 @@ GET /api/v1/usage/summary?startTime=2026-10-29T19:00:00%2B08:00&appType=claude
 
 ### Grouping
 
-| `groupBy` | Natural period | `period` format |
-|---|---|---|
-| `day` | From local midnight to the next local midnight | `2026-11-01` |
-| `week` | From Monday midnight to the following Monday midnight | ISO week number, e.g. `2026-W44` |
-| `month` | From the 1st of each month at midnight to the 1st of the next month at midnight | `2026-11` |
+| `groupBy` | Natural period                                                                  | `period` format                  |
+| --------- | ------------------------------------------------------------------------------- | -------------------------------- |
+| `day`     | From local midnight to the next local midnight                                  | `2026-11-01`                     |
+| `week`    | From Monday midnight to the following Monday midnight                           | ISO week number, e.g. `2026-W44` |
+| `month`   | From the 1st of each month at midnight to the 1st of the next month at midnight | `2026-11`                        |
 
 ISO week numbers use the year the week belongs to, so a week across the year boundary never gets the wrong calendar year. Only periods that intersect the queried range are returned; a bucket's `start` and `endExclusive` are the intersection of the natural period with the queried range. Empty periods are zero-filled and sorted by start time.
 
@@ -83,9 +83,16 @@ ISO week numbers use the year the week belongs to, so a week across the year bou
 With `byModel=true` the response gains one more array, `models`: the totals and the `daily` of every model over the same window, with exactly the same window and statistical basis as the top level (including the live detail records of the current day). Each entry has the same shape as a `byAppAndModel` entry of `/dashboard/usage`, sorted by `usage.totalTokens` in descending order:
 
 ```json
-{"appType": "claude", "model": "claude-opus-5-5",
- "usage": {"totalTokens": 123456, "costUsd": 1.25, "requests": 42,
-           "daily": [{"date": "2026-11-05", "totalTokens": 123456, "...": "…"}]}}
+{
+  "appType": "claude",
+  "model": "claude-opus-5-5",
+  "usage": {
+    "totalTokens": 123456,
+    "costUsd": 1.25,
+    "requests": 42,
+    "daily": [{ "date": "2026-11-05", "totalTokens": 123456, "...": "…" }]
+  }
+}
 ```
 
 The `model` / `modelsByApp` / `modelPrefix` filters apply to `models` as well. They cannot be used together with `allTime` (returns 400). Use this parameter when you need a model breakdown such as "today / this week / this month" that is independent of the subscription billing period; the per-model data of `/dashboard/usage` is anchored to the subscription billing period of the first platform and excludes the current day on the subscription expiry date, so do not use it for natural-day figures.
@@ -101,21 +108,21 @@ X-API-Key: read-only key generated under Manage Devices
 
 **The response body is exactly the same as `/api/v1/usage/summary`** — the same fields, the same statistical basis, the same error structure. The only difference is that the server computes the range for you from the cycle rules of the subscription. The cycle boundaries can be read from `range.start` and `range.endExclusive`.
 
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `appType` | String | None | **Required**. Several Agent platforms separated by commas; the first platform selects the subscription cycle |
-| `offset` | Integer | 0 | Cycle index: 0 the current cycle, -1 the previous one, 1 the next one |
-| `model` | String | None | Several model IDs separated by commas; the filter applies uniformly across the selected platforms and the totals are returned |
-| `modelsByApp` | JSON string | None | Arrays of model IDs per selected platform; it cannot be used together with `model` |
-| `groupBy` | String | `day` | `day`, `week`, or `month`; only the grouping changes, not the cycle range or the totals |
-| `devices` | String | `local` | Device IDs separated by commas, `local` meaning this machine |
+| Parameter     | Type        | Default | Description                                                                                                                   |
+| ------------- | ----------- | ------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `appType`     | String      | None    | **Required**. Several Agent platforms separated by commas; the first platform selects the subscription cycle                  |
+| `offset`      | Integer     | 0       | Cycle index: 0 the current cycle, -1 the previous one, 1 the next one                                                         |
+| `model`       | String      | None    | Several model IDs separated by commas; the filter applies uniformly across the selected platforms and the totals are returned |
+| `modelsByApp` | JSON string | None    | Arrays of model IDs per selected platform; it cannot be used together with `model`                                            |
+| `groupBy`     | String      | `day`   | `day`, `week`, or `month`; only the grouping changes, not the cycle range or the totals                                       |
+| `devices`     | String      | `local` | Device IDs separated by commas, `local` meaning this machine                                                                  |
 
 For example `GET /api/v1/usage/cycle?appType=claude,codex&model=claude-opus-5-5,gpt-6.1-sol&groupBy=week`: the cycle is determined by the Claude Code subscription, the records of the two platforms that match the listed models are filtered in, and the totals plus the weekly grouping are returned. `model` is a filter set shared by all selected platforms; use `modelsByApp` when the models have to be specified per platform.
 
 The value of `modelsByApp` is a JSON object (it must be URL-encoded in a URL):
 
 ```json
-{"claude":["claude-opus-5-5"],"codex":["gpt-6.1-sol","gpt-6-sol"]}
+{ "claude": ["claude-opus-5-5"], "codex": ["gpt-6.1-sol", "gpt-6-sol"] }
 ```
 
 Example:
@@ -171,10 +178,10 @@ The cycle rules come from the subscription record of the app under "AI Usage →
 
 This endpoint has two more errors than `summary`:
 
-| HTTP status | `code` | Scenario |
-|---|---|---|
-| 404 | `SUBSCRIPTION_NOT_FOUND` | The app has no subscription record, so the cycle cannot be computed |
-| 404 | `CYCLE_NOT_AVAILABLE` | The cycle has not started yet, or it falls entirely outside the validity period of the subscription |
+| HTTP status | `code`                   | Scenario                                                                                            |
+| ----------- | ------------------------ | --------------------------------------------------------------------------------------------------- |
+| 404         | `SUBSCRIPTION_NOT_FOUND` | The app has no subscription record, so the cycle cannot be computed                                 |
+| 404         | `CYCLE_NOT_AVAILABLE`    | The cycle has not started yet, or it falls entirely outside the validity period of the subscription |
 
 The remaining error codes match `summary`: 400 `INVALID_PARAMETERS` (unknown, duplicate, or missing parameters), 403 `APP_NOT_SHARED`, 422 `RANGE_PRECISION_UNAVAILABLE` (the cycle boundary cuts into a historical date that only has a daily rollup), 401 `INVALID_API_KEY`.
 
@@ -184,9 +191,30 @@ To view "usage of the current cycle" on its own in TinyPane, simply switch the a
 
 ```json
 [
-  {"type":"metrics","title":"Tokens This Cycle","valuePath":"/totalTokens","format":"compact","color":"#D97757"},
-  {"type":"metrics","title":"Estimated Cost This Cycle","valuePath":"/costUsd","decimals":4,"unit":" USD","color":"#34B399"},
-  {"type":"area","title":"Daily Tokens This Cycle","itemsPath":"/daily","xPath":"/date","yPath":"/totalTokens","format":"compact","color":"#D97757"}
+  {
+    "type": "metrics",
+    "title": "Tokens This Cycle",
+    "valuePath": "/totalTokens",
+    "format": "compact",
+    "color": "#D97757"
+  },
+  {
+    "type": "metrics",
+    "title": "Estimated Cost This Cycle",
+    "valuePath": "/costUsd",
+    "decimals": 4,
+    "unit": " USD",
+    "color": "#34B399"
+  },
+  {
+    "type": "area",
+    "title": "Daily Tokens This Cycle",
+    "itemsPath": "/daily",
+    "xPath": "/date",
+    "yPath": "/totalTokens",
+    "format": "compact",
+    "color": "#D97757"
+  }
 ]
 ```
 
@@ -201,13 +229,13 @@ X-API-Key: read-only key generated under Manage Devices
 
 One call returns the current cycle and the preceding cycles, one set of totals per cycle.
 
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `appType` | String | None | **Required**. Several Agent platforms separated by commas; the first platform selects the subscription cycle |
-| `count` | Integer | 8 | How many cycles to return (including the current one), 1–52 |
-| `model` | String | None | Several model IDs separated by commas |
-| `modelsByApp` | JSON string | None | Arrays of model IDs per platform |
-| `devices` | String | `local` | The set of devices, `local` meaning this machine |
+| Parameter     | Type        | Default | Description                                                                                                  |
+| ------------- | ----------- | ------- | ------------------------------------------------------------------------------------------------------------ |
+| `appType`     | String      | None    | **Required**. Several Agent platforms separated by commas; the first platform selects the subscription cycle |
+| `count`       | Integer     | 8       | How many cycles to return (including the current one), 1–52                                                  |
+| `model`       | String      | None    | Several model IDs separated by commas                                                                        |
+| `modelsByApp` | JSON string | None    | Arrays of model IDs per platform                                                                             |
+| `devices`     | String      | `local` | The set of devices, `local` meaning this machine                                                             |
 
 ### How the Attribution Differs from the Single-Cycle Endpoint
 
@@ -231,7 +259,12 @@ The trade-off is that a boundary day is attributed as a whole to **the cycle in 
   "granularity": "day",
   "subscription": {
     "name": "Claude Max",
-    "rule": {"startDay": 4, "startTime": "19:00:00", "endDay": 4, "endTime": "19:00:00"},
+    "rule": {
+      "startDay": 4,
+      "startTime": "19:00:00",
+      "endDay": 4,
+      "endTime": "19:00:00"
+    },
     "startDate": "2025-11-02",
     "endDate": "2027-11-02"
   },
@@ -263,33 +296,33 @@ The trade-off is that a boundary day is attributed as a whole to **the cycle in 
 
 `daily` is always returned (at daily granularity), and `buckets` is grouped by `groupBy`. The two are two groupings of the same data and add up to the same totals as the top level.
 
-| Field | Type | Meaning |
-|---|---|---|
-| `scope` | string | `local` counts only the records of this machine; it becomes `multi` once paired devices are included |
-| `devices` | string[] | The set of devices actually counted in this query; this machine is recorded as `local` |
-| `appType` | string[]/null | The requested app list, null when not specified |
-| `apps` | string[] | The apps allowed to be shared that were actually included in this query |
-| `model` | string[]/null | The requested model list, null when not specified |
-| `modelsByApp` | object/null | A per-platform model map; null when that filter is not used |
-| `modelFilterBasis` | string | Always `effectivePricingModel`, i.e. `COALESCE(NULLIF(pricing_model,''), model)` |
-| `days` | integer | The number of local dates the query touches |
-| `startDate` / `endDate` | string | The first and last local dates the query touches |
-| `range.start` / `range.endExclusive` | string | RFC 3339, the effective start and end boundaries (end exclusive), each with its own UTC offset |
-| `range.timezone` | string | `server-local` |
-| `groupBy` | string | `day`, `week`, `month` |
-| `requests` | integer | The total number of requests in the range |
-| `inputTokens` | integer | Fresh input tokens, excluding the cache |
-| `outputTokens` | integer | Output tokens |
-| `cacheReadTokens` | integer | Cache-read tokens |
-| `cacheWriteTokens` | integer | Cache-write tokens |
-| `totalTokens` | integer | The sum of the four token categories |
-| `costUsd` | number | The recorded estimated cost of the selected range, in USD |
-| `currency` | string | Always `USD` |
-| `inputTokenSemantics` | string | Always `fresh` |
-| `updatedAt` | string | The time this response was generated, RFC 3339 |
-| `lastScanAt` | integer/null | The time the most recent scan finished, Unix milliseconds; null when nothing has been scanned yet |
-| `buckets` | object[] | The results aggregated by `groupBy` |
-| `daily` | object[] | Per-day results, kept compatible with earlier components |
+| Field                                | Type          | Meaning                                                                                              |
+| ------------------------------------ | ------------- | ---------------------------------------------------------------------------------------------------- |
+| `scope`                              | string        | `local` counts only the records of this machine; it becomes `multi` once paired devices are included |
+| `devices`                            | string[]      | The set of devices actually counted in this query; this machine is recorded as `local`               |
+| `appType`                            | string[]/null | The requested app list, null when not specified                                                      |
+| `apps`                               | string[]      | The apps allowed to be shared that were actually included in this query                              |
+| `model`                              | string[]/null | The requested model list, null when not specified                                                    |
+| `modelsByApp`                        | object/null   | A per-platform model map; null when that filter is not used                                          |
+| `modelFilterBasis`                   | string        | Always `effectivePricingModel`, i.e. `COALESCE(NULLIF(pricing_model,''), model)`                     |
+| `days`                               | integer       | The number of local dates the query touches                                                          |
+| `startDate` / `endDate`              | string        | The first and last local dates the query touches                                                     |
+| `range.start` / `range.endExclusive` | string        | RFC 3339, the effective start and end boundaries (end exclusive), each with its own UTC offset       |
+| `range.timezone`                     | string        | `server-local`                                                                                       |
+| `groupBy`                            | string        | `day`, `week`, `month`                                                                               |
+| `requests`                           | integer       | The total number of requests in the range                                                            |
+| `inputTokens`                        | integer       | Fresh input tokens, excluding the cache                                                              |
+| `outputTokens`                       | integer       | Output tokens                                                                                        |
+| `cacheReadTokens`                    | integer       | Cache-read tokens                                                                                    |
+| `cacheWriteTokens`                   | integer       | Cache-write tokens                                                                                   |
+| `totalTokens`                        | integer       | The sum of the four token categories                                                                 |
+| `costUsd`                            | number        | The recorded estimated cost of the selected range, in USD                                            |
+| `currency`                           | string        | Always `USD`                                                                                         |
+| `inputTokenSemantics`                | string        | Always `fresh`                                                                                       |
+| `updatedAt`                          | string        | The time this response was generated, RFC 3339                                                       |
+| `lastScanAt`                         | integer/null  | The time the most recent scan finished, Unix milliseconds; null when nothing has been scanned yet    |
+| `buckets`                            | object[]      | The results aggregated by `groupBy`                                                                  |
+| `daily`                              | object[]      | Per-day results, kept compatible with earlier components                                             |
 
 See [`examples/usage-summary.example.json`](examples/usage-summary.example.json) for the complete example.
 
@@ -310,21 +343,21 @@ Archived daily rollups only carry a date label and no original time zone, so the
 
 Error responses are JSON: `error` is a human-readable explanation, `code` is a stable error code, and `details` is included when needed.
 
-| HTTP status | `code` | Scenario |
-|---|---|---|
-| 400 | `INVALID_PARAMETERS` | Unknown, duplicate, or malformed parameters |
-| 400 | `CONFLICTING_TIME_PARAMETERS` | Conflicting time modes supplied at the same time, or only `endTime` without `startTime` |
-| 400 | `INVALID_DATE_RANGE` | The start is not earlier than the end, more than 366 days, or beyond the allowed future boundary |
-| 400 | `UNSUPPORTED_GROUP_BY` | `groupBy` is not `day`/`week`/`month` |
-| 400 | `UNSUPPORTED_APP_TYPE` | The app identifier is not supported |
-| 400 | `INVALID_LOCAL_BOUNDARY` | The local calendar midnight boundary does not exist |
-| 401 | `INVALID_API_KEY` | Missing valid read-only key or paired-device credential |
-| 403 | `APP_NOT_SHARED` | The app is not allowed to be shared |
-| 403 | `DEVICE_SCOPE_FORBIDDEN` | A paired-device credential queried a device other than `local` |
-| 404 | `SUBSCRIPTION_NOT_FOUND` | Cycle endpoints: the app has no subscription record |
-| 404 | `CYCLE_NOT_AVAILABLE` | Cycle endpoints: the cycle has not started yet or is not inside the validity period of the subscription |
-| 422 | `RANGE_PRECISION_UNAVAILABLE` | Historical rollups cannot support the requested second-level range |
-| 500 | `USAGE_QUERY_FAILED` | The statistics query failed |
+| HTTP status | `code`                        | Scenario                                                                                                |
+| ----------- | ----------------------------- | ------------------------------------------------------------------------------------------------------- |
+| 400         | `INVALID_PARAMETERS`          | Unknown, duplicate, or malformed parameters                                                             |
+| 400         | `CONFLICTING_TIME_PARAMETERS` | Conflicting time modes supplied at the same time, or only `endTime` without `startTime`                 |
+| 400         | `INVALID_DATE_RANGE`          | The start is not earlier than the end, more than 366 days, or beyond the allowed future boundary        |
+| 400         | `UNSUPPORTED_GROUP_BY`        | `groupBy` is not `day`/`week`/`month`                                                                   |
+| 400         | `UNSUPPORTED_APP_TYPE`        | The app identifier is not supported                                                                     |
+| 400         | `INVALID_LOCAL_BOUNDARY`      | The local calendar midnight boundary does not exist                                                     |
+| 401         | `INVALID_API_KEY`             | Missing valid read-only key or paired-device credential                                                 |
+| 403         | `APP_NOT_SHARED`              | The app is not allowed to be shared                                                                     |
+| 403         | `DEVICE_SCOPE_FORBIDDEN`      | A paired-device credential queried a device other than `local`                                          |
+| 404         | `SUBSCRIPTION_NOT_FOUND`      | Cycle endpoints: the app has no subscription record                                                     |
+| 404         | `CYCLE_NOT_AVAILABLE`         | Cycle endpoints: the cycle has not started yet or is not inside the validity period of the subscription |
+| 422         | `RANGE_PRECISION_UNAVAILABLE` | Historical rollups cannot support the requested second-level range                                      |
+| 500         | `USAGE_QUERY_FAILED`          | The statistics query failed                                                                             |
 
 Errors never return the real key, internal SQL, conversation content, or file system paths. Successful responses carry `Cache-Control: no-store`.
 
@@ -336,10 +369,38 @@ Set the HTTP address as above, a 60-second refresh, and put `{"X-API-Key":"your 
 
 ```json
 [
-  {"type":"metrics","title":"Claude Code Total Tokens","valuePath":"/totalTokens","format":"compact","color":"#D97757"},
-  {"type":"metrics","title":"Estimated Cost","valuePath":"/costUsd","decimals":4,"unit":" USD","color":"#34B399"},
-  {"type":"metrics","title":"Request Count","valuePath":"/requests","format":"compact","color":"#60A5FA"},
-  {"type":"area","title":"Daily Tokens","itemsPath":"/daily","xPath":"/date","yPath":"/totalTokens","format":"compact","limit":7,"color":"#D97757"}
+  {
+    "type": "metrics",
+    "title": "Claude Code Total Tokens",
+    "valuePath": "/totalTokens",
+    "format": "compact",
+    "color": "#D97757"
+  },
+  {
+    "type": "metrics",
+    "title": "Estimated Cost",
+    "valuePath": "/costUsd",
+    "decimals": 4,
+    "unit": " USD",
+    "color": "#34B399"
+  },
+  {
+    "type": "metrics",
+    "title": "Request Count",
+    "valuePath": "/requests",
+    "format": "compact",
+    "color": "#60A5FA"
+  },
+  {
+    "type": "area",
+    "title": "Daily Tokens",
+    "itemsPath": "/daily",
+    "xPath": "/date",
+    "yPath": "/totalTokens",
+    "format": "compact",
+    "limit": 7,
+    "color": "#D97757"
+  }
 ]
 ```
 
@@ -352,7 +413,13 @@ The chart title corresponds to `appType=claude` in the URL; change the title as 
 `POST /api/v1/dashboard/models`, with the read-only key in the `X-API-Key` header. Example:
 
 ```json
-{"platformCode":"codex","modelIds":["gpt-6.1-sol","gpt-6.1-terra"],"billingOffset":0,"quotaOffset":0,"devices":"local"}
+{
+  "platformCode": "codex",
+  "modelIds": ["gpt-6.1-sol", "gpt-6.1-terra"],
+  "billingOffset": 0,
+  "quotaOffset": 0,
+  "devices": "local"
+}
 ```
 
 `platformCode` determines the subscription billing period and the weekly quota rules, and it must be allowed to be shared. When a non-empty `modelIds` is given, the records of every shareable platform that match any of the model IDs take part in the total; without it, or with an empty array, only all models of that platform are queried, which matches the dashboard usage endpoint. Model names are effective pricing model IDs and are matched exactly; the array holds at most 50 entries and must not contain empty IDs or IDs with commas. The other parameters mean the same as in the dashboard usage endpoint.
@@ -364,13 +431,19 @@ It returns the dashboard usage fields such as `billingTotal`, `quotaCycles`, `se
 `POST /api/v1/dashboard/usage` and `POST /api/v1/dashboard/models` support an optional `modelPrefix` that matches the beginning of the effective pricing model ID, case-insensitively for ASCII letters. For example, to query only the MiniMax models of the mcode platform:
 
 ```json
-{"appType":"mcode","modelPrefix":"minimax","billingOffset":0,"quotaOffset":0,"devices":"local"}
+{
+  "appType": "mcode",
+  "modelPrefix": "minimax",
+  "billingOffset": 0,
+  "quotaOffset": 0,
+  "devices": "local"
+}
 ```
 
 `/dashboard/usage` only queries the platforms listed in `appType`. `/dashboard/models` uses the subscription of `platformCode` and looks for prefix-matching models across all platforms that are allowed to be shared:
 
 ```json
-{"platformCode":"mcode","modelPrefix":"minimax"}
+{ "platformCode": "mcode", "modelPrefix": "minimax" }
 ```
 
 Without `modelPrefix` the existing exact matching and the behavior of passing no model stay unchanged. The prefix must not be provided together with `model`, `modelsByApp`, or a non-empty `modelIds`; a blank prefix returns 400 and no matches return zero usage. The query performs multiple database reads, so a concurrent scan may make the result not a snapshot of a single moment.
@@ -380,7 +453,7 @@ Without `modelPrefix` the existing exact matching and the behavior of passing no
 `devices` accepts `all` (case-insensitive), meaning this machine plus every currently paired and enabled device. It applies to `summary`, `cycle`, `cycles`, and both dashboard endpoints. For example:
 
 ```json
-{"appType":"mcode","modelPrefix":"minimax","devices":"all"}
+{ "appType": "mcode", "modelPrefix": "minimax", "devices": "all" }
 ```
 
 Omitting `devices` still queries only this machine; `all` must be used on its own and cannot be mixed with `local` or device IDs. Remote devices use the most recent snapshot that was synced to this machine, and a device whose sync failed is not guaranteed to have the latest data. The `devices` field of the aggregate endpoint lists the device IDs that actually took part.
@@ -390,7 +463,12 @@ Omitting `devices` still queries only this machine; `all` must be used on its ow
 `POST /api/v1/dashboard/models` can take `modelIds` (an array of exact model IDs) and `modelPrefixes` (an array of prefixes) at the same time. A match on either condition is enough, and records matched by both are counted only once; prefixes are matched case-insensitively for ASCII letters, while exact IDs stay case-sensitive. Passing only `modelPrefixes` also works, and when both arrays are empty or omitted all models of `platformCode` are still queried.
 
 ```json
-{"platformCode":"mcode","modelIds":["exact-model-id"],"modelPrefixes":["minimax","deepseek"],"devices":"all"}
+{
+  "platformCode": "mcode",
+  "modelIds": ["exact-model-id"],
+  "modelPrefixes": ["minimax", "deepseek"],
+  "devices": "all"
+}
 ```
 
 Each array holds at most 50 entries; a prefix must not be an empty string. The original singular `modelPrefix` can still be used on its own and, to stay compatible with the old behavior, must not be passed together with a non-empty `modelIds` or `modelPrefixes`. The returned `modelIds` and `modelPrefixes` reflect the deduplicated inputs; when no model matches at all the usage is zero.

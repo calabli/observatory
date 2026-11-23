@@ -802,6 +802,17 @@ html[data-theme="dark"] #observatory-root .app-glyph img.dark-ink {
   color: var(--muted);
   text-align: right;
 }
+/* Too few measured tokens: still shown, but not drawn as a confident figure. */
+#observatory-root .model-speed-row.low-sample {
+  opacity: 0.45;
+}
+#observatory-root .model-speed-more {
+  justify-self: start;
+  margin-top: 4px;
+}
+#observatory-root .model-speed .panel-head .tabs {
+  margin-left: auto;
+}
 @media (max-width: 720px) {
   #observatory-root .model-speed-row {
     grid-template-columns: minmax(0, 1fr) auto;

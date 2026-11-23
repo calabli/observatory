@@ -27,15 +27,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/summary?days=1&appType=claude",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "summary"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
               "query": [
                 {
                   "key": "days",
@@ -95,15 +88,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/summary?days=7",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "summary"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
               "query": [
                 {
                   "key": "days",
@@ -132,15 +118,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/summary?days=30&groupBy=day",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "summary"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
               "query": [
                 {
                   "key": "days",
@@ -174,15 +153,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/cycle?appType=claude",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "cycle"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "cycle"],
               "query": [
                 {
                   "key": "appType",
@@ -231,15 +203,8 @@
                 ],
                 "url": {
                   "raw": "{{baseUrl}}/api/v1/usage/cycle?appType=codex",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "usage",
-                    "cycle"
-                  ],
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "usage", "cycle"],
                   "query": [
                     {
                       "key": "appType",
@@ -282,15 +247,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/summary?days=1&appType=claude,codex",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "summary"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
               "query": [
                 {
                   "key": "days",
@@ -345,15 +303,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/cycles?appType=claude&count=8",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "cycles"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "cycles"],
               "query": [
                 {
                   "key": "appType",
@@ -413,15 +364,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/summary?startDate={{startDate}}&endDate={{endDate}}&appType=claude&groupBy=week",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "summary"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
               "query": [
                 {
                   "key": "startDate",
@@ -464,15 +408,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/summary?startDate={{startDate}}&endDate={{endDate}}&groupBy=month",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "summary"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
               "query": [
                 {
                   "key": "startDate",
@@ -509,15 +446,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/summary?startTime={{startTime}}&endTime={{endTime}}&appType=claude&groupBy=day",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "summary"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
               "query": [
                 {
                   "key": "startTime",
@@ -560,15 +490,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/summary?startTime={{dayStart}}&endTime={{dayEnd}}&appType=claude",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "summary"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
               "query": [
                 {
                   "key": "startTime",
@@ -610,15 +533,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/summary?days=7&appType=claude&model={{model}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "summary"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
               "query": [
                 {
                   "key": "days",
@@ -656,15 +572,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/summary?startDate={{startDate}}&endDate={{endDate}}&appType=claude&model={{model}}&groupBy=week",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "summary"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
               "query": [
                 {
                   "key": "startDate",
@@ -709,15 +618,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/summary?days=7&appType=claude-desktop",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "summary"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
               "query": [
                 {
                   "key": "days",
@@ -750,15 +652,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/cycle?appType=claude&offset=-1",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "cycle"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "cycle"],
               "query": [
                 {
                   "key": "appType",
@@ -792,15 +687,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/summary?days=1&appType=claude,codex&model={{models}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "summary"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
               "query": [
                 {
                   "key": "days",
@@ -838,15 +726,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/summary?days=7&appType=claude&devices=local",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "summary"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
               "query": [
                 {
                   "key": "days",
@@ -884,15 +765,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/summary?days=1&appType=claude,codex&modelsByApp={{modelsByApp}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "summary"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
               "query": [
                 {
                   "key": "days",
@@ -930,15 +804,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/cycle?appType=claude&groupBy=week",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "cycle"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "cycle"],
               "query": [
                 {
                   "key": "appType",
@@ -977,15 +844,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/summary?days=999",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "summary"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
               "query": [
                 {
                   "key": "days",
@@ -1037,15 +897,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/summary?days=7&unknown=1",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "summary"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
               "query": [
                 {
                   "key": "days",
@@ -1101,15 +954,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/summary?days=7&days=8",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "summary"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
               "query": [
                 {
                   "key": "days",
@@ -1165,15 +1011,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/summary?days=7&groupBy=year",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "summary"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
               "query": [
                 {
                   "key": "days",
@@ -1229,15 +1068,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/summary?days=7&startDate={{startDate}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "summary"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
               "query": [
                 {
                   "key": "days",
@@ -1293,15 +1125,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/summary?startTime={{startTimeNaive}}&endTime={{endTimeNaive}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "summary"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
               "query": [
                 {
                   "key": "startTime",
@@ -1358,15 +1183,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/summary?days=7&appType=not-an-app",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "summary"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
               "query": [
                 {
                   "key": "days",
@@ -1422,15 +1240,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/summary?days=7&appType=hermes",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "summary"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
               "query": [
                 {
                   "key": "days",
@@ -1486,15 +1297,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/summary?startTime={{archivedStartTime}}&endTime={{archivedEndTime}}&appType=claude",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "summary"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
               "query": [
                 {
                   "key": "startTime",
@@ -1550,15 +1354,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/summary?days=7",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "summary"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
               "query": [
                 {
                   "key": "days",
@@ -1610,15 +1407,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/cycle?appType=codex",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "cycle"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "cycle"],
               "query": [
                 {
                   "key": "appType",
@@ -1648,15 +1438,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/cycle",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "cycle"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "cycle"],
               "query": []
             },
             "description": "The cycle endpoints require an Agent platform."
@@ -1681,15 +1464,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/cycle?appType=claude&offset=1",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "cycle"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "cycle"],
               "query": [
                 {
                   "key": "appType",
@@ -1722,15 +1498,8 @@
                 ],
                 "url": {
                   "raw": "{{baseUrl}}/api/v1/usage/cycle?appType=claude&offset=1",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "usage",
-                    "cycle"
-                  ],
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "usage", "cycle"],
                   "query": [
                     {
                       "key": "appType",
@@ -1777,15 +1546,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/summary?days=7&appType=claude&devices=not-a-paired-device",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "summary"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
               "query": [
                 {
                   "key": "days",
@@ -1823,15 +1585,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/summary?days=7&appType=claude,",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "summary"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
               "query": [
                 {
                   "key": "days",
@@ -1865,15 +1620,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/summary?days=1&modelsByApp={{modelsByApp}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "summary"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
               "query": [
                 {
                   "key": "days",
@@ -1907,15 +1655,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/summary?days=1&appType=claude&model={{model}}&modelsByApp={{modelsByApp}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "summary"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
               "query": [
                 {
                   "key": "days",
@@ -1957,15 +1698,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/summary?days=1&appType=claude&modelsByApp={\"codex\":[\"m\"]}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "summary"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "summary"],
               "query": [
                 {
                   "key": "days",
@@ -2003,15 +1737,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/cycles?appType=claude&count=0",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "cycles"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "cycles"],
               "query": [
                 {
                   "key": "appType",
@@ -2045,15 +1772,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/usage/cycles?appType=codex",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "usage",
-                "cycles"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "usage", "cycles"],
               "query": [
                 {
                   "key": "appType",

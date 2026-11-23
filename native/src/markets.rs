@@ -290,6 +290,9 @@ pub struct StockQuote {
     pub volume: Option<u64>,
     /// Total market capitalization in local currency units (e.g. USD / CNY / HKD).
     pub market_cap: Option<f64>,
+    /// Exact traded value today in local currency units, when the feed reports it
+    /// (Tencent: A-shares, Hong Kong, US). `None` means the UI may estimate it.
+    pub turnover: Option<f64>,
     pub extended_price: Option<f64>,
     pub extended_change_percent: Option<f64>,
     pub extended_label: Option<String>,
@@ -503,6 +506,28 @@ fn split_gbk_tilde(raw: &[u8]) -> Vec<&[u8]> {
     parts
 }
 
+/// Today's traded value from a Tencent quote, in local currency units.
+/// A-shares put the exact yuan amount third in field 35 (`price/volume/amount`) and
+/// the same amount in 10,000-yuan units in field 37; Hong Kong and US quotes carry
+/// the amount in field 37 directly.
+fn tencent_turnover(field35: &str, field37: &str, market: &str) -> Option<f64> {
+    let positive = |v: f64| (v > 0.0).then_some(v);
+    if market == "CN" {
+        field35
+            .split('/')
+            .nth(2)
+            .and_then(parse_f64_opt)
+            .and_then(positive)
+            .or_else(|| {
+                parse_f64_opt(field37)
+                    .and_then(positive)
+                    .map(|wan| wan * 1e4)
+            })
+    } else {
+        parse_f64_opt(field37).and_then(positive)
+    }
+}
+
 fn parse_tencent_batch_line(
     line: &[u8],
     code_to_item: &HashMap<String, WatchItem>,
@@ -559,6 +584,7 @@ fn parse_tencent_batch_line(
     let market_cap = parse_f64_opt(get_ascii(45))
         .filter(|v| *v > 0.0)
         .map(|yi| yi * 1e8);
+    let turnover = tencent_turnover(get_ascii(35), get_ascii(37), &market);
 
     let exchange = if code.starts_with("sh") {
         "SSE"
@@ -599,6 +625,7 @@ fn parse_tencent_batch_line(
         low,
         volume,
         market_cap,
+        turnover,
         extended_price: None,
         extended_change_percent: None,
         extended_label: None,
@@ -786,7 +813,7 @@ async fn fetch_tencent_quote(
         }
     });
     let quote_time = parse_tencent_timestamp(get_str(30));
-    let change = parse_f64_opt(get_str(31)).or_else(|| match (price, prev_close) {
+    let change = parse_f64_opt(get_str(31)).or(match (price, prev_close) {
         (Some(p), Some(pc)) => Some(p - pc),
         _ => None,
     });
@@ -799,6 +826,7 @@ async fn fetch_tencent_quote(
     let market_cap = parse_f64_opt(get_str(45))
         .filter(|v| *v > 0.0)
         .map(|yi| yi * 1e8);
+    let turnover = tencent_turnover(get_str(35), get_str(37), &market);
 
     let date_str = entry["data"]["date"].as_str().unwrap_or("");
     let raw_pts = entry["data"]["data"]
@@ -835,6 +863,7 @@ async fn fetch_tencent_quote(
         low,
         volume,
         market_cap,
+        turnover,
         extended_price: None,
         extended_change_percent: None,
         extended_label: None,
@@ -1174,6 +1203,7 @@ async fn fetch_yahoo_quote(
             .filter(|v| v.is_finite() && *v > 0.0),
         volume: meta["regularMarketVolume"].as_u64(),
         market_cap: None,
+        turnover: None,
         extended_price,
         extended_change_percent,
         extended_label,
@@ -1333,6 +1363,7 @@ async fn fetch_single_routed(
                 low: None,
                 volume: None,
                 market_cap: None,
+                turnover: None,
                 extended_price: None,
                 extended_change_percent: None,
                 extended_label: None,
@@ -1420,6 +1451,7 @@ fn error_quote(item: &WatchItem, err: &str) -> StockQuote {
         low: None,
         volume: None,
         market_cap: None,
+        turnover: None,
         extended_price: None,
         extended_change_percent: None,
         extended_label: None,
@@ -1699,6 +1731,25 @@ mod tests {
         assert!((q.price.unwrap() - 125.53).abs() < 1e-6);
         assert!((q.change_percent.unwrap() - (-14.01)).abs() < 1e-6);
         assert!((q.market_cap.unwrap() - 3_031_172_910_000.0).abs() < 1e5);
+    }
+
+    #[test]
+    fn tencent_turnover_reads_exact_amounts_per_market() {
+        // Live samples: Moutai (CN), Tencent (HK), NVIDIA (US).
+        assert_eq!(
+            tencent_turnover("1439.00/56976/8223838967", "822384", "CN"),
+            Some(8_223_838_967.0)
+        );
+        assert_eq!(tencent_turnover("", "822384", "CN"), Some(8_223_840_000.0));
+        assert_eq!(
+            tencent_turnover("344.000", "11960782218.610", "HK"),
+            Some(11_960_782_218.61)
+        );
+        assert_eq!(
+            tencent_turnover("USD", "108334123344", "US"),
+            Some(108_334_123_344.0)
+        );
+        assert_eq!(tencent_turnover("", "0", "US"), None);
     }
 
     #[test]

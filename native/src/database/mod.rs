@@ -156,8 +156,11 @@ impl Database {
         // the full amount (the read connection is configured the same way).
         // journal_size_limit lets the WAL shrink back after a checkpoint instead of lingering at the high
         // water mark left by a large transaction.
+        // auto_vacuum=INCREMENTAL only takes effect on a new, empty file; existing files are
+        // switched once by `maintenance_checkpoint`.
         conn.execute_batch(
-            "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;
+            "PRAGMA auto_vacuum=INCREMENTAL;
+             PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;
              PRAGMA cache_size=-65536; PRAGMA journal_size_limit=67108864;
              PRAGMA analysis_limit=1000;",
         )?;
@@ -338,9 +341,34 @@ impl Database {
         let Ok(conn) = self.conn.lock() else {
             return;
         };
+        if let Err(e) = Self::reclaim_free_pages(&conn) {
+            log::warn!("数据库维护（回收空闲页）失败: {e}");
+        }
         if let Err(e) = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE); PRAGMA optimize;") {
             log::warn!("数据库维护（checkpoint/optimize）失败: {e}");
         }
+    }
+
+    /// Give pages freed by pruning (detail rollups, the activity log) back to the file system.
+    /// A database created before auto-vacuum was enabled is rebuilt once with `VACUUM` to switch
+    /// it to incremental mode; after that each run only releases the free list, which is cheap.
+    fn reclaim_free_pages(conn: &Connection) -> Result<(), AppError> {
+        /// Below this many free pages (about 1 MB at 4 KB pages) there is nothing worth doing.
+        const MIN_FREE_PAGES: i64 = 256;
+        let mode: i64 = conn.query_row("PRAGMA auto_vacuum", [], |r| r.get(0))?;
+        let free: i64 = conn.query_row("PRAGMA freelist_count", [], |r| r.get(0))?;
+        if mode != 2 {
+            // 0 = none, 1 = full; switching needs a rebuild, done once.
+            conn.execute_batch("PRAGMA auto_vacuum=INCREMENTAL; VACUUM;")?;
+            log::info!("数据库已切换为增量回收模式，回收 {free} 个空闲页");
+        } else if free >= MIN_FREE_PAGES {
+            // The pragma frees one page per step, so it must be stepped to the end
+            // (`execute_batch` would stop after the first row).
+            let mut stmt = conn.prepare("PRAGMA incremental_vacuum")?;
+            let mut rows = stmt.query([])?;
+            while rows.next()?.is_some() {}
+        }
+        Ok(())
     }
 
     /// Run a group of read-only queries under the same connection lock.
@@ -472,6 +500,43 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An old file without auto-vacuum is switched once and its free pages are returned;
+    /// afterwards pruning frees pages again and the incremental pass releases them.
+    #[test]
+    fn maintenance_reclaims_free_pages_and_switches_old_files() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = temp.path().join("old.db");
+        let fill = |conn: &Connection| {
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS filler(x BLOB);
+                 WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 2000)
+                 INSERT INTO filler SELECT zeroblob(4000) FROM n;
+                 DELETE FROM filler;",
+            )
+            .unwrap();
+        };
+        let pragma = |conn: &Connection, name: &str| -> i64 {
+            conn.query_row(&format!("PRAGMA {name}"), [], |r| r.get(0))
+                .unwrap()
+        };
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch("PRAGMA auto_vacuum=NONE;").unwrap();
+            fill(&conn);
+            assert_eq!(pragma(&conn, "auto_vacuum"), 0);
+            assert!(pragma(&conn, "freelist_count") > 256);
+        }
+        let conn = Connection::open(&path).unwrap();
+        Database::reclaim_free_pages(&conn).unwrap();
+        assert_eq!(pragma(&conn, "auto_vacuum"), 2);
+        assert_eq!(pragma(&conn, "freelist_count"), 0);
+
+        fill(&conn);
+        assert!(pragma(&conn, "freelist_count") > 256);
+        Database::reclaim_free_pages(&conn).unwrap();
+        assert_eq!(pragma(&conn, "freelist_count"), 0);
+    }
 
     /// The model id is a case-insensitive key. Databases created before that
     /// were built with a case-sensitive primary key and can hold several rows

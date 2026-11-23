@@ -291,11 +291,7 @@ pub fn query_insights_on_conn(
     let context_sum = summary.total_input_tokens
         + summary.total_cache_read_tokens
         + summary.total_cache_creation_tokens;
-    let avg_context_tokens = if summary.total_requests > 0 {
-        context_sum / summary.total_requests
-    } else {
-        0
-    };
+    let avg_context_tokens = context_sum.checked_div(summary.total_requests).unwrap_or(0);
     let cache_savings = CacheSavings {
         actual_cost_usd,
         cache_read_cost_usd,
@@ -567,7 +563,7 @@ pub fn query_insights_on_conn(
 
     // Stability: top 6 models by request count that have either TTFT or speed data.
     let mut stability_items: Vec<(String, ModelSamples)> = model_samples.into_iter().collect();
-    stability_items.sort_by(|a, b| b.1.requests.cmp(&a.1.requests));
+    stability_items.sort_by_key(|item| std::cmp::Reverse(item.1.requests));
     let mut stability = Vec::new();
     for (model, mut samples) in stability_items {
         let has_ttft = !samples.exact_ttft.is_empty() || !samples.est_ttft.is_empty();

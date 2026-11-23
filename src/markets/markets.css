@@ -1200,3 +1200,11 @@
   z-index: 10010;
   box-shadow: 0 22px 60px rgba(0, 0, 0, 0.48);
 }
+
+/* Last trade older than STALE_AFTER_DAYS: likely suspended or delisted. */
+#observatory-root .markets-hm-tile.stale {
+  background: var(--soft);
+  opacity: 0.5;
+  outline: 1px dashed var(--muted);
+  outline-offset: -2px;
+}

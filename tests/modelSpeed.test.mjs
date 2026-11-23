@@ -49,12 +49,25 @@ test("an estimate alone is marked as estimated", () => {
 });
 
 test("models without speed data are dropped and the rest sort fastest first", () => {
-  const rows = modelSpeeds([
-    { ...base, model: "slow", speedOutputTokens: 100, speedGenerationMs: 5000 },
-    { ...base, model: "none" },
-    { ...base, model: "zero", speedOutputTokens: 100, speedGenerationMs: 0 },
-    { ...base, model: "fast", speedOutputTokens: 900, speedGenerationMs: 3000 },
-  ]);
+  const rows = modelSpeeds(
+    [
+      {
+        ...base,
+        model: "slow",
+        speedOutputTokens: 100,
+        speedGenerationMs: 5000,
+      },
+      { ...base, model: "none" },
+      { ...base, model: "zero", speedOutputTokens: 100, speedGenerationMs: 0 },
+      {
+        ...base,
+        model: "fast",
+        speedOutputTokens: 900,
+        speedGenerationMs: 3000,
+      },
+    ],
+    "speed",
+  );
   assert.deepEqual(
     rows.map((r) => r.model),
     ["fast", "slow"],
@@ -68,5 +81,52 @@ test("the list is capped", () => {
     speedOutputTokens: 100 + i,
     speedGenerationMs: 1000,
   }));
-  assert.equal(modelSpeeds(many, 5).length, 5);
+  assert.equal(modelSpeeds(many, "speed", 5).length, 5);
+  assert.equal(modelSpeeds(many).length, 12);
+});
+
+test("usage order puts busy models first and sparse ones last", () => {
+  const rows = modelSpeeds([
+    {
+      ...base,
+      model: "rare-fast",
+      requestCount: 3,
+      speedOutputTokens: 900,
+      speedGenerationMs: 1000,
+    },
+    {
+      ...base,
+      model: "busy",
+      requestCount: 900,
+      speedOutputTokens: 90000,
+      speedGenerationMs: 1800000,
+    },
+    {
+      ...base,
+      model: "mid",
+      requestCount: 50,
+      speedOutputTokens: 20000,
+      speedGenerationMs: 200000,
+    },
+  ]);
+  assert.deepEqual(
+    rows.map((r) => r.model),
+    ["busy", "mid", "rare-fast"],
+  );
+  assert.equal(rows[2].lowSample, true);
+  assert.equal(rows[0].lowSample, false);
+  // Sorting by speed still keeps the sparse row last.
+  assert.deepEqual(
+    modelSpeeds(
+      [rows[0], rows[1], rows[2]].map((r) => ({
+        ...base,
+        model: r.model,
+        requestCount: r.requests,
+        speedOutputTokens: r.basisTokens,
+        speedGenerationMs: (r.basisTokens * 1000) / r.speed,
+      })),
+      "speed",
+    ).map((r) => r.model),
+    ["mid", "busy", "rare-fast"],
+  );
 });

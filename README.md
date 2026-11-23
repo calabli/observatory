@@ -20,12 +20,12 @@ Built with Tauri 2, React, TypeScript, Rust and SQLite. Releases are published f
 
 ## Documentation
 
-| Document | Contents |
-| --- | --- |
-| [docs/product.md](docs/product.md) | Product guide: pages, data sources, metric definitions, multi-device rules, limits, roadmap |
-| [docs/architecture.md](docs/architecture.md) | Technical architecture: processes, engine, data model, collection pipeline, LAN service, testing, release |
-| [docs/read-only-usage-http-api.md](docs/read-only-usage-http-api.md) | HTTP API reference, with a Postman collection in `docs/examples/` |
-| [docs/subscriptions-and-quota.md](docs/subscriptions-and-quota.md) | How subscription cycles and quota queries work |
+| Document                                                             | Contents                                                                                                  |
+| -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| [docs/product.md](docs/product.md)                                   | Product guide: pages, data sources, metric definitions, multi-device rules, limits, roadmap               |
+| [docs/architecture.md](docs/architecture.md)                         | Technical architecture: processes, engine, data model, collection pipeline, LAN service, testing, release |
+| [docs/read-only-usage-http-api.md](docs/read-only-usage-http-api.md) | HTTP API reference, with a Postman collection in `docs/examples/`                                         |
+| [docs/subscriptions-and-quota.md](docs/subscriptions-and-quota.md)   | How subscription cycles and quota queries work                                                            |
 
 ## Development
 

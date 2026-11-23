@@ -132,7 +132,11 @@ fn try_record(db: &Database, event: &Event) -> Result<(), AppError> {
                 [now - RETENTION_DAYS * 86_400_000],
             )?;
         }
-        if event.kind == "api_out" && API_OUT_WRITES.fetch_add(1, Ordering::Relaxed) % 25 == 0 {
+        if event.kind == "api_out"
+            && API_OUT_WRITES
+                .fetch_add(1, Ordering::Relaxed)
+                .is_multiple_of(25)
+        {
             conn.execute(
                 "DELETE FROM activity_log
                  WHERE kind = 'api_out'
@@ -592,10 +596,8 @@ pub fn record_api_out(
             let (text, bytes, trunc) = format_json_preview(val, response_limit);
             let count = if let Some(arr) = val.as_array() {
                 Some(arr.len())
-            } else if let Some(pts) = val.get("points").and_then(Value::as_array) {
-                Some(pts.len())
             } else {
-                None
+                val.get("points").and_then(Value::as_array).map(Vec::len)
             };
             (Some(text), bytes, trunc, count)
         }
