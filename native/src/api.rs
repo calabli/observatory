@@ -671,6 +671,55 @@ impl UsageBackend {
                     .await
                     .map_err(|e| AppError::Message(e.to_string()))
             }
+            "markets_config_get" => {
+                self.call_blocking(move |db| to_json(crate::markets::load_config(db)?))
+                    .await
+            }
+            "markets_config_save" => {
+                let cfg: crate::markets::MarketsConfig = serde_json::from_value(args)
+                    .map_err(|e| AppError::InvalidInput(e.to_string()))?;
+                self.call_blocking(move |db| {
+                    crate::markets::save_config(db, &cfg)?;
+                    to_json(cfg)
+                })
+                .await
+            }
+            "markets_quotes" => {
+                let items: Vec<crate::markets::WatchItem> = args
+                    .get("items")
+                    .cloned()
+                    .ok_or_else(|| AppError::InvalidInput("items is required".into()))
+                    .and_then(|v| {
+                        serde_json::from_value(v)
+                            .map_err(|e| AppError::InvalidInput(e.to_string()))
+                    })?;
+                let skip_sparkline = args
+                    .get("skipSparkline")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                to_json(crate::markets::fetch_quotes(items, skip_sparkline).await)
+            }
+            "markets_chart" => {
+                let symbol = args
+                    .get("symbol")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                let range = args
+                    .get("range")
+                    .and_then(Value::as_str)
+                    .unwrap_or("1d")
+                    .to_string();
+                to_json(crate::markets::fetch_chart(&symbol, &range).await?)
+            }
+            "markets_search" => {
+                let query = args
+                    .get("query")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                to_json(crate::markets::search_symbols(&query).await)
+            }
             "status" => self.call_blocking(move |db| Self::status_impl(db)).await,
             "preferences_save" => {
                 let interval = args

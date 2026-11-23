@@ -27,6 +27,7 @@ import {
   ShieldCheck,
   Sparkles,
   Sun,
+  TrendingUp,
   Wifi,
   X,
   type LucideIcon,
@@ -50,6 +51,7 @@ import {
 import { UsageWorkspace } from "./usage/UsageWorkspace";
 import { useLocalDayKey } from "./usage/useLocalDayKey";
 import { InsightsWorkspace } from "./insights/InsightsWorkspace";
+import { MarketsWorkspace } from "./markets/MarketsWorkspace";
 import { SubscriptionWorkspace } from "./subscriptions/SubscriptionWorkspace";
 import { DeviceManager } from "./usage/DeviceManager";
 import { TrayPanel } from "./tray/TrayPanel";
@@ -74,6 +76,7 @@ type Page =
   | "usage"
   | "insights"
   | "subscriptions"
+  | "markets"
   | "network"
   | "devices"
   | "activity";
@@ -104,6 +107,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     items: [
       { id: "devices", label: "多设备", icon: Monitor },
       { id: "network", label: "网络诊断", icon: Network },
+      { id: "markets", label: "市场行情", icon: TrendingUp },
     ],
   },
   {
@@ -129,6 +133,10 @@ const titles: Record<Page, [string, string]> = {
   subscriptions: [
     "订阅与额度",
     "管理订阅和额度周期，查看所选时间范围内的用量。",
+  ],
+  markets: [
+    "市场行情",
+    "美股、台股、A 股、港股与全球核心指数免费实时盯盘（分市场直连最高时效免费接口）。",
   ],
   activity: [
     "活动日志",
@@ -873,6 +881,7 @@ function App() {
         {page !== "network" &&
           page !== "subscriptions" &&
           page !== "insights" &&
+          page !== "markets" &&
           page !== "activity" && (
             <div className="context-bar">
               {page === "usage" || page === "devices" ? (
@@ -954,6 +963,8 @@ function App() {
           />
         ) : page === "subscriptions" ? (
           <SubscriptionWorkspace />
+        ) : page === "markets" ? (
+          <MarketsWorkspace />
         ) : page === "network" ? (
           <NetworkOverview />
         ) : page === "activity" ? (

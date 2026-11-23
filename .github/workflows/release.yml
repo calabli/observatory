@@ -30,9 +30,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NOTES: |
-            - Fixed stale relative time ranges ("Today", "Last 7/14/30 days", "This month") across AI Usage, Insights, Overview, Tray Panel, and Subscriptions when leaving the app running past midnight or waking from sleep: added a zero-polling `useLocalDayKey` tracker that advances automatically at local midnight, on window focus/visibility restore, and on manual refresh.
-            - Fixed Insights queries and session trace modals freezing `endDate` at initial page mount time, so newly scanned requests are always included immediately on refresh.
-            - Updated README, product guide, and architecture documentation for Insights, Agent call-chain waterfalls, HTML reports, and v0.1.7+ optimizations.
+            - Added a new **Markets (市场行情)** page with zero-API-key, zero-registration live multi-market quotes routed per market for maximum freshness: Tencent Finance real-time + batch quotes (1–3s lag with live market cap) for A-shares, Hong Kong, and US universes, official TWSE/TPEx MIS batch real-time (5s lag) for Taiwan equities, and Yahoo Finance v8 Chart (with US pre/post-market and multi-range intraday/historical charts).
+            - Added full-market Finviz-style Squarified Treemap heatmaps covering 1,058 live-verified global companies across five built-in sector-grouped universes: **S&P 500 (503)**, **CSI 300 (300)**, **TWSE Top 150**, **HKEX Core (105)**, and **Global AI Supply Chain (49)**, alongside a customizable personal watchlist with one-click starring and global symbol search.
+            - Added native **Fullscreen Heatmap** mode (`F` / `Esc`) with dynamic viewport-resolution layout, click-to-zoom sector headers, live market breadth counters, market-cap / turnover / move / equal weighting, in-pool filtering, and a floating corner live chart drawer.
+            - Fixed a flaky parallel Rust database test race by serializing `opening_an_old_database_folds_the_case_duplicate_pricing_rows`.
 
             The macOS build is not notarized.
         run: |
