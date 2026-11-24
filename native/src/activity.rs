@@ -579,6 +579,7 @@ pub fn api_out_label(op: &str) -> Option<&'static str> {
         "markets_chart" => "拉取行情走势图",
         "markets_search" => "搜索股票代码",
         "markets_fx" => "拉取汇率",
+        "benchmarks_fetch" => "拉取模型评比榜单",
         "modelsdev_fetch" => "拉取 models.dev 价格",
         "network_international_ipv4" => "查询国际出口 IP",
         _ => return None,
@@ -648,7 +649,10 @@ pub fn record_api_out(
             let count = if let Some(arr) = val.as_array() {
                 Some(arr.len())
             } else {
-                val.get("points").and_then(Value::as_array).map(Vec::len)
+                val.get("points")
+                    .or_else(|| val.get("models"))
+                    .and_then(Value::as_array)
+                    .map(Vec::len)
             };
             (Some(text), bytes, trunc, count)
         }
@@ -719,6 +723,7 @@ pub fn action_label(op: &str, args: &Value) -> Option<&'static str> {
         "pricing_delete" => "删除模型价格",
         "modelsdev_config_save" => "保存 models.dev 同步设置",
         "markets_config_save" => "保存市场行情配置",
+        "benchmarks_config_save" => "保存模型榜单配置",
         "preferences_save" => "修改刷新间隔",
         "sources_save" => "修改数据来源",
         "subscriptions_save" => "保存订阅与额度",

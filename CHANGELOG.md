@@ -6,6 +6,14 @@ rename it to the new version (`## [x.y.z] - YYYY-MM-DD`) before tagging.
 
 ## Unreleased
 
+## [0.1.16] - 2026-11-24
+
+- Benchmarks: added a new "模型榜单" (Model Benchmarks) page powered by Artificial Analysis API v2 (multi-page ingestion, local SQLite caching, outbound HTTP logging to Activity Log, masked API key storage, 9-dimension rankings, interactive Pareto frontier scatter charts for price & speed, full effort-tier family grouping & comparison for Max/Xhigh/High/Medium/Low variants, and side-by-side comparison against your local measured speed and spending).
+- Markets: Taiwan pools (`TWSE 150`) now automatically fill pre-market / off-hours / MIS-gap quotes via a single cached TWSE OpenAPI `STOCK_DAY_ALL` request (with exact closing prices, change %, volume, and TWD turnover) and use larger MIS batches (50 per call, concurrency 2 with retry), preventing 140+ Taiwan stocks from blanking out before the 09:00 market open.
+- Markets: stock pools (both built-in universes and custom pools) can now be edited directly — search and add companies into any sub-sector, remove companies, move a company between sectors, restore removed defaults, or create/rename/delete custom pools, with edits saved locally as deltas so future universe refreshes remain intact.
+- Markets fullscreen: added the full sub-sector / market filter bar and pool editing controls inside fullscreen mode, measured real canvas height cleanly below the top bars, and made the corner K-line chart drawer easy to dismiss via a pinned top-right "关闭" button, clicking the selected tile again, switching pools/sectors, or pressing Esc.
+- Markets pools: audited and corrected sector classifications across CSI 300 (95 stocks fixed, e.g. East Money moved to 银行与金融, Cambrian/Innolight/GigaDevice to 电子与半导体, telecom/software split into 通信与软件, solar/battery/power equipment unified into 新能源与电气), TWSE Top 150, and HKEX Core 105.
+
 ## [0.1.15] - 2026-11-24
 
 - Markets: Tencent's batch quote service and its per-stock intraday service now back off independently. A blocked intraday service had paused the working batch service too, so every quote fell back to Yahoo and lost its market cap and traded value (shown as "—", with equal-sized heat-map tiles).

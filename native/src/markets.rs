@@ -190,6 +190,44 @@ pub struct WatchItem {
     pub name: String,
     /// `"US"` | `"TW"` | `"CN"` | `"HK"` | `"GLOBAL"`
     pub market: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sector: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cap_hint: Option<f64>,
+}
+
+impl WatchItem {
+    fn simple(symbol: &str, name: &str, market: &str) -> Self {
+        Self {
+            symbol: symbol.into(),
+            name: name.into(),
+            market: market.into(),
+            sector: None,
+            cap_hint: None,
+        }
+    }
+}
+
+/// Delta edits applied on top of a built-in preset pool so future universe refreshes remain intact.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PoolEdit {
+    #[serde(default)]
+    pub added: Vec<WatchItem>,
+    #[serde(default)]
+    pub removed: Vec<String>,
+}
+
+/// A user-created custom stock pool with sector-tagged constituents.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomPool {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub items: Vec<WatchItem>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -201,127 +239,45 @@ pub struct MarketsConfig {
     pub color_scheme: String,
     /// `5` | `15` | `30` | `0` (manual)
     pub refresh_sec: u64,
+    #[serde(default)]
+    pub pool_edits: HashMap<String, PoolEdit>,
+    #[serde(default)]
+    pub custom_pools: Vec<CustomPool>,
 }
 
 impl Default for MarketsConfig {
     fn default() -> Self {
         Self {
             indices: vec![
-                WatchItem {
-                    symbol: "^GSPC".into(),
-                    name: "标普500".into(),
-                    market: "US".into(),
-                },
-                WatchItem {
-                    symbol: "^IXIC".into(),
-                    name: "纳斯达克".into(),
-                    market: "US".into(),
-                },
-                WatchItem {
-                    symbol: "^DJI".into(),
-                    name: "道琼斯".into(),
-                    market: "US".into(),
-                },
-                WatchItem {
-                    symbol: "000001.SS".into(),
-                    name: "上证指数".into(),
-                    market: "CN".into(),
-                },
-                WatchItem {
-                    symbol: "000300.SS".into(),
-                    name: "沪深300".into(),
-                    market: "CN".into(),
-                },
-                WatchItem {
-                    symbol: "^HSI".into(),
-                    name: "恒生指数".into(),
-                    market: "HK".into(),
-                },
-                WatchItem {
-                    symbol: "^TWII".into(),
-                    name: "台湾加权".into(),
-                    market: "TW".into(),
-                },
+                WatchItem::simple("^GSPC", "标普500", "US"),
+                WatchItem::simple("^IXIC", "纳斯达克", "US"),
+                WatchItem::simple("^DJI", "道琼斯", "US"),
+                WatchItem::simple("000001.SS", "上证指数", "CN"),
+                WatchItem::simple("000300.SS", "沪深300", "CN"),
+                WatchItem::simple("^HSI", "恒生指数", "HK"),
+                WatchItem::simple("^TWII", "台湾加权", "TW"),
             ],
             watchlist: vec![
-                WatchItem {
-                    symbol: "NVDA".into(),
-                    name: "英伟达".into(),
-                    market: "US".into(),
-                },
-                WatchItem {
-                    symbol: "AAPL".into(),
-                    name: "苹果".into(),
-                    market: "US".into(),
-                },
-                WatchItem {
-                    symbol: "MSFT".into(),
-                    name: "微软".into(),
-                    market: "US".into(),
-                },
-                WatchItem {
-                    symbol: "TSLA".into(),
-                    name: "特斯拉".into(),
-                    market: "US".into(),
-                },
-                WatchItem {
-                    symbol: "GOOGL".into(),
-                    name: "谷歌".into(),
-                    market: "US".into(),
-                },
-                WatchItem {
-                    symbol: "AMZN".into(),
-                    name: "亚马逊".into(),
-                    market: "US".into(),
-                },
-                WatchItem {
-                    symbol: "2330.TW".into(),
-                    name: "台积电".into(),
-                    market: "TW".into(),
-                },
-                WatchItem {
-                    symbol: "2317.TW".into(),
-                    name: "鸿海".into(),
-                    market: "TW".into(),
-                },
-                WatchItem {
-                    symbol: "2454.TW".into(),
-                    name: "联发科".into(),
-                    market: "TW".into(),
-                },
-                WatchItem {
-                    symbol: "600519.SS".into(),
-                    name: "贵州茅台".into(),
-                    market: "CN".into(),
-                },
-                WatchItem {
-                    symbol: "300750.SZ".into(),
-                    name: "宁德时代".into(),
-                    market: "CN".into(),
-                },
-                WatchItem {
-                    symbol: "002594.SZ".into(),
-                    name: "比亚迪".into(),
-                    market: "CN".into(),
-                },
-                WatchItem {
-                    symbol: "0700.HK".into(),
-                    name: "腾讯控股".into(),
-                    market: "HK".into(),
-                },
-                WatchItem {
-                    symbol: "9988.HK".into(),
-                    name: "阿里巴巴".into(),
-                    market: "HK".into(),
-                },
-                WatchItem {
-                    symbol: "3690.HK".into(),
-                    name: "美团".into(),
-                    market: "HK".into(),
-                },
+                WatchItem::simple("NVDA", "英伟达", "US"),
+                WatchItem::simple("AAPL", "苹果", "US"),
+                WatchItem::simple("MSFT", "微软", "US"),
+                WatchItem::simple("TSLA", "特斯拉", "US"),
+                WatchItem::simple("GOOGL", "谷歌", "US"),
+                WatchItem::simple("AMZN", "亚马逊", "US"),
+                WatchItem::simple("2330.TW", "台积电", "TW"),
+                WatchItem::simple("2317.TW", "鸿海", "TW"),
+                WatchItem::simple("2454.TW", "联发科", "TW"),
+                WatchItem::simple("600519.SS", "贵州茅台", "CN"),
+                WatchItem::simple("300750.SZ", "宁德时代", "CN"),
+                WatchItem::simple("002594.SZ", "比亚迪", "CN"),
+                WatchItem::simple("0700.HK", "腾讯控股", "HK"),
+                WatchItem::simple("9988.HK", "阿里巴巴", "HK"),
+                WatchItem::simple("3690.HK", "美团", "HK"),
             ],
             color_scheme: "cn".into(),
             refresh_sec: 15,
+            pool_edits: HashMap::new(),
+            custom_pools: Vec::new(),
         }
     }
 }
@@ -980,6 +936,7 @@ async fn fetch_tencent_quote(
 // 2. Official TWSE / TPEx MIS real-time batch API (Taiwan stocks, ~5s lag)
 // ---------------------------------------------------------------------------
 
+#[derive(Clone)]
 struct TwseSnapshot {
     name: Option<String>,
     price: Option<f64>,
@@ -988,18 +945,29 @@ struct TwseSnapshot {
     high: Option<f64>,
     low: Option<f64>,
     volume: Option<u64>,
+    turnover: Option<f64>,
     quote_time: Option<i64>,
     exchange: String,
+    from_daily: bool,
 }
 
 async fn fetch_twse_batch(channels: &[(String, String)]) -> HashMap<String, TwseSnapshot> {
     if channels.is_empty() {
         return HashMap::new();
     }
-    let chunks: Vec<Vec<(String, String)>> = channels.chunks(25).map(|c| c.to_vec()).collect();
+    // TWSE MIS accepts up to ~60-80 channels per call; chunks of 50 with concurrency 2
+    // cuts TW150 from 6 calls down to 3 and avoids triggering MIS rate limits.
+    let chunks: Vec<Vec<(String, String)>> = channels.chunks(50).map(|c| c.to_vec()).collect();
     let batches: Vec<HashMap<String, TwseSnapshot>> = stream::iter(chunks)
-        .map(|chunk| async move { fetch_twse_batch_chunk(&chunk).await })
-        .buffer_unordered(3)
+        .map(|chunk| async move {
+            let first = fetch_twse_batch_chunk(&chunk).await;
+            if !first.is_empty() || chunk.is_empty() {
+                return first;
+            }
+            tokio::time::sleep(Duration::from_millis(350)).await;
+            fetch_twse_batch_chunk(&chunk).await
+        })
+        .buffer_unordered(2)
         .collect()
         .await;
     let mut out = HashMap::new();
@@ -1007,6 +975,129 @@ async fn fetch_twse_batch(channels: &[(String, String)]) -> HashMap<String, Twse
         out.extend(map);
     }
     out
+}
+
+/// Parse ROC calendar date used by TWSE OpenAPI (e.g. `"1151123"` -> 2026-11-23 13:30 +08:00).
+fn parse_twse_roc_date_ts(raw: &str) -> Option<i64> {
+    let digits: String = raw.chars().filter(|c| c.is_ascii_digit()).collect();
+    if digits.len() < 7 {
+        return None;
+    }
+    let (y_str, rest) = digits.split_at(digits.len() - 4);
+    let roc_year: i32 = y_str.parse().ok()?;
+    let month: u32 = rest[0..2].parse().ok()?;
+    let day: u32 = rest[2..4].parse().ok()?;
+    let date = NaiveDate::from_ymd_opt(roc_year + 1911, month, day)?;
+    let close_time = NaiveTime::from_hms_opt(13, 30, 0)?;
+    let dt = date.and_time(close_time);
+    // Taiwan is fixed UTC+8 (no DST).
+    let tz = chrono::FixedOffset::east_opt(8 * 3600)?;
+    tz.from_local_datetime(&dt).single().map(|d| d.timestamp())
+}
+
+fn parse_twse_day_all(bytes: &[u8]) -> HashMap<String, TwseSnapshot> {
+    let mut out = HashMap::new();
+    let Ok(arr) = serde_json::from_slice::<Vec<Value>>(bytes) else {
+        return out;
+    };
+    for item in arr {
+        let Some(code) = item["Code"]
+            .as_str()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        else {
+            continue;
+        };
+        let Some(close) = item["ClosingPrice"]
+            .as_str()
+            .and_then(parse_f64_opt)
+            .filter(|v| *v > 0.0)
+        else {
+            continue;
+        };
+        let change_raw = item["Change"].as_str().map(str::trim).unwrap_or("");
+        // TWSE prefixes ex-dividend/reference changes with "X"; ignore those for prev_close math.
+        let change = if change_raw.starts_with('X') || change_raw.starts_with('x') {
+            None
+        } else {
+            parse_f64_opt(change_raw.trim_start_matches('+'))
+        };
+        let prev_close = change
+            .map(|ch| close - ch)
+            .filter(|v| v.is_finite() && *v > 0.0)
+            .or(Some(close));
+        let open = item["OpeningPrice"]
+            .as_str()
+            .and_then(parse_f64_opt)
+            .filter(|v| *v > 0.0);
+        let high = item["HighestPrice"]
+            .as_str()
+            .and_then(parse_f64_opt)
+            .filter(|v| *v > 0.0);
+        let low = item["LowestPrice"]
+            .as_str()
+            .and_then(parse_f64_opt)
+            .filter(|v| *v > 0.0);
+        let volume = item["TradeVolume"]
+            .as_str()
+            .and_then(parse_f64_opt)
+            .map(|v| v.max(0.0) as u64);
+        let turnover = item["TradeValue"]
+            .as_str()
+            .and_then(parse_f64_opt)
+            .filter(|v| *v > 0.0);
+        let quote_time = item["Date"].as_str().and_then(parse_twse_roc_date_ts);
+        let name = item["Name"]
+            .as_str()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        let sym = format!("{}.TW", code.to_ascii_uppercase());
+        out.insert(
+            sym,
+            TwseSnapshot {
+                name,
+                price: Some(close),
+                prev_close,
+                open,
+                high,
+                low,
+                volume,
+                turnover,
+                quote_time,
+                exchange: "TWSE".into(),
+                from_daily: true,
+            },
+        );
+    }
+    out
+}
+
+/// Official TWSE OpenAPI daily summary for all listed TWSE stocks (~1,000 rows in one request).
+/// Cached for 5 minutes so pre-market / off-hours / MIS-gap fills cost a single lightweight call.
+async fn fetch_twse_day_all_cached() -> HashMap<String, TwseSnapshot> {
+    /// When the summary was fetched, and the snapshots by symbol.
+    type DayAllCache = Option<(std::time::Instant, HashMap<String, TwseSnapshot>)>;
+    static CACHE: OnceLock<std::sync::Mutex<DayAllCache>> = OnceLock::new();
+    let lock = CACHE.get_or_init(|| std::sync::Mutex::new(None));
+    if let Ok(guard) = lock.lock() {
+        if let Some((at, ref map)) = *guard {
+            if at.elapsed() < Duration::from_secs(300) && !map.is_empty() {
+                return map.clone();
+            }
+        }
+    }
+    let url = "https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL";
+    let Ok(bytes) = traced_get_bytes("TWSE 官方日行情", url, None).await else {
+        return HashMap::new();
+    };
+    let parsed = parse_twse_day_all(&bytes);
+    if !parsed.is_empty() {
+        if let Ok(mut guard) = lock.lock() {
+            *guard = Some((std::time::Instant::now(), parsed.clone()));
+        }
+    }
+    parsed
 }
 
 async fn fetch_twse_batch_chunk(channels: &[(String, String)]) -> HashMap<String, TwseSnapshot> {
@@ -1107,6 +1198,10 @@ async fn fetch_twse_batch_chunk(channels: &[(String, String)]) -> HashMap<String
             .map(str::to_string);
         let exchange = if ex == "otc" { "TPEx" } else { "TWSE" }.to_string();
 
+        let turnover = match (price, volume) {
+            (Some(p), Some(v)) if p > 0.0 && v > 0 => Some(p * v as f64),
+            _ => None,
+        };
         out.insert(
             sym,
             TwseSnapshot {
@@ -1117,8 +1212,10 @@ async fn fetch_twse_batch_chunk(channels: &[(String, String)]) -> HashMap<String
                 high,
                 low,
                 volume,
+                turnover,
                 quote_time,
                 exchange,
+                from_daily: false,
             },
         );
     }
@@ -1353,7 +1450,7 @@ pub async fn fetch_quotes(items: Vec<WatchItem>, skip_sparkline: bool) -> Vec<St
             .cloned()
             .collect()
     };
-    let (twse_map, tencent_batch_map, us_batch_map) = if use_fast_batch {
+    let (mut twse_map, tencent_batch_map, us_batch_map) = if use_fast_batch {
         let (twse, tencent) =
             tokio::join!(fetch_twse_batch(&tw_channels), fetch_tencent_batch(&items));
         (twse, tencent, HashMap::new())
@@ -1364,6 +1461,32 @@ pub async fn fetch_quotes(items: Vec<WatchItem>, skip_sparkline: bool) -> Vec<St
         );
         (twse, HashMap::new(), extra)
     };
+    // TWSE MIS clears `z` to "-" before 09:00 Taipei time (and can drop chunks on rate limit).
+    // When any `.TW` symbol lacks a live price, fill all missing `.TW` stocks in one cached call
+    // to TWSE's official daily summary (`STOCK_DAY_ALL`) so Taiwan pools never blank out.
+    let needs_twse_daily = tw_channels.iter().any(|(sym, _)| {
+        sym.to_ascii_uppercase().ends_with(".TW")
+            && twse_map.get(sym).and_then(|s| s.price).is_none()
+    });
+    if needs_twse_daily {
+        let daily_map = fetch_twse_day_all_cached().await;
+        for (sym, _) in &tw_channels {
+            if twse_map.get(sym).and_then(|s| s.price).is_some() {
+                continue;
+            }
+            let key = sym.to_ascii_uppercase();
+            if let Some(daily) = daily_map.get(&key) {
+                twse_map.insert(sym.clone(), daily.clone());
+            } else if let Some(existing) = twse_map.get_mut(sym) {
+                // Final safety net: if MIS returned yesterday's close `y` pre-market, display it
+                // instead of failing with "批量行情暂未返回".
+                if existing.price.is_none() && existing.prev_close.is_some() {
+                    existing.price = existing.prev_close;
+                    existing.from_daily = true;
+                }
+            }
+        }
+    }
     // (market cap, traded value) per symbol from that extra batch request.
     let batch_extras: HashMap<String, (Option<f64>, Option<f64>)> = us_batch_map
         .into_iter()
@@ -1378,20 +1501,9 @@ pub async fn fetch_quotes(items: Vec<WatchItem>, skip_sparkline: bool) -> Vec<St
     let mut tasks = Vec::with_capacity(items.len());
     for (idx, item) in items.into_iter().enumerate() {
         let batch_hit = tencent_batch_map.get(&item.symbol).cloned();
-        let twse_hit = twse_map.get(&item.symbol).map(|s| {
-            (
-                s.name.clone(),
-                s.price,
-                s.prev_close,
-                s.open,
-                s.high,
-                s.low,
-                s.volume,
-                s.quote_time,
-                s.exchange.clone(),
-            )
-        });
-        let has_fast_hit = batch_hit.is_some() || twse_hit.as_ref().is_some_and(|t| t.1.is_some());
+        let twse_hit = twse_map.get(&item.symbol).cloned();
+        let has_fast_hit =
+            batch_hit.is_some() || twse_hit.as_ref().is_some_and(|t| t.price.is_some());
         let allow_network_fallback = if has_fast_hit {
             true
         } else if fallback_budget > 0 {
@@ -1489,21 +1601,9 @@ fn with_last_good(
         .collect()
 }
 
-type TwseTuple = (
-    Option<String>,
-    Option<f64>,
-    Option<f64>,
-    Option<f64>,
-    Option<f64>,
-    Option<f64>,
-    Option<u64>,
-    Option<i64>,
-    String,
-);
-
 async fn fetch_single_routed(
     item: &WatchItem,
-    twse_hit: Option<TwseTuple>,
+    twse_hit: Option<TwseSnapshot>,
     skip_sparkline: bool,
 ) -> StockQuote {
     let market = if item.market.is_empty() {
@@ -1533,20 +1633,24 @@ async fn fetch_single_routed(
         return error_quote(item, "行情源暂不可用");
     }
 
-    // Route B: Taiwan -> Official TWSE/TPEx MIS real-time (merged with Yahoo sparkline when requested).
+    // Route B: Taiwan -> Official TWSE/TPEx MIS real-time (with STOCK_DAY_ALL pre-market/off-hours fill).
     if market == "TW" {
-        let has_twse_price = twse_hit.as_ref().is_some_and(|t| t.1.is_some());
+        let has_twse_price = twse_hit.as_ref().is_some_and(|t| t.price.is_some());
         let yahoo_res = if skip_sparkline && has_twse_price {
             Err(String::new())
         } else {
             fetch_yahoo_quote(&item.symbol, &item.name, 48).await
         };
-        if let Some((tw_name, tw_price, tw_prev, tw_open, tw_high, tw_low, tw_vol, tw_ts, tw_ex)) =
-            twse_hit
-        {
+        if let Some(tw) = twse_hit {
+            let source_label = if tw.from_daily {
+                "TWSE 官方日行情"
+            } else {
+                "TWSE 官方实时"
+            };
             let mut base = yahoo_res.unwrap_or_else(|_| StockQuote {
                 symbol: item.symbol.clone(),
-                name: tw_name
+                name: tw
+                    .name
                     .clone()
                     .filter(|_| item.name.is_empty())
                     .unwrap_or_else(|| {
@@ -1558,7 +1662,7 @@ async fn fetch_single_routed(
                     }),
                 market: "TW".into(),
                 currency: "TWD".into(),
-                exchange: tw_ex.clone(),
+                exchange: tw.exchange.clone(),
                 price: None,
                 prev_close: None,
                 change: None,
@@ -1572,15 +1676,19 @@ async fn fetch_single_routed(
                 extended_price: None,
                 extended_change_percent: None,
                 extended_label: None,
-                market_state: "已休市".into(),
-                source: "TWSE 官方实时".into(),
+                market_state: if tw.from_daily {
+                    "已收盘".into()
+                } else {
+                    "盘中".into()
+                },
+                source: source_label.into(),
                 quote_time: None,
                 sparkline: Vec::new(),
                 error: None,
             });
-            if let Some(p) = tw_price {
+            if let Some(p) = tw.price {
                 base.price = Some(p);
-                if let Some(pc) = tw_prev.or(base.prev_close) {
+                if let Some(pc) = tw.prev_close.or(base.prev_close) {
                     base.prev_close = Some(pc);
                     let ch = p - pc;
                     base.change = Some(ch);
@@ -1588,26 +1696,29 @@ async fn fetch_single_routed(
                         base.change_percent = Some((ch / pc) * 100.0);
                     }
                 }
-                base.source = "TWSE 官方实时".into();
+                base.source = source_label.into();
             }
-            if tw_open.is_some() {
-                base.open = tw_open;
+            if tw.open.is_some() {
+                base.open = tw.open;
             }
-            if tw_high.is_some() {
-                base.high = tw_high;
+            if tw.high.is_some() {
+                base.high = tw.high;
             }
-            if tw_low.is_some() {
-                base.low = tw_low;
+            if tw.low.is_some() {
+                base.low = tw.low;
             }
-            if tw_vol.is_some() {
-                base.volume = tw_vol;
+            if tw.volume.is_some() {
+                base.volume = tw.volume;
             }
-            if tw_ts.is_some() {
-                base.quote_time = tw_ts;
+            if tw.turnover.is_some() {
+                base.turnover = tw.turnover;
             }
-            base.exchange = tw_ex;
+            if tw.quote_time.is_some() {
+                base.quote_time = tw.quote_time;
+            }
+            base.exchange = tw.exchange;
             if item.name.is_empty() {
-                if let Some(n) = tw_name {
+                if let Some(n) = tw.name {
                     base.name = n;
                 }
             }
@@ -2001,11 +2112,7 @@ mod tests {
         let mut map = HashMap::new();
         map.insert(
             "usNVDA".to_string(),
-            WatchItem {
-                symbol: "NVDA".into(),
-                name: "英伟达".into(),
-                market: "US".into(),
-            },
+            WatchItem::simple("NVDA", "英伟达", "US"),
         );
         let q = parse_tencent_batch_line(line.as_bytes(), &map).expect("quote parsed");
         assert_eq!(q.symbol, "NVDA");
@@ -2040,11 +2147,7 @@ mod tests {
 
     #[test]
     fn failed_quotes_fall_back_to_the_last_good_one() {
-        let item = WatchItem {
-            symbol: "BABA".into(),
-            name: "阿里巴巴".into(),
-            market: "US".into(),
-        };
+        let item = WatchItem::simple("BABA", "阿里巴巴", "US");
         let mut good = error_quote(&item, "");
         good.error = None;
         good.price = Some(86.0);
@@ -2146,5 +2249,78 @@ mod tests {
         assert!((pts[0].price - 1475.35).abs() < 1e-6);
         assert!((pts[1].price - 1455.50).abs() < 1e-6);
         assert!(pts[1].ts > pts[0].ts);
+    }
+
+    #[test]
+    fn markets_config_supports_legacy_json_and_pool_edits_roundtrip() {
+        let legacy = r#"{"indices":[],"watchlist":[{"symbol":"NVDA","name":"英伟达","market":"US"}],"colorScheme":"cn","refreshSec":15}"#;
+        let parsed: MarketsConfig = serde_json::from_str(legacy).expect("legacy config parses");
+        assert!(parsed.pool_edits.is_empty());
+        assert!(parsed.custom_pools.is_empty());
+
+        let mut cfg = parsed;
+        cfg.pool_edits.insert(
+            "ai".into(),
+            PoolEdit {
+                added: vec![WatchItem {
+                    symbol: "CRWV".into(),
+                    name: "CoreWeave".into(),
+                    market: "US".into(),
+                    sector: Some("算力芯片".into()),
+                    cap_hint: None,
+                }],
+                removed: vec!["SMCI".into()],
+            },
+        );
+        cfg.custom_pools.push(CustomPool {
+            id: "custom_robot".into(),
+            name: "机器人观察池".into(),
+            description: "核心人形机器人标的".into(),
+            items: vec![WatchItem {
+                symbol: "TSLA".into(),
+                name: "特斯拉".into(),
+                market: "US".into(),
+                sector: Some("整机".into()),
+                cap_hint: None,
+            }],
+        });
+        let encoded = serde_json::to_string(&cfg).expect("serializes");
+        let roundtrip: MarketsConfig = serde_json::from_str(&encoded).expect("deserializes");
+        assert_eq!(roundtrip.pool_edits["ai"].added[0].symbol, "CRWV");
+        assert_eq!(
+            roundtrip.pool_edits["ai"].added[0].sector.as_deref(),
+            Some("算力芯片")
+        );
+        assert_eq!(roundtrip.pool_edits["ai"].removed, vec!["SMCI"]);
+        assert_eq!(roundtrip.custom_pools.len(), 1);
+        assert_eq!(roundtrip.custom_pools[0].name, "机器人观察池");
+    }
+
+    #[test]
+    fn twse_day_all_parses_roc_date_change_and_turnover() {
+        let sample = r#"[
+            {"Date":"1151123","Code":"2330","Name":"台積電","TradeVolume":"25000000","TradeValue":"50750000000","OpeningPrice":"2010.00","HighestPrice":"2040.00","LowestPrice":"2005.00","ClosingPrice":"2030.00","Change":"+25.0000","Transaction":"12345"},
+            {"Date":"1151123","Code":"2317","Name":"鴻海","TradeVolume":"18000000","TradeValue":"3708000000","OpeningPrice":"208.00","HighestPrice":"209.00","LowestPrice":"205.00","ClosingPrice":"206.00","Change":"-2.5000","Transaction":"9876"},
+            {"Date":"1151123","Code":"2881","Name":"富邦金","TradeVolume":"10000000","TradeValue":"1305000000","OpeningPrice":"130.50","HighestPrice":"131.00","LowestPrice":"130.00","ClosingPrice":"130.50","Change":"X0.0000","Transaction":"5432"}
+        ]"#
+        .as_bytes();
+        let parsed = parse_twse_day_all(sample);
+        assert_eq!(parsed.len(), 3);
+
+        let tsmc = &parsed["2330.TW"];
+        assert_eq!(tsmc.price, Some(2030.0));
+        assert_eq!(tsmc.prev_close, Some(2005.0));
+        assert_eq!(tsmc.volume, Some(25_000_000));
+        assert_eq!(tsmc.turnover, Some(50_750_000_000.0));
+        assert!(tsmc.from_daily);
+        assert!(tsmc.quote_time.is_some());
+
+        let honhai = &parsed["2317.TW"];
+        assert_eq!(honhai.price, Some(206.0));
+        assert_eq!(honhai.prev_close, Some(208.5));
+
+        let fubon = &parsed["2881.TW"];
+        assert_eq!(fubon.price, Some(130.5));
+        assert_eq!(fubon.prev_close, Some(130.5));
     }
 }

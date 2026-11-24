@@ -6,11 +6,38 @@ export interface WatchItem {
   capHint?: number;
 }
 
+export interface PoolEdit {
+  added: WatchItem[];
+  removed: string[];
+}
+
+export interface CustomPool {
+  id: string;
+  name: string;
+  description?: string;
+  items: WatchItem[];
+}
+
+export interface ResolvedPool {
+  id: string;
+  /** Display name without count suffix, e.g. "中概股" */
+  name: string;
+  /** Button label with current constituent count, e.g. "中概股 (53)" */
+  label: string;
+  description: string;
+  items: WatchItem[];
+  kind: "preset" | "custom";
+  edited: boolean;
+  removedItems: WatchItem[];
+}
+
 export interface MarketsConfig {
   indices: WatchItem[];
   watchlist: WatchItem[];
   colorScheme: "cn" | "us";
   refreshSec: number;
+  poolEdits?: Record<string, PoolEdit>;
+  customPools?: CustomPool[];
 }
 
 export interface ChartPoint {
@@ -325,4 +352,117 @@ export function tileWeights(
     .sort((a, b) => a - b);
   const median = known.length ? known[Math.floor(known.length / 2)] : 1;
   return new Map(raw.map(([symbol, w]) => [symbol, w ?? median]));
+}
+
+function normSym(symbol: string): string {
+  return symbol.trim().toUpperCase();
+}
+
+/**
+ * Apply delta edits (`added` / `removed`) on top of a built-in preset's base constituents.
+ * Newly added companies appear at the front so users immediately see them in lists/editors;
+ * edited existing companies keep their original position with updated sector/name.
+ */
+export function applyPoolEdit(
+  baseItems: WatchItem[],
+  edit: PoolEdit | undefined,
+): WatchItem[] {
+  if (!edit || (edit.added.length === 0 && edit.removed.length === 0)) {
+    return baseItems;
+  }
+  const removedSet = new Set(edit.removed.map(normSym));
+  const overrides = new Map<string, WatchItem>();
+  for (const item of edit.added) {
+    overrides.set(normSym(item.symbol), item);
+  }
+
+  const seen = new Set<string>();
+  const kept: WatchItem[] = [];
+  for (const base of baseItems) {
+    const key = normSym(base.symbol);
+    if (removedSet.has(key)) continue;
+    seen.add(key);
+    const over = overrides.get(key);
+    if (over) {
+      kept.push({
+        ...base,
+        ...over,
+        capHint: over.capHint ?? base.capHint,
+      });
+    } else {
+      kept.push(base);
+    }
+  }
+
+  const fresh: WatchItem[] = [];
+  for (const item of edit.added) {
+    const key = normSym(item.symbol);
+    if (!seen.has(key) && !removedSet.has(key)) {
+      seen.add(key);
+      fresh.push(item);
+    }
+  }
+  return [...fresh, ...kept];
+}
+
+function cleanPoolEdit(edit: PoolEdit): PoolEdit | undefined {
+  if (edit.added.length === 0 && edit.removed.length === 0) return undefined;
+  return edit;
+}
+
+/** Add a company to (or update its sector in) a built-in pool's delta edit. */
+export function addCompanyToPoolEdit(
+  baseItems: WatchItem[],
+  edit: PoolEdit | undefined,
+  item: WatchItem,
+): PoolEdit | undefined {
+  const key = normSym(item.symbol);
+  const removed = (edit?.removed ?? []).filter((s) => normSym(s) !== key);
+  const baseMatch = baseItems.find((b) => normSym(b.symbol) === key);
+  const otherAdded = (edit?.added ?? []).filter(
+    (a) => normSym(a.symbol) !== key,
+  );
+  // If restoring a previously removed built-in item with the exact same sector & name, no override needed.
+  if (
+    baseMatch &&
+    (item.sector ?? "") === (baseMatch.sector ?? "") &&
+    item.name === baseMatch.name &&
+    item.market === baseMatch.market
+  ) {
+    return cleanPoolEdit({ added: otherAdded, removed });
+  }
+  return cleanPoolEdit({
+    added: [item, ...otherAdded],
+    removed,
+  });
+}
+
+/** Remove a company from a built-in pool's delta edit (and collapse back to undefined if empty). */
+export function removeCompanyFromPoolEdit(
+  baseItems: WatchItem[],
+  edit: PoolEdit | undefined,
+  symbol: string,
+): PoolEdit | undefined {
+  const key = normSym(symbol);
+  const added = (edit?.added ?? []).filter((a) => normSym(a.symbol) !== key);
+  const inBase = baseItems.some((b) => normSym(b.symbol) === key);
+  const prevRemoved = edit?.removed ?? [];
+  const removed =
+    inBase && !prevRemoved.some((s) => normSym(s) === key)
+      ? [...prevRemoved, symbol]
+      : prevRemoved;
+  return cleanPoolEdit({ added, removed });
+}
+
+/** Update a built-in preset label so its displayed count tracks added/removed companies. */
+export function formatPoolLabel(
+  baseLabel: string,
+  actualCount: number,
+  edited: boolean,
+): string {
+  if (!edited) return baseLabel;
+  if (/\(\d+\)$/.test(baseLabel)) {
+    return baseLabel.replace(/\(\d+\)$/, `(${actualCount})`);
+  }
+  return `${baseLabel} (${actualCount})`;
 }

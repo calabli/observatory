@@ -11,6 +11,8 @@ import {
   isStale,
   MARKET_META,
   MARKET_ORDER,
+  type MarketFilter,
+  type ResolvedPool,
   STALE_HINT,
   type StockQuote,
   toneColor,
@@ -19,10 +21,16 @@ import {
   type WatchItem,
   tileWeights,
 } from "./marketsShared";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { heatTileColor, layoutSquarified } from "./treemap";
-import { MARKET_PRESETS } from "./presets";
-import { Maximize2, Minimize2, RefreshCw, Search } from "lucide-react";
+import {
+  FolderPlus,
+  Maximize2,
+  Minimize2,
+  Pencil,
+  RefreshCw,
+  Search,
+} from "lucide-react";
 
 /** Smallest map height; below it a tiny window scrolls rather than squashing tiles. */
 const HEATMAP_MIN_H = 280;
@@ -34,8 +42,12 @@ export function MarketHeatmap({
   quoteBySymbol,
   colorScheme,
   groupBy,
+  sectors,
+  totalPoolCount,
   activeSector,
   onSelectSector,
+  marketFilter,
+  onSelectMarketFilter,
   poolQuery,
   onPoolQueryChange,
   sizeMode,
@@ -45,8 +57,11 @@ export function MarketHeatmap({
   isFullscreen,
   onToggleFullscreen,
   poolId,
+  pools,
   watchlistCount,
   onChangePool,
+  onEditPool,
+  onCreatePool,
   onRefresh,
   isRefreshing,
   lastUpdatedStr,
@@ -59,8 +74,12 @@ export function MarketHeatmap({
   quoteBySymbol: Map<string, StockQuote>;
   colorScheme: "cn" | "us";
   groupBy: "sector" | "market" | "none";
+  sectors: string[];
+  totalPoolCount: number;
   activeSector: string | null;
   onSelectSector?: (sector: string) => void;
+  marketFilter?: MarketFilter;
+  onSelectMarketFilter?: (m: MarketFilter) => void;
   poolQuery: string;
   onPoolQueryChange?: (q: string) => void;
   sizeMode: TreemapSizeMode;
@@ -70,8 +89,11 @@ export function MarketHeatmap({
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
   poolId: string;
+  pools: ResolvedPool[];
   watchlistCount: number;
   onChangePool: (id: string) => void;
+  onEditPool?: () => void;
+  onCreatePool?: () => void;
   onRefresh: () => void;
   isRefreshing: boolean;
   lastUpdatedStr: string;
@@ -90,44 +112,33 @@ export function MarketHeatmap({
     item: WatchItem;
     quote?: StockQuote;
   } | null>(null);
-  const [viewport, setViewport] = useState(() => ({
-    w: typeof window !== "undefined" ? window.innerWidth : 1600,
-    h: typeof window !== "undefined" ? window.innerHeight : 960,
-  }));
 
-  useEffect(() => {
-    if (!isFullscreen) return;
-    const sync = () =>
-      setViewport({ w: window.innerWidth, h: window.innerHeight });
-    sync();
-    window.addEventListener("resize", sync);
-    return () => window.removeEventListener("resize", sync);
-  }, [isFullscreen]);
-
-  // Outside fullscreen the map fills the rest of the window below it, so every
-  // stock is visible without scrolling; the layout uses the canvas's real pixel
-  // size, which keeps tiles in proportion and label thresholds in real pixels.
+  // Measure the canvas's real pixel size in both normal view (fills the rest of
+  // the window without scrolling) and fullscreen (fills flex: 1 below the bars).
   const canvasRef = useRef<HTMLDivElement>(null);
   const [fit, setFit] = useState<{ w: number; h: number } | null>(null);
   const hasCanvas = items.length > 0;
   useLayoutEffect(() => {
     const el = canvasRef.current;
-    if (isFullscreen || !el) return;
+    if (!el) return;
     const measure = () => {
       const rect = el.getBoundingClientRect();
-      const top = rect.top + window.scrollY;
       const w = Math.floor(rect.width);
-      const h = Math.max(
-        HEATMAP_MIN_H,
-        Math.floor(window.innerHeight - top - HEATMAP_BOTTOM_GAP),
-      );
+      const h = isFullscreen
+        ? Math.max(HEATMAP_MIN_H, Math.floor(rect.height))
+        : Math.max(
+            HEATMAP_MIN_H,
+            Math.floor(
+              window.innerHeight -
+                (rect.top + window.scrollY) -
+                HEATMAP_BOTTOM_GAP,
+            ),
+          );
       setFit((prev) =>
         prev && prev.w === w && prev.h === h ? prev : { w, h },
       );
     };
     measure();
-    // Width changes come from the window or the sidebar; the top moves when
-    // content above the map (index strip, toolbars) loads or wraps.
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     observer.observe(document.body);
@@ -140,12 +151,8 @@ export function MarketHeatmap({
 
   const canvasTier =
     items.length > 200 ? "mega" : items.length > 80 ? "large" : "normal";
-  const mapW = isFullscreen
-    ? Math.max(960, viewport.w)
-    : Math.max(1, fit?.w ?? 1400);
-  const mapH = isFullscreen
-    ? Math.max(520, viewport.h - 56)
-    : Math.max(1, fit?.h ?? 660);
+  const mapW = Math.max(1, fit?.w ?? 1400);
+  const mapH = Math.max(1, fit?.h ?? 660);
 
   const breadth = useMemo(() => {
     let rise = 0;
@@ -346,29 +353,125 @@ export function MarketHeatmap({
 
   return (
     <div className={`markets-hm-shell${isFullscreen ? " fullscreen" : ""}`}>
-      <div className="markets-hm-bar">
-        <div className="markets-hm-bar-left">
-          {isFullscreen && (
-            <div className="markets-pill-group">
+      {isFullscreen && (
+        <div className="markets-fs-top-bar">
+          <div className="markets-pill-group markets-fs-pools">
+            <button
+              type="button"
+              className={`markets-pill-btn${poolId === "watchlist" ? " active" : ""}`}
+              onClick={() => onChangePool("watchlist")}
+            >
+              自选 ({watchlistCount})
+            </button>
+            {pools.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className={`markets-pill-btn${poolId === p.id ? " active" : ""}`}
+                onClick={() => onChangePool(p.id)}
+              >
+                <span>{p.label}</span>
+                {p.edited && (
+                  <i className="markets-edited-dot" aria-label="已编辑" />
+                )}
+              </button>
+            ))}
+          </div>
+          <div className="markets-hm-bar-right">
+            {onEditPool && (
               <button
                 type="button"
-                className={`markets-pill-btn${poolId === "watchlist" ? " active" : ""}`}
-                onClick={() => onChangePool("watchlist")}
+                className="markets-fs-btn"
+                onClick={onEditPool}
+                title="增删或调整当前板块中的公司"
               >
-                自选 ({watchlistCount})
+                <Pencil size={12} />
+                <span>编辑板块</span>
               </button>
-              {MARKET_PRESETS.map((preset) => (
+            )}
+            {onCreatePool && (
+              <button
+                type="button"
+                className="markets-fs-btn"
+                onClick={onCreatePool}
+                title="新建自定义股票板块"
+              >
+                <FolderPlus size={12} />
+                <span>新建板块</span>
+              </button>
+            )}
+            <button
+              type="button"
+              className="markets-fs-btn"
+              onClick={onRefresh}
+              disabled={isRefreshing}
+              title="刷新实时行情"
+            >
+              <RefreshCw
+                size={12}
+                className={isRefreshing ? "markets-spin" : undefined}
+              />
+              <span>{lastUpdatedStr}</span>
+            </button>
+            <button
+              type="button"
+              className="markets-fs-btn active"
+              onClick={onToggleFullscreen}
+              title="退出全屏 (Esc)"
+            >
+              <Minimize2 size={12} />
+              <span>退出全屏</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="markets-hm-bar">
+        <div className="markets-hm-bar-left">
+          {isFullscreen &&
+            (onSelectSector && sectors.length > 0 ? (
+              <div className="markets-pill-group markets-fs-sectors">
                 <button
-                  key={preset.id}
                   type="button"
-                  className={`markets-pill-btn${poolId === preset.id ? " active" : ""}`}
-                  onClick={() => onChangePool(preset.id)}
+                  className={`markets-pill-btn${!activeSector ? " active" : ""}`}
+                  onClick={() => onSelectSector("ALL")}
                 >
-                  {preset.label}
+                  全部板块 ({totalPoolCount})
                 </button>
-              ))}
-            </div>
-          )}
+                {sectors.map((sec) => (
+                  <button
+                    key={sec}
+                    type="button"
+                    className={`markets-pill-btn${activeSector === sec ? " active" : ""}`}
+                    onClick={() => onSelectSector(sec)}
+                  >
+                    {sec}
+                  </button>
+                ))}
+              </div>
+            ) : onSelectMarketFilter ? (
+              <div className="markets-pill-group markets-fs-sectors">
+                {(
+                  [
+                    ["ALL", "全部"],
+                    ["US", "美股"],
+                    ["TW", "台股"],
+                    ["CN", "A 股"],
+                    ["HK", "港股"],
+                    ["GLOBAL", "其他"],
+                  ] as const
+                ).map(([m, label]) => (
+                  <button
+                    key={m}
+                    type="button"
+                    className={`markets-pill-btn${marketFilter === m ? " active" : ""}`}
+                    onClick={() => onSelectMarketFilter(m)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            ) : null)}
           <div className="markets-pill-group">
             {(
               [
@@ -388,7 +491,7 @@ export function MarketHeatmap({
               </button>
             ))}
           </div>
-          {activeSector && onSelectSector && (
+          {!isFullscreen && activeSector && onSelectSector && (
             <button
               type="button"
               className="markets-zoom-back-btn"
@@ -435,39 +538,17 @@ export function MarketHeatmap({
               </span>
             ))}
           </div>
-          {isFullscreen && (
+          {!isFullscreen && (
             <button
               type="button"
               className="markets-fs-btn"
-              onClick={onRefresh}
-              disabled={isRefreshing}
-              title="刷新实时行情"
+              onClick={onToggleFullscreen}
+              title="全屏大盘云图 (F)"
             >
-              <RefreshCw
-                size={12}
-                className={isRefreshing ? "markets-spin" : undefined}
-              />
-              <span>{lastUpdatedStr}</span>
+              <Maximize2 size={12} />
+              <span>全屏</span>
             </button>
           )}
-          <button
-            type="button"
-            className={`markets-fs-btn${isFullscreen ? " active" : ""}`}
-            onClick={onToggleFullscreen}
-            title={isFullscreen ? "退出全屏 (Esc)" : "全屏大盘云图 (F)"}
-          >
-            {isFullscreen ? (
-              <>
-                <Minimize2 size={12} />
-                <span>退出全屏</span>
-              </>
-            ) : (
-              <>
-                <Maximize2 size={12} />
-                <span>全屏</span>
-              </>
-            )}
-          </button>
         </div>
       </div>
 

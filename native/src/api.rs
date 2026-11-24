@@ -763,6 +763,31 @@ impl UsageBackend {
                 to_json(crate::markets::search_symbols(&query).await)
             }
             "markets_fx" => to_json(crate::markets::fetch_fx_rates().await?),
+            "benchmarks_get" => {
+                self.call_blocking(move |db| to_json(crate::benchmarks::load_state(db)?))
+                    .await
+            }
+            "benchmarks_config_save" => {
+                let input: crate::benchmarks::BenchmarksConfigSave =
+                    serde_json::from_value(args)
+                        .map_err(|e| AppError::InvalidInput(e.to_string()))?;
+                self.call_blocking(move |db| to_json(crate::benchmarks::save_config(db, &input)?))
+                    .await
+            }
+            "benchmarks_fetch" => {
+                let (api_key, tier) = self
+                    .call_blocking(move |db| crate::benchmarks::load_api_key_and_tier(db))
+                    .await?;
+                let key = api_key.ok_or_else(|| {
+                    AppError::InvalidInput("请先配置 Artificial Analysis API Key".into())
+                })?;
+                let snapshot =
+                    crate::benchmarks::fetch_artificial_analysis(&key, &tier).await?;
+                let to_save = snapshot.clone();
+                self.call_blocking(move |db| crate::benchmarks::save_snapshot(db, &to_save))
+                    .await?;
+                to_json(snapshot)
+            }
             "status" => self.call_blocking(move |db| Self::status_impl(db)).await,
             "preferences_save" => {
                 let interval = args

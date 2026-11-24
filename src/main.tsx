@@ -30,6 +30,7 @@ import {
   Sparkles,
   Sun,
   TrendingUp,
+  Trophy,
   Wifi,
   X,
   type LucideIcon,
@@ -56,6 +57,7 @@ import "./usage/multiDeviceScan.css";
 import { useLocalDayKey } from "./usage/useLocalDayKey";
 import "./insights/insights.css";
 import "./markets/markets.css";
+import "./benchmarks/benchmarks.css";
 import "./subscriptions/subscriptions.css";
 import { DeviceManager } from "./usage/DeviceManager";
 import { TrayPanel } from "./tray/TrayPanel";
@@ -85,6 +87,11 @@ const MarketsWorkspace = lazy(() =>
     default: m.MarketsWorkspace,
   })),
 );
+const BenchmarksWorkspace = lazy(() =>
+  import("./benchmarks/BenchmarksWorkspace").then((m) => ({
+    default: m.BenchmarksWorkspace,
+  })),
+);
 const SubscriptionWorkspace = lazy(() =>
   import("./subscriptions/SubscriptionWorkspace").then((m) => ({
     default: m.SubscriptionWorkspace,
@@ -109,6 +116,7 @@ type Page =
   | "usage"
   | "insights"
   | "subscriptions"
+  | "benchmarks"
   | "markets"
   | "network"
   | "devices"
@@ -127,7 +135,7 @@ type NavItem = {
 };
 const navGroups: { label: string; items: NavItem[] }[] = [
   {
-    label: "用量",
+    label: "AI 观测",
     items: [
       { id: "overview", label: "总览", icon: Radar },
       { id: "usage", label: "AI 用量", icon: Boxes },
@@ -136,16 +144,19 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     ],
   },
   {
-    label: "设备",
+    label: "情报与行情",
     items: [
-      { id: "devices", label: "多设备", icon: Monitor },
-      { id: "network", label: "网络诊断", icon: Network },
+      { id: "benchmarks", label: "模型榜单", icon: Trophy },
       { id: "markets", label: "市场行情", icon: TrendingUp },
     ],
   },
   {
-    label: "记录",
-    items: [{ id: "activity", label: "活动日志", icon: ScrollText }],
+    label: "系统与设备",
+    items: [
+      { id: "devices", label: "多设备", icon: Monitor },
+      { id: "network", label: "网络诊断", icon: Network },
+      { id: "activity", label: "活动日志", icon: ScrollText },
+    ],
   },
 ];
 const SIDEBAR_KEY = "observatory.sidebar-collapsed";
@@ -166,6 +177,10 @@ const titles: Record<Page, [string, string]> = {
   subscriptions: [
     "订阅与额度",
     "管理订阅和额度周期，查看所选时间范围内的用量。",
+  ],
+  benchmarks: [
+    "模型榜单",
+    "Artificial Analysis 综合智力、工程、行业分项评比，结合吞吐速度、定价与本机实测对照。",
   ],
   markets: [
     "市场行情",
@@ -889,11 +904,13 @@ function App() {
                 ? "WORKSPACE OVERVIEW"
                 : page === "insights"
                   ? "DEEP INSIGHTS"
-                  : page === "network"
-                    ? "NETWORK OBSERVABILITY"
-                    : page === "activity"
-                      ? "ACTIVITY LOG"
-                      : "OBSERVATORY"}
+                  : page === "benchmarks"
+                    ? "MODEL BENCHMARKS"
+                    : page === "network"
+                      ? "NETWORK OBSERVABILITY"
+                      : page === "activity"
+                        ? "ACTIVITY LOG"
+                        : "OBSERVATORY"}
             </div>
             <h1>{titles[page][0]}</h1>
             <p>{titles[page][1]}</p>
@@ -914,6 +931,7 @@ function App() {
         {page !== "network" &&
           page !== "subscriptions" &&
           page !== "insights" &&
+          page !== "benchmarks" &&
           page !== "markets" &&
           page !== "activity" && (
             <div className="context-bar">
@@ -997,6 +1015,8 @@ function App() {
             />
           ) : page === "subscriptions" ? (
             <SubscriptionWorkspace />
+          ) : page === "benchmarks" ? (
+            <BenchmarksWorkspace />
           ) : page === "markets" ? (
             <MarketsWorkspace />
           ) : page === "network" ? (

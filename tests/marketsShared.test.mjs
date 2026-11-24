@@ -13,7 +13,14 @@ const code = ts.transpileModule(source, {
     target: ts.ScriptTarget.ES2022,
   },
 }).outputText;
-const { tileWeight, tileWeights } = await import(
+const {
+  tileWeight,
+  tileWeights,
+  applyPoolEdit,
+  addCompanyToPoolEdit,
+  removeCompanyFromPoolEdit,
+  formatPoolLabel,
+} = await import(
   "data:text/javascript;base64," + Buffer.from(code).toString("base64")
 );
 
@@ -51,5 +58,62 @@ test("missing weights get the median of the others", () => {
   assert.deepEqual(
     [...tileWeights(items, quotes, "equal").values()],
     [1, 1, 1, 1],
+  );
+});
+
+test("pool edits add, remove, reassign sector, and restore built-in companies cleanly", () => {
+  const base = [
+    {
+      symbol: "NVDA",
+      name: "英伟达",
+      market: "US",
+      sector: "算力芯片",
+      capHint: 3500,
+    },
+    { symbol: "AMD", name: "AMD", market: "US", sector: "算力芯片" },
+    { symbol: "TSM", name: "台积电", market: "US", sector: "代工与设备" },
+  ];
+
+  // Add a brand-new company
+  const edit1 = addCompanyToPoolEdit(base, undefined, {
+    symbol: "CRWV",
+    name: "CoreWeave",
+    market: "US",
+    sector: "大模型与云",
+  });
+  const afterAdd = applyPoolEdit(base, edit1);
+  assert.equal(afterAdd.length, 4);
+  assert.equal(afterAdd[0].symbol, "CRWV");
+
+  // Remove a built-in company
+  const edit2 = removeCompanyFromPoolEdit(base, edit1, "AMD");
+  const afterRemove = applyPoolEdit(base, edit2);
+  assert.deepEqual(
+    afterRemove.map((i) => i.symbol),
+    ["CRWV", "NVDA", "TSM"],
+  );
+
+  // Move a built-in company to a new sector while preserving capHint
+  const edit3 = addCompanyToPoolEdit(base, edit2, {
+    symbol: "NVDA",
+    name: "英伟达",
+    market: "US",
+    sector: "AI 核心",
+  });
+  const afterMove = applyPoolEdit(base, edit3);
+  const nvda = afterMove.find((i) => i.symbol === "NVDA");
+  assert.equal(nvda.sector, "AI 核心");
+  assert.equal(nvda.capHint, 3500);
+
+  // Restoring a removed built-in item and removing the custom addition collapses edit back to undefined
+  const restored = addCompanyToPoolEdit(base, edit2, base[1]);
+  const clean = removeCompanyFromPoolEdit(base, restored, "CRWV");
+  assert.equal(clean, undefined);
+
+  assert.equal(formatPoolLabel("中概股 (53)", 53, false), "中概股 (53)");
+  assert.equal(formatPoolLabel("中概股 (53)", 55, true), "中概股 (55)");
+  assert.equal(
+    formatPoolLabel("台股 Top 150", 148, true),
+    "台股 Top 150 (148)",
   );
 });

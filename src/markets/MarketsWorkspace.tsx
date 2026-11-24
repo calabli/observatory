@@ -1,7 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  addCompanyToPoolEdit,
+  applyPoolEdit,
   type ChartRange,
+  type CustomPool,
   fmtClock,
   FALLBACK_FX_TO_USD,
   fmtLastTrade,
@@ -11,11 +14,14 @@ import {
   fmtSigned,
   fmtTurnover,
   fmtVolume,
+  formatPoolLabel,
   isStale,
   MARKET_META,
   type MarketFilter,
   type MarketsConfig,
   POOL_ID_KEY,
+  removeCompanyFromPoolEdit,
+  type ResolvedPool,
   type SearchHit,
   STALE_HINT,
   type StockChartDetail,
@@ -33,8 +39,10 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { usageCall } from "../native/usageClient";
 import {
   Check,
+  FolderPlus,
   LayoutGrid,
   List,
+  Pencil,
   Plus,
   RefreshCw,
   Search,
@@ -45,6 +53,7 @@ import {
 } from "lucide-react";
 import { InteractivePriceChart, MiniSparkline } from "./MarketCharts";
 import { MarketHeatmap } from "./MarketHeatmap";
+import { PoolEditorModal } from "./PoolEditorModal";
 
 export function MarketsWorkspace() {
   const qc = useQueryClient();
@@ -53,7 +62,9 @@ export function MarketsWorkspace() {
       const saved = localStorage.getItem(POOL_ID_KEY);
       if (
         saved &&
-        (saved === "watchlist" || MARKET_PRESETS.some((p) => p.id === saved))
+        (saved === "watchlist" ||
+          saved.startsWith("custom_") ||
+          MARKET_PRESETS.some((p) => p.id === saved))
       ) {
         return saved;
       }
@@ -62,6 +73,7 @@ export function MarketsWorkspace() {
     }
     return "us_sp500";
   });
+  const [editorMode, setEditorMode] = useState<"edit" | "create" | null>(null);
   const [filter, setFilter] = useState<MarketFilter>("ALL");
   const [sectorFilter, setSectorFilter] = useState<string>("ALL");
   const [poolQuery, setPoolQuery] = useState<string>("");
@@ -169,6 +181,7 @@ export function MarketsWorkspace() {
     setPoolId(nextPoolId);
     setSectorFilter("ALL");
     setPoolQuery("");
+    setFsDrawerOpen(false);
     try {
       localStorage.setItem(POOL_ID_KEY, nextPoolId);
     } catch {
@@ -232,15 +245,65 @@ export function MarketsWorkspace() {
   const colorScheme: "cn" | "us" = config?.colorScheme === "us" ? "us" : "cn";
   const refreshSec = config?.refreshSec ?? 15;
 
-  const activePreset = useMemo(
-    () => MARKET_PRESETS.find((p) => p.id === poolId) ?? null,
-    [poolId],
+  const resolvedPools: ResolvedPool[] = useMemo(() => {
+    const edits = config?.poolEdits ?? {};
+    const builtIn: ResolvedPool[] = MARKET_PRESETS.map((preset) => {
+      const edit = edits[preset.id];
+      const items = applyPoolEdit(preset.items, edit);
+      const edited = Boolean(
+        edit && (edit.added.length > 0 || edit.removed.length > 0),
+      );
+      const removedSet = new Set(
+        (edit?.removed ?? []).map((s) => s.trim().toUpperCase()),
+      );
+      const removedItems = preset.items.filter((b) =>
+        removedSet.has(b.symbol.trim().toUpperCase()),
+      );
+      const cleanName = preset.label.replace(/\s*\(\d+\)$/, "");
+      return {
+        id: preset.id,
+        name: cleanName,
+        label: formatPoolLabel(preset.label, items.length, edited),
+        description: preset.description,
+        items,
+        kind: "preset",
+        edited,
+        removedItems,
+      };
+    });
+    const custom: ResolvedPool[] = (config?.customPools ?? []).map((cp) => ({
+      id: cp.id,
+      name: cp.name,
+      label: `${cp.name} (${cp.items.length})`,
+      description: cp.description || `自定义板块，共 ${cp.items.length} 家公司`,
+      items: cp.items,
+      kind: "custom",
+      edited: false,
+      removedItems: [],
+    }));
+    return [...builtIn, ...custom];
+  }, [config?.poolEdits, config?.customPools]);
+
+  const activePool = useMemo(
+    () => resolvedPools.find((p) => p.id === poolId) ?? null,
+    [resolvedPools, poolId],
   );
-  const isCustomWatchlist = activePreset === null;
+  const isCustomWatchlist = poolId === "watchlist";
+
+  // If a previously selected custom pool was deleted (or missing after config load), fall back safely.
+  useEffect(() => {
+    if (
+      config &&
+      poolId !== "watchlist" &&
+      !resolvedPools.some((p) => p.id === poolId)
+    ) {
+      setPoolId("us_sp500");
+    }
+  }, [config, poolId, resolvedPools]);
 
   const activePoolItems: WatchItem[] = useMemo(
-    () => (activePreset ? activePreset.items : (config?.watchlist ?? [])),
-    [activePreset, config?.watchlist],
+    () => (activePool ? activePool.items : (config?.watchlist ?? [])),
+    [activePool, config?.watchlist],
   );
 
   const indexItems = useMemo(() => config?.indices ?? [], [config?.indices]);
@@ -403,17 +466,22 @@ export function MarketsWorkspace() {
   );
 
   const presetSectors = useMemo(() => {
-    if (!activePreset) return [];
+    if (!activePool) return [];
     const seen = new Set<string>();
     const out: string[] = [];
-    for (const item of activePreset.items) {
+    for (const item of activePool.items) {
       if (item.sector && !seen.has(item.sector)) {
         seen.add(item.sector);
         out.push(item.sector);
       }
     }
     return out;
-  }, [activePreset]);
+  }, [activePool]);
+
+  const activePoolSymbols = useMemo(
+    () => new Set(activePoolItems.map((w) => w.symbol.trim().toUpperCase())),
+    [activePoolItems],
+  );
 
   const filteredWatchlist = useMemo(() => {
     let base = shownItems;
@@ -471,6 +539,145 @@ export function MarketsWorkspace() {
     } else {
       addSymbol(item);
     }
+  };
+
+  const addCompanyToActivePool = (item: WatchItem) => {
+    if (!config) return;
+    if (isCustomWatchlist) {
+      addSymbol(item);
+      return;
+    }
+    if (!activePool) return;
+    const sector =
+      item.sector?.trim() ||
+      (sectorFilter !== "ALL" ? sectorFilter : "") ||
+      presetSectors[0] ||
+      "自定义";
+    const normalized: WatchItem = {
+      symbol: item.symbol,
+      name: item.name,
+      market: item.market,
+      sector,
+    };
+
+    if (activePool.kind === "preset") {
+      const base =
+        MARKET_PRESETS.find((p) => p.id === activePool.id)?.items ?? [];
+      const prevEdits = config.poolEdits ?? {};
+      const nextEdit = addCompanyToPoolEdit(
+        base,
+        prevEdits[activePool.id],
+        normalized,
+      );
+      const nextEdits = { ...prevEdits };
+      if (nextEdit) nextEdits[activePool.id] = nextEdit;
+      else delete nextEdits[activePool.id];
+      saveCfg.mutate({ ...config, poolEdits: nextEdits });
+    } else {
+      const nextPools: CustomPool[] = (config.customPools ?? []).map((cp) => {
+        if (cp.id !== activePool.id) return cp;
+        const key = normalized.symbol.trim().toUpperCase();
+        const exists = cp.items.some(
+          (i) => i.symbol.trim().toUpperCase() === key,
+        );
+        const items = exists
+          ? cp.items.map((i) =>
+              i.symbol.trim().toUpperCase() === key
+                ? { ...i, ...normalized }
+                : i,
+            )
+          : [normalized, ...cp.items];
+        return { ...cp, items };
+      });
+      saveCfg.mutate({ ...config, customPools: nextPools });
+    }
+    setSelectedSymbol(normalized.symbol);
+    setSearchText("");
+    setSearchOpen(false);
+  };
+
+  const removeCompanyFromActivePool = (symbol: string) => {
+    if (!config) return;
+    if (isCustomWatchlist) {
+      removeSymbol(symbol);
+      return;
+    }
+    if (!activePool) return;
+    if (activePool.kind === "preset") {
+      const base =
+        MARKET_PRESETS.find((p) => p.id === activePool.id)?.items ?? [];
+      const prevEdits = config.poolEdits ?? {};
+      const nextEdit = removeCompanyFromPoolEdit(
+        base,
+        prevEdits[activePool.id],
+        symbol,
+      );
+      const nextEdits = { ...prevEdits };
+      if (nextEdit) nextEdits[activePool.id] = nextEdit;
+      else delete nextEdits[activePool.id];
+      saveCfg.mutate({ ...config, poolEdits: nextEdits });
+    } else {
+      const key = symbol.trim().toUpperCase();
+      const nextPools: CustomPool[] = (config.customPools ?? []).map((cp) =>
+        cp.id === activePool.id
+          ? {
+              ...cp,
+              items: cp.items.filter(
+                (i) => i.symbol.trim().toUpperCase() !== key,
+              ),
+            }
+          : cp,
+      );
+      saveCfg.mutate({ ...config, customPools: nextPools });
+    }
+  };
+
+  const changeCompanySectorInActivePool = (symbol: string, sector: string) => {
+    if (!config || !activePool) return;
+    const key = symbol.trim().toUpperCase();
+    const existing = activePool.items.find(
+      (i) => i.symbol.trim().toUpperCase() === key,
+    );
+    if (!existing) return;
+    addCompanyToActivePool({ ...existing, sector });
+  };
+
+  const resetActivePreset = () => {
+    if (!config || !activePool || activePool.kind !== "preset") return;
+    const nextEdits = { ...(config.poolEdits ?? {}) };
+    delete nextEdits[activePool.id];
+    saveCfg.mutate({ ...config, poolEdits: nextEdits });
+    setSectorFilter("ALL");
+  };
+
+  const createCustomPool = (name: string, description: string) => {
+    if (!config) return;
+    const id = `custom_${Date.now().toString(36)}`;
+    const nextPool: CustomPool = { id, name, description, items: [] };
+    saveCfg.mutate({
+      ...config,
+      customPools: [...(config.customPools ?? []), nextPool],
+    });
+    changePool(id);
+    setEditorMode("edit");
+  };
+
+  const renameActiveCustomPool = (name: string, description: string) => {
+    if (!config || !activePool || activePool.kind !== "custom") return;
+    const nextPools = (config.customPools ?? []).map((cp) =>
+      cp.id === activePool.id ? { ...cp, name, description } : cp,
+    );
+    saveCfg.mutate({ ...config, customPools: nextPools });
+  };
+
+  const deleteActiveCustomPool = () => {
+    if (!config || !activePool || activePool.kind !== "custom") return;
+    const nextPools = (config.customPools ?? []).filter(
+      (cp) => cp.id !== activePool.id,
+    );
+    saveCfg.mutate({ ...config, customPools: nextPools });
+    setEditorMode(null);
+    changePool("us_sp500");
   };
 
   const updatePrefs = (patch: Partial<MarketsConfig>) => {
@@ -606,7 +813,7 @@ export function MarketsWorkspace() {
         })}
       </section>
 
-      {/* Preset Pools / Universe Selector */}
+      {/* Preset & Custom Pools / Universe Selector */}
       <div className="markets-pool-bar">
         <div className="markets-pill-group">
           <button
@@ -616,20 +823,49 @@ export function MarketsWorkspace() {
           >
             我的自选 ({config?.watchlist.length ?? 0})
           </button>
-          {MARKET_PRESETS.map((preset) => (
+          {resolvedPools.map((pool) => (
             <button
-              key={preset.id}
+              key={pool.id}
               type="button"
-              className={`markets-pill-btn${poolId === preset.id ? " active" : ""}`}
-              onClick={() => changePool(preset.id)}
-              title={preset.description}
+              className={`markets-pill-btn${poolId === pool.id ? " active" : ""}`}
+              onClick={() => changePool(pool.id)}
+              title={
+                pool.edited
+                  ? `${pool.description}（已自定义编辑）`
+                  : pool.description
+              }
             >
-              {preset.label}
+              <span>{pool.label}</span>
+              {pool.edited && (
+                <i className="markets-edited-dot" aria-label="已编辑" />
+              )}
             </button>
           ))}
         </div>
-        {activePreset && (
-          <span className="markets-pool-desc">{activePreset.description}</span>
+        <div className="markets-pool-actions">
+          <button
+            type="button"
+            className="markets-pool-action-btn"
+            onClick={() => setEditorMode("edit")}
+            disabled={!config}
+            title="增删或调整当前板块中的公司"
+          >
+            <Pencil size={12} />
+            <span>编辑板块</span>
+          </button>
+          <button
+            type="button"
+            className="markets-pool-action-btn"
+            onClick={() => setEditorMode("create")}
+            disabled={!config}
+            title="新建自定义股票板块"
+          >
+            <FolderPlus size={12} />
+            <span>新建板块</span>
+          </button>
+        </div>
+        {activePool && (
+          <span className="markets-pool-desc">{activePool.description}</span>
         )}
       </div>
 
@@ -714,8 +950,12 @@ export function MarketsWorkspace() {
                     setSearchText(e.target.value);
                     setSearchOpen(true);
                   }}
-                  placeholder="搜索代码/名称添加，如 NVDA、2330、茅台…"
-                  aria-label="搜索并添加自选股"
+                  placeholder={
+                    isCustomWatchlist
+                      ? "搜索代码/名称添加自选，如 NVDA、2330、茅台…"
+                      : `搜索代码/名称加入「${activePool?.name ?? "当前板块"}」…`
+                  }
+                  aria-label="搜索并添加公司"
                 />
               </label>
               {searchOpen && debouncedQuery.length >= 1 && (
@@ -728,13 +968,24 @@ export function MarketsWorkspace() {
                     </div>
                   ) : (
                     (searchQuery.data ?? []).map((hit) => {
-                      const exists = watchlistSymbols.has(hit.symbol);
+                      const exists = isCustomWatchlist
+                        ? watchlistSymbols.has(hit.symbol)
+                        : activePoolSymbols.has(
+                            hit.symbol.trim().toUpperCase(),
+                          );
                       return (
                         <button
                           key={hit.symbol}
                           type="button"
                           className="markets-search-item"
-                          onClick={() => addSymbol(hit)}
+                          onClick={() =>
+                            isCustomWatchlist
+                              ? addSymbol(hit)
+                              : exists
+                                ? (setSelectedSymbol(hit.symbol),
+                                  setSearchOpen(false))
+                                : addCompanyToActivePool(hit)
+                          }
                         >
                           <span className="markets-mkt-tag">{hit.market}</span>
                           <span className="markets-search-info">
@@ -747,11 +998,13 @@ export function MarketsWorkspace() {
                           <span className="markets-add-tag">
                             {exists ? (
                               <>
-                                <Check size={12} /> 已自选
+                                <Check size={12} />{" "}
+                                {isCustomWatchlist ? "已自选" : "已在板块"}
                               </>
                             ) : (
                               <>
-                                <Plus size={12} /> 添加
+                                <Plus size={12} />{" "}
+                                {isCustomWatchlist ? "加自选" : "加板块"}
                               </>
                             )}
                           </span>
@@ -770,7 +1023,7 @@ export function MarketsWorkspace() {
               quoteBySymbol={quoteBySymbol}
               colorScheme={colorScheme}
               groupBy={
-                activePreset
+                activePool
                   ? sectorFilter === "ALL" && !poolQuery.trim()
                     ? "sector"
                     : "none"
@@ -778,18 +1031,44 @@ export function MarketsWorkspace() {
                     ? "market"
                     : "none"
               }
+              sectors={presetSectors}
+              totalPoolCount={activePoolItems.length}
               activeSector={sectorFilter !== "ALL" ? sectorFilter : null}
-              onSelectSector={activePreset ? setSectorFilter : undefined}
+              onSelectSector={
+                activePool
+                  ? (sec) => {
+                      setSectorFilter(sec);
+                      setFsDrawerOpen(false);
+                    }
+                  : undefined
+              }
+              marketFilter={isCustomWatchlist ? filter : undefined}
+              onSelectMarketFilter={
+                isCustomWatchlist
+                  ? (m) => {
+                      setFilter(m);
+                      setFsDrawerOpen(false);
+                    }
+                  : undefined
+              }
               poolQuery={poolQuery}
               onPoolQueryChange={
                 activePoolItems.length > 25 ? setPoolQuery : undefined
               }
               sizeMode={sizeMode}
               onSizeModeChange={setSizeMode}
-              selectedSymbol={activeSymbol}
+              selectedSymbol={isFullscreen && !fsDrawerOpen ? "" : activeSymbol}
               onSelect={(sym) => {
-                setSelectedSymbol(sym);
-                if (isFullscreen) setFsDrawerOpen(true);
+                if (isFullscreen) {
+                  if (fsDrawerOpen && sym === activeSymbol) {
+                    setFsDrawerOpen(false);
+                    return;
+                  }
+                  setSelectedSymbol(sym);
+                  setFsDrawerOpen(true);
+                } else {
+                  setSelectedSymbol(sym);
+                }
               }}
               isFullscreen={isFullscreen}
               onToggleFullscreen={() => {
@@ -800,8 +1079,11 @@ export function MarketsWorkspace() {
                 }
               }}
               poolId={poolId}
+              pools={resolvedPools}
               watchlistCount={config?.watchlist.length ?? 0}
               onChangePool={changePool}
+              onEditPool={config ? () => setEditorMode("edit") : undefined}
+              onCreatePool={config ? () => setEditorMode("create") : undefined}
               onRefresh={manualRefresh}
               isRefreshing={isAnyFetching}
               lastUpdatedStr={lastUpdatedStr}
@@ -932,37 +1214,51 @@ export function MarketsWorkspace() {
                               <Trash2 size={13} />
                             </button>
                           ) : (
-                            <button
-                              type="button"
-                              className={`markets-row-star${watchlistSymbols.has(w.symbol) ? " active" : ""}`}
-                              title={
-                                watchlistSymbols.has(w.symbol)
-                                  ? "从自选移除"
-                                  : "加入我的自选"
-                              }
-                              aria-label={
-                                watchlistSymbols.has(w.symbol)
-                                  ? `从自选移除 ${w.symbol}`
-                                  : `加入自选 ${w.symbol}`
-                              }
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleWatchlist({
-                                  symbol: w.symbol,
-                                  name: q?.name || w.name || w.symbol,
-                                  market: w.market,
-                                });
-                              }}
-                            >
-                              <Star
-                                size={13}
-                                fill={
+                            <span className="markets-row-actions">
+                              <button
+                                type="button"
+                                className={`markets-row-star${watchlistSymbols.has(w.symbol) ? " active" : ""}`}
+                                title={
                                   watchlistSymbols.has(w.symbol)
-                                    ? "currentColor"
-                                    : "none"
+                                    ? "从自选移除"
+                                    : "加入我的自选"
                                 }
-                              />
-                            </button>
+                                aria-label={
+                                  watchlistSymbols.has(w.symbol)
+                                    ? `从自选移除 ${w.symbol}`
+                                    : `加入自选 ${w.symbol}`
+                                }
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleWatchlist({
+                                    symbol: w.symbol,
+                                    name: q?.name || w.name || w.symbol,
+                                    market: w.market,
+                                  });
+                                }}
+                              >
+                                <Star
+                                  size={13}
+                                  fill={
+                                    watchlistSymbols.has(w.symbol)
+                                      ? "currentColor"
+                                      : "none"
+                                  }
+                                />
+                              </button>
+                              <button
+                                type="button"
+                                className="markets-del-btn"
+                                title={`从「${activePool?.name ?? "当前板块"}」移除`}
+                                aria-label={`从板块移除 ${w.symbol}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeCompanyFromActivePool(w.symbol);
+                                }}
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </span>
                           )}
                         </td>
                       </tr>
@@ -989,6 +1285,18 @@ export function MarketsWorkspace() {
         >
           {activeSymbol ? (
             <>
+              {isFullscreen && (
+                <button
+                  type="button"
+                  className="markets-drawer-close labeled fs-corner"
+                  title="关闭走势图 (Esc，或再次点击该公司方块)"
+                  aria-label="关闭走势浮窗"
+                  onClick={() => setFsDrawerOpen(false)}
+                >
+                  <X size={13} />
+                  <span>关闭</span>
+                </button>
+              )}
               <div className="markets-detail-head">
                 <div>
                   <div className="markets-detail-title">
@@ -1003,37 +1311,55 @@ export function MarketsWorkspace() {
                     <code>{activeSymbol}</code>
                     {selectedItem &&
                       !indexItems.some((i) => i.symbol === activeSymbol) && (
-                        <button
-                          type="button"
-                          className={`markets-star-btn${watchlistSymbols.has(activeSymbol) ? " active" : ""}`}
-                          onClick={() =>
-                            toggleWatchlist({
-                              symbol: activeSymbol,
-                              name:
-                                selectedQuote?.name ||
-                                selectedItem.name ||
-                                activeSymbol,
-                              market:
-                                selectedQuote?.market ||
-                                selectedItem.market ||
-                                "US",
-                            })
-                          }
-                        >
-                          <Star
-                            size={12}
-                            fill={
-                              watchlistSymbols.has(activeSymbol)
-                                ? "currentColor"
-                                : "none"
+                        <>
+                          <button
+                            type="button"
+                            className={`markets-star-btn${watchlistSymbols.has(activeSymbol) ? " active" : ""}`}
+                            onClick={() =>
+                              toggleWatchlist({
+                                symbol: activeSymbol,
+                                name:
+                                  selectedQuote?.name ||
+                                  selectedItem.name ||
+                                  activeSymbol,
+                                market:
+                                  selectedQuote?.market ||
+                                  selectedItem.market ||
+                                  "US",
+                              })
                             }
-                          />
-                          <span>
-                            {watchlistSymbols.has(activeSymbol)
-                              ? "已自选"
-                              : "加自选"}
-                          </span>
-                        </button>
+                          >
+                            <Star
+                              size={12}
+                              fill={
+                                watchlistSymbols.has(activeSymbol)
+                                  ? "currentColor"
+                                  : "none"
+                              }
+                            />
+                            <span>
+                              {watchlistSymbols.has(activeSymbol)
+                                ? "已自选"
+                                : "加自选"}
+                            </span>
+                          </button>
+                          {activePool &&
+                            activePoolSymbols.has(
+                              activeSymbol.trim().toUpperCase(),
+                            ) && (
+                              <button
+                                type="button"
+                                className="markets-star-btn danger-hover"
+                                onClick={() =>
+                                  removeCompanyFromActivePool(activeSymbol)
+                                }
+                                title={`将 ${activeSymbol} 从「${activePool.name}」移出`}
+                              >
+                                <Trash2 size={12} />
+                                <span>移出本板块</span>
+                              </button>
+                            )}
+                        </>
                       )}
                   </div>
                   <div className="markets-detail-meta">
@@ -1074,17 +1400,6 @@ export function MarketsWorkspace() {
                       </button>
                     ))}
                   </div>
-                  {isFullscreen && (
-                    <button
-                      type="button"
-                      className="markets-drawer-close"
-                      title="关闭走势浮窗 (Esc)"
-                      aria-label="关闭走势浮窗"
-                      onClick={() => setFsDrawerOpen(false)}
-                    >
-                      <X size={14} />
-                    </button>
-                  )}
                 </div>
               </div>
 
@@ -1203,6 +1518,24 @@ export function MarketsWorkspace() {
           )}
         </section>
       </div>
+
+      {editorMode && (
+        <PoolEditorModal
+          mode={editorMode}
+          pool={activePool}
+          watchlistItems={config?.watchlist ?? []}
+          initialSector={sectorFilter}
+          onClose={() => setEditorMode(null)}
+          onAddCompany={addCompanyToActivePool}
+          onRemoveCompany={removeCompanyFromActivePool}
+          onChangeSector={changeCompanySectorInActivePool}
+          onRestoreRemoved={(rem) => addCompanyToActivePool(rem)}
+          onResetPreset={resetActivePreset}
+          onCreatePool={createCustomPool}
+          onRenamePool={renameActiveCustomPool}
+          onDeletePool={deleteActiveCustomPool}
+        />
+      )}
     </div>
   );
 }

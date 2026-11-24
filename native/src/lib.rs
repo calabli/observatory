@@ -1,5 +1,6 @@
 pub mod activity;
 pub mod api;
+pub mod benchmarks;
 pub mod codex_rollout_file;
 pub mod config;
 pub mod database;
