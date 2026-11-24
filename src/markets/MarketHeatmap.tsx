@@ -1,14 +1,18 @@
 import {
   fmtClock,
+  fmtExtremePct,
   fmtLastTrade,
   fmtMarketCap,
   fmtPrice,
   fmtSigned,
   fmtTurnover,
   fmtVolume,
+  fmtYearMonth,
   type FxRates,
   GROUP_HEADER_H,
+  type HeatmapMetricMode,
   isStale,
+  type LiveExtremes,
   MARKET_META,
   MARKET_ORDER,
   type MarketFilter,
@@ -22,7 +26,7 @@ import {
   tileWeights,
 } from "./marketsShared";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import { heatTileColor, layoutSquarified } from "./treemap";
+import { heatExtremeColor, heatTileColor, layoutSquarified } from "./treemap";
 import {
   FolderPlus,
   Maximize2,
@@ -40,6 +44,10 @@ const HEATMAP_BOTTOM_GAP = 20;
 export function MarketHeatmap({
   items,
   quoteBySymbol,
+  extremesBySymbol,
+  extremesRemaining,
+  metricMode,
+  onMetricModeChange,
   colorScheme,
   groupBy,
   sectors,
@@ -72,6 +80,10 @@ export function MarketHeatmap({
 }: {
   items: WatchItem[];
   quoteBySymbol: Map<string, StockQuote>;
+  extremesBySymbol: Map<string, LiveExtremes>;
+  extremesRemaining?: number;
+  metricMode: HeatmapMetricMode;
+  onMetricModeChange: (m: HeatmapMetricMode) => void;
   colorScheme: "cn" | "us";
   groupBy: "sector" | "market" | "none";
   sectors: string[];
@@ -259,8 +271,42 @@ export function MarketHeatmap({
     return { groups, tiles: [] };
   }, [items, quoteBySymbol, groupBy, sizeMode, mapW, mapH, fx]);
 
-  const legendStops =
-    colorScheme === "cn"
+  const legendStops = useMemo(() => {
+    if (metricMode === "fromAth") {
+      return colorScheme === "cn"
+        ? [
+            { label: "-60%", color: "#166534" },
+            { label: "-40%", color: "#16a34a" },
+            { label: "-20%", color: "#2f8f5b" },
+            { label: "-10%", color: "#475569" },
+            { label: "近新高", color: "#b91c1c" },
+          ]
+        : [
+            { label: "-60%", color: "#991b1b" },
+            { label: "-40%", color: "#dc2626" },
+            { label: "-20%", color: "#c24141" },
+            { label: "-10%", color: "#475569" },
+            { label: "近新高", color: "#15803d" },
+          ];
+    }
+    if (metricMode === "fromAtl") {
+      return colorScheme === "cn"
+        ? [
+            { label: "<10%", color: "#3f495a" },
+            { label: "+35%", color: "#8c4a4e" },
+            { label: "+100%", color: "#dc2626" },
+            { label: "+300%", color: "#b91c1c" },
+            { label: "+10倍", color: "#991b1b" },
+          ]
+        : [
+            { label: "<10%", color: "#3f495a" },
+            { label: "+35%", color: "#3d6b56" },
+            { label: "+100%", color: "#16a34a" },
+            { label: "+300%", color: "#15803d" },
+            { label: "+10倍", color: "#166534" },
+          ];
+    }
+    return colorScheme === "cn"
       ? [
           { label: "-4%", color: "#166534" },
           { label: "-2%", color: "#16a34a" },
@@ -275,6 +321,7 @@ export function MarketHeatmap({
           { label: "+2%", color: "#16a34a" },
           { label: "+4%", color: "#166534" },
         ];
+  }, [metricMode, colorScheme]);
 
   const renderTile = (
     rect: {
@@ -288,8 +335,17 @@ export function MarketHeatmap({
     parentRect?: { x: number; y: number; w: number; h: number },
   ) => {
     const q = quoteBySymbol.get(rect.data.symbol);
+    const ext = extremesBySymbol.get(rect.data.symbol.trim().toUpperCase());
     const stale = isStale(q);
-    const bg = stale ? undefined : heatTileColor(q?.changePercent, colorScheme);
+    const bg = stale
+      ? undefined
+      : metricMode === "change"
+        ? heatTileColor(q?.changePercent, colorScheme)
+        : heatExtremeColor(
+            metricMode === "fromAth" ? ext?.fromAthPct : ext?.fromAtlPct,
+            metricMode,
+            colorScheme,
+          );
     const isSelected = selectedSymbol === rect.data.symbol;
     const baseX = parentRect?.x ?? 0;
     const baseY = parentRect?.y ?? 0;
@@ -304,6 +360,7 @@ export function MarketHeatmap({
     const tiny = !micro && (rect.w < 52 || rect.h < 34);
     const compact = !micro && !tiny && (rect.w < 96 || rect.h < 58);
     const showPrice = rect.w >= 122 && rect.h >= 82;
+    const showExtSub = rect.w >= 128 && rect.h >= 102 && !!ext;
     const showSub = rect.w >= 88 && rect.h >= 58;
     const showPct = rect.w >= 44 && rect.h >= 30;
     // On tight US tiles (e.g. 503-stock S&P 500), show crisp ticker symbol just like Finviz!
@@ -311,6 +368,12 @@ export function MarketHeatmap({
       rect.data.market === "US" && (tiny || compact)
         ? rect.data.symbol
         : q?.name || rect.data.name || rect.data.symbol;
+    const pctText =
+      metricMode === "change"
+        ? fmtSigned(q?.changePercent, "%")
+        : metricMode === "fromAth"
+          ? fmtExtremePct(ext?.fromAthPct)
+          : fmtExtremePct(ext?.fromAtlPct);
 
     return (
       <button
@@ -327,8 +390,8 @@ export function MarketHeatmap({
         onClick={() => onSelect(rect.data.symbol)}
         onMouseMove={(e) =>
           setTip({
-            x: Math.min(e.clientX + 14, window.innerWidth - 290),
-            y: Math.min(e.clientY + 14, window.innerHeight - 190),
+            x: Math.min(e.clientX + 14, window.innerWidth - 305),
+            y: Math.min(e.clientY + 14, window.innerHeight - 230),
             item: rect.data,
             quote: q,
           })
@@ -337,14 +400,18 @@ export function MarketHeatmap({
       >
         {!micro && <span className="markets-hm-name">{primaryLabel}</span>}
         {showSub && <span className="markets-hm-sym">{rect.data.symbol}</span>}
-        {showPct && (
-          <span className="markets-hm-pct">
-            {fmtSigned(q?.changePercent, "%")}
-          </span>
-        )}
+        {showPct && <span className="markets-hm-pct">{pctText}</span>}
         {showPrice && (
           <span className="markets-hm-price">
-            {fmtPrice(q?.price, q?.currency)}
+            {metricMode === "change"
+              ? fmtPrice(q?.price, q?.currency)
+              : `${fmtPrice(q?.price, q?.currency)} · ${fmtSigned(q?.changePercent, "%")}`}
+          </span>
+        )}
+        {showExtSub && metricMode === "change" && (
+          <span className="markets-hm-ext">
+            高{fmtExtremePct(ext.fromAthPct)} · 低
+            {fmtExtremePct(ext.fromAtlPct)}
           </span>
         )}
       </button>
@@ -475,9 +542,9 @@ export function MarketHeatmap({
           <div className="markets-pill-group">
             {(
               [
-                ["cap", "按市值权重"],
-                ["turnover", "按成交额"],
-                ["move", "按涨跌幅"],
+                ["cap", "按市值"],
+                ["turnover", "成交额"],
+                ["move", "涨跌幅"],
                 ["equal", "等面积"],
               ] as const
             ).map(([m, label]) => (
@@ -491,6 +558,32 @@ export function MarketHeatmap({
               </button>
             ))}
           </div>
+          <div className="markets-pill-group" title="切换云图着色与展示指标">
+            {(
+              [
+                ["change", "今日涨跌"],
+                ["fromAth", "距历史高点"],
+                ["fromAtl", "距历史低点"],
+              ] as const
+            ).map(([m, label]) => (
+              <button
+                key={m}
+                type="button"
+                className={`markets-pill-btn${metricMode === m ? " active" : ""}`}
+                onClick={() => onMetricModeChange(m)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {extremesRemaining != null && extremesRemaining > 0 && (
+            <span
+              className="markets-ath-sync"
+              title="正在后台补齐历史高低点并缓存至本地 SQLite"
+            >
+              高低点同步中（余 {extremesRemaining}）
+            </span>
+          )}
           {!isFullscreen && activeSector && onSelectSector && (
             <button
               type="button"
@@ -668,6 +761,40 @@ export function MarketHeatmap({
             {fmtPrice(tip.quote?.low, tip.quote?.currency)} · 量{" "}
             {fmtVolume(tip.quote?.volume)} · 额 {fmtTurnover(tip.quote)}
           </div>
+          {(() => {
+            const ext = extremesBySymbol.get(
+              tip.item.symbol.trim().toUpperCase(),
+            );
+            if (!ext) return null;
+            const athYm = fmtYearMonth(ext.athTs);
+            const atlYm = fmtYearMonth(ext.atlTs);
+            return (
+              <div className="markets-hm-tip-extremes">
+                <span>
+                  历史最高 {fmtPrice(ext.ath, tip.quote?.currency)}
+                  {athYm ? ` (${athYm})` : ""} ·{" "}
+                  <b
+                    style={{
+                      color: toneColor(trendTone(ext.fromAthPct, colorScheme)),
+                    }}
+                  >
+                    跌 {fmtExtremePct(ext.fromAthPct)}
+                  </b>
+                </span>
+                <span>
+                  历史最低 {fmtPrice(ext.atl, tip.quote?.currency)}
+                  {atlYm ? ` (${atlYm})` : ""} ·{" "}
+                  <b
+                    style={{
+                      color: toneColor(trendTone(ext.fromAtlPct, colorScheme)),
+                    }}
+                  >
+                    涨 {fmtExtremePct(ext.fromAtlPct)}
+                  </b>
+                </span>
+              </div>
+            );
+          })()}
           {tip.quote?.marketCap != null && tip.quote.marketCap > 0 && (
             <div className="markets-hm-tip-row">
               总市值 {fmtMarketCap(tip.quote.marketCap, tip.quote.currency)}

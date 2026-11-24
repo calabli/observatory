@@ -21,6 +21,8 @@ use crate::database::Database;
 use crate::error::AppError;
 
 const WATCHLIST_SETTINGS_KEY: &str = "markets_watchlist_v1";
+const EXTREMES_CACHE_KEY: &str = "markets_ath_cache_v1";
+const EXTREMES_TTL_SECS: i64 = 7 * 86_400;
 const USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 
 fn http_client() -> &'static reqwest::Client {
@@ -303,6 +305,31 @@ pub fn save_config(db: &Database, cfg: &MarketsConfig) -> Result<(), AppError> {
 pub struct ChartPoint {
     pub ts: i64,
     pub price: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub open: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub high: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub low: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volume: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PriceExtremes {
+    pub ath: f64,
+    pub ath_ts: Option<i64>,
+    pub atl: f64,
+    pub atl_ts: Option<i64>,
+    pub fetched_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtremesBatchResponse {
+    pub items: HashMap<String, PriceExtremes>,
+    pub remaining: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -345,6 +372,10 @@ pub struct StockChartDetail {
     pub prev_close: Option<f64>,
     pub source: String,
     pub points: Vec<ChartPoint>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fifty_two_week_high: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fifty_two_week_low: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -779,6 +810,7 @@ fn parse_tencent_minute_points(date_str: &str, arr: &[Value]) -> Vec<ChartPoint>
     let offset = chrono::FixedOffset::east_opt(8 * 3600);
 
     let mut pts = Vec::with_capacity(arr.len());
+    let mut prev_cum_vol: Option<u64> = None;
     for item in arr {
         let Some(line) = item.as_str() else { continue };
         let mut parts = line.split_whitespace();
@@ -786,6 +818,18 @@ fn parse_tencent_minute_points(date_str: &str, arr: &[Value]) -> Vec<ChartPoint>
         let Some(price) = parts.next().and_then(parse_f64_opt) else {
             continue;
         };
+        let cum_vol = parts
+            .next()
+            .and_then(parse_f64_opt)
+            .map(|v| v.max(0.0) as u64);
+        let delta_vol = match (cum_vol, prev_cum_vol) {
+            (Some(cur), Some(prev)) => Some(cur.saturating_sub(prev)),
+            (Some(cur), None) => Some(cur),
+            _ => None,
+        };
+        if cum_vol.is_some() {
+            prev_cum_vol = cum_vol;
+        }
         if hhmm.len() != 4 || price <= 0.0 {
             continue;
         }
@@ -803,7 +847,14 @@ fn parse_tencent_minute_points(date_str: &str, arr: &[Value]) -> Vec<ChartPoint>
             .and_then(|o| o.from_local_datetime(&dt).single())
             .map(|d| d.timestamp())
             .unwrap_or(0);
-        pts.push(ChartPoint { ts, price });
+        pts.push(ChartPoint {
+            ts,
+            price,
+            open: None,
+            high: None,
+            low: None,
+            volume: delta_vol,
+        });
     }
     pts
 }
@@ -1231,7 +1282,11 @@ fn yahoo_interval_for_range(range: &str) -> (&'static str, &'static str) {
         "5d" => ("5d", "15m"),
         "1mo" => ("1mo", "1d"),
         "3mo" => ("3mo", "1d"),
+        "6mo" => ("6mo", "1d"),
         "1y" => ("1y", "1d"),
+        "2y" => ("2y", "1wk"),
+        "5y" => ("5y", "1wk"),
+        "max" => ("max", "1mo"),
         _ => ("1d", "5m"),
     }
 }
@@ -1299,17 +1354,43 @@ async fn fetch_yahoo_chart_raw(
 
     let meta = result["meta"].clone();
     let timestamps = result["timestamp"].as_array();
-    let closes = result["indicators"]["quote"]
+    let quote_obj = result["indicators"]["quote"]
         .as_array()
-        .and_then(|a| a.first())
-        .and_then(|q| q["close"].as_array());
+        .and_then(|a| a.first());
+    let opens = quote_obj.and_then(|q| q["open"].as_array());
+    let highs = quote_obj.and_then(|q| q["high"].as_array());
+    let lows = quote_obj.and_then(|q| q["low"].as_array());
+    let closes = quote_obj.and_then(|q| q["close"].as_array());
+    let volumes = quote_obj.and_then(|q| q["volume"].as_array());
 
     let mut points = Vec::new();
     if let (Some(ts_arr), Some(close_arr)) = (timestamps, closes) {
-        for (ts_v, c_v) in ts_arr.iter().zip(close_arr.iter()) {
+        for (i, (ts_v, c_v)) in ts_arr.iter().zip(close_arr.iter()).enumerate() {
             if let (Some(ts), Some(price)) = (ts_v.as_i64(), c_v.as_f64()) {
                 if price.is_finite() && price > 0.0 {
-                    points.push(ChartPoint { ts, price });
+                    let open = opens
+                        .and_then(|a| a.get(i))
+                        .and_then(Value::as_f64)
+                        .filter(|v| v.is_finite() && *v > 0.0);
+                    let high = highs
+                        .and_then(|a| a.get(i))
+                        .and_then(Value::as_f64)
+                        .filter(|v| v.is_finite() && *v > 0.0);
+                    let low = lows
+                        .and_then(|a| a.get(i))
+                        .and_then(Value::as_f64)
+                        .filter(|v| v.is_finite() && *v > 0.0);
+                    let volume = volumes
+                        .and_then(|a| a.get(i))
+                        .and_then(Value::as_u64);
+                    points.push(ChartPoint {
+                        ts,
+                        price,
+                        open,
+                        high,
+                        low,
+                        volume,
+                    });
                 }
             }
         }
@@ -1780,7 +1861,7 @@ fn error_quote(item: &WatchItem, err: &str) -> StockQuote {
 }
 
 // ---------------------------------------------------------------------------
-// High-resolution single-symbol chart (1d / 5d / 1mo / 3mo / 1y)
+// High-resolution single-symbol chart (1d / 5d / 1mo / 3mo / 6mo / 1y / 2y / 5y / max)
 // ---------------------------------------------------------------------------
 
 pub async fn fetch_chart(symbol: &str, range: &str) -> Result<StockChartDetail, AppError> {
@@ -1806,6 +1887,8 @@ pub async fn fetch_chart(symbol: &str, range: &str) -> Result<StockChartDetail, 
                         prev_close: q.prev_close,
                         source: "腾讯分时".into(),
                         points: q.sparkline,
+                        fifty_two_week_high: None,
+                        fifty_two_week_low: None,
                     });
                 }
             }
@@ -1815,6 +1898,19 @@ pub async fn fetch_chart(symbol: &str, range: &str) -> Result<StockChartDetail, 
     let (meta, points) = fetch_yahoo_chart_raw(sym, range, false)
         .await
         .map_err(AppError::Message)?;
+    let fifty_two_week_high = meta["fiftyTwoWeekHigh"]
+        .as_f64()
+        .filter(|v| v.is_finite() && *v > 0.0);
+    let fifty_two_week_low = meta["fiftyTwoWeekLow"]
+        .as_f64()
+        .filter(|v| v.is_finite() && *v > 0.0);
+    if range == "max" {
+        if let Some(ext) =
+            compute_extremes_from_points(&points, fifty_two_week_high, fifty_two_week_low)
+        {
+            upsert_extremes_memory(sym, ext);
+        }
+    }
     Ok(StockChartDetail {
         symbol: sym.to_string(),
         range: range.to_string(),
@@ -1827,8 +1923,241 @@ pub async fn fetch_chart(symbol: &str, range: &str) -> Result<StockChartDetail, 
             .or_else(|| meta["previousClose"].as_f64())
             .filter(|v| v.is_finite() && *v > 0.0),
         source: "Yahoo Finance".into(),
-        points: downsample_points(points, 240),
+        points: downsample_points(points, 420),
+        fifty_two_week_high,
+        fifty_two_week_low,
     })
+}
+
+// ---------------------------------------------------------------------------
+// All-Time High / All-Time Low (ATH / ATL) persistent cache + paced hydration
+// ---------------------------------------------------------------------------
+
+static EXTREMES_MEM_CACHE: OnceLock<std::sync::Mutex<Option<HashMap<String, PriceExtremes>>>> =
+    OnceLock::new();
+static EXTREMES_FAIL_CACHE: OnceLock<std::sync::Mutex<HashMap<String, std::time::Instant>>> =
+    OnceLock::new();
+
+fn extremes_mem() -> &'static std::sync::Mutex<Option<HashMap<String, PriceExtremes>>> {
+    EXTREMES_MEM_CACHE.get_or_init(|| std::sync::Mutex::new(None))
+}
+
+fn extremes_fail() -> &'static std::sync::Mutex<HashMap<String, std::time::Instant>> {
+    EXTREMES_FAIL_CACHE.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+fn upsert_extremes_memory(symbol: &str, ext: PriceExtremes) {
+    if let Ok(mut guard) = extremes_mem().lock() {
+        if let Some(map) = guard.as_mut() {
+            map.insert(symbol.trim().to_ascii_uppercase(), ext);
+        }
+    }
+}
+
+pub fn load_extremes_cache(db: &Database) -> Result<HashMap<String, PriceExtremes>, AppError> {
+    if let Ok(guard) = extremes_mem().lock() {
+        if let Some(ref map) = *guard {
+            return Ok(map.clone());
+        }
+    }
+    let loaded: HashMap<String, PriceExtremes> = db
+        .get_setting(EXTREMES_CACHE_KEY)?
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+        .unwrap_or_default();
+    if let Ok(mut guard) = extremes_mem().lock() {
+        *guard = Some(loaded.clone());
+    }
+    Ok(loaded)
+}
+
+pub fn merge_and_save_extremes(
+    db: &Database,
+    updates: HashMap<String, PriceExtremes>,
+) -> Result<HashMap<String, PriceExtremes>, AppError> {
+    let mut map = load_extremes_cache(db)?;
+    for (k, v) in updates {
+        map.insert(k, v);
+    }
+    if let Ok(mut guard) = extremes_mem().lock() {
+        *guard = Some(map.clone());
+    }
+    let raw = serde_json::to_string(&map)
+        .map_err(|e| AppError::Message(format!("序列化历史高低点缓存失败: {e}")))?;
+    db.set_setting_quietly(EXTREMES_CACHE_KEY, &raw)?;
+    Ok(map)
+}
+
+fn compute_extremes_from_points(
+    points: &[ChartPoint],
+    wk52_high: Option<f64>,
+    wk52_low: Option<f64>,
+) -> Option<PriceExtremes> {
+    let mut ath: Option<(f64, Option<i64>)> = None;
+    let mut atl: Option<(f64, Option<i64>)> = None;
+    for pt in points {
+        let hi = pt.high.filter(|v| v.is_finite() && *v > 0.0).unwrap_or(pt.price);
+        let lo = pt.low.filter(|v| v.is_finite() && *v > 0.0).unwrap_or(pt.price);
+        if hi.is_finite() && hi > 0.0 && ath.is_none_or(|(cur, _)| hi > cur) {
+            ath = Some((hi, Some(pt.ts)));
+        }
+        if lo.is_finite() && lo > 0.0 && atl.is_none_or(|(cur, _)| lo < cur) {
+            atl = Some((lo, Some(pt.ts)));
+        }
+    }
+    let (mut ath_val, mut ath_ts) = ath?;
+    let (mut atl_val, mut atl_ts) = atl?;
+    if let Some(h52) = wk52_high.filter(|v| v.is_finite() && *v > ath_val) {
+        ath_val = h52;
+        ath_ts = None;
+    }
+    if let Some(l52) = wk52_low.filter(|v| v.is_finite() && *v > 0.0 && *v < atl_val) {
+        atl_val = l52;
+        atl_ts = None;
+    }
+    Some(PriceExtremes {
+        ath: ath_val,
+        ath_ts,
+        atl: atl_val,
+        atl_ts,
+        fetched_at: chrono::Utc::now().timestamp(),
+    })
+}
+
+fn parse_tencent_date_ts(date_str: &str) -> Option<i64> {
+    let d = NaiveDate::parse_from_str(date_str.trim(), "%Y-%m-%d").ok()?;
+    let t = NaiveTime::from_hms_opt(15, 0, 0)?;
+    let offset = chrono::FixedOffset::east_opt(8 * 3600)?;
+    offset
+        .from_local_datetime(&d.and_time(t))
+        .single()
+        .map(|dt| dt.timestamp())
+}
+
+fn parse_tencent_monthly_extremes(bytes: &[u8], code: &str) -> Option<PriceExtremes> {
+    let body: Value = serde_json::from_slice(bytes).ok()?;
+    let entry = &body["data"][code];
+    let rows = entry["qfqmonth"]
+        .as_array()
+        .or_else(|| entry["month"].as_array())?;
+    let mut points = Vec::with_capacity(rows.len());
+    for row in rows {
+        let Some(arr) = row.as_array() else { continue };
+        let Some(date_s) = arr.first().and_then(Value::as_str) else {
+            continue;
+        };
+        let open = arr.get(1).and_then(Value::as_str).and_then(parse_f64_opt);
+        let close = arr.get(2).and_then(Value::as_str).and_then(parse_f64_opt);
+        let high = arr.get(3).and_then(Value::as_str).and_then(parse_f64_opt);
+        let low = arr.get(4).and_then(Value::as_str).and_then(parse_f64_opt);
+        let Some(price) = close.filter(|v| *v > 0.0) else {
+            continue;
+        };
+        let ts = parse_tencent_date_ts(date_s).unwrap_or(0);
+        points.push(ChartPoint {
+            ts,
+            price,
+            open,
+            high,
+            low,
+            volume: None,
+        });
+    }
+    compute_extremes_from_points(&points, None, None)
+}
+
+async fn fetch_single_extremes(symbol: &str) -> Option<PriceExtremes> {
+    if let Ok((meta, points)) = fetch_yahoo_chart_raw(symbol, "max", false).await {
+        let h52 = meta["fiftyTwoWeekHigh"].as_f64();
+        let l52 = meta["fiftyTwoWeekLow"].as_f64();
+        if let Some(ext) = compute_extremes_from_points(&points, h52, l52) {
+            return Some(ext);
+        }
+    }
+    if let Some(code) = to_tencent_batch_code(symbol) {
+        let url = format!(
+            "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={code},month,,,500,qfq"
+        );
+        if let Ok(bytes) = traced_get_bytes("腾讯历史月K", &url, None).await {
+            if let Some(ext) = parse_tencent_monthly_extremes(&bytes, &code) {
+                return Some(ext);
+            }
+        }
+    }
+    None
+}
+
+/// Return cached ATH/ATL for requested symbols and hydrate up to `batch_limit` missing ones.
+pub async fn fetch_extremes_batch(
+    cached: HashMap<String, PriceExtremes>,
+    symbols: Vec<String>,
+    batch_limit: usize,
+) -> (HashMap<String, PriceExtremes>, ExtremesBatchResponse) {
+    let now = chrono::Utc::now().timestamp();
+    let fail_ttl = Duration::from_secs(300);
+
+    let mut unique_syms: Vec<String> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    for s in symbols {
+        let key = s.trim().to_ascii_uppercase();
+        if !key.is_empty() && seen.insert(key.clone()) {
+            unique_syms.push(key);
+        }
+    }
+
+    let mut result_items: HashMap<String, PriceExtremes> = HashMap::new();
+    let mut missing: Vec<String> = Vec::new();
+    for sym in &unique_syms {
+        if let Some(entry) = cached.get(sym) {
+            result_items.insert(sym.clone(), entry.clone());
+            if now - entry.fetched_at < EXTREMES_TTL_SECS {
+                continue;
+            }
+        }
+        let recently_failed = extremes_fail()
+            .lock()
+            .ok()
+            .and_then(|m| m.get(sym).copied())
+            .is_some_and(|at| at.elapsed() < fail_ttl);
+        if !recently_failed {
+            missing.push(sym.clone());
+        }
+    }
+
+    let limit = batch_limit.min(30);
+    let to_fetch: Vec<String> = missing.iter().take(limit).cloned().collect();
+    let remaining = missing.len().saturating_sub(to_fetch.len());
+
+    let mut updates: HashMap<String, PriceExtremes> = HashMap::new();
+    if !to_fetch.is_empty() {
+        let fetched: Vec<(String, Option<PriceExtremes>)> = stream::iter(to_fetch)
+            .map(|sym| async move {
+                let res = fetch_single_extremes(&sym).await;
+                (sym, res)
+            })
+            .buffer_unordered(4)
+            .collect()
+            .await;
+
+        for (sym, opt) in fetched {
+            if let Some(ext) = opt {
+                if let Ok(mut fail_map) = extremes_fail().lock() {
+                    fail_map.remove(&sym);
+                }
+                result_items.insert(sym.clone(), ext.clone());
+                updates.insert(sym, ext);
+            } else if let Ok(mut fail_map) = extremes_fail().lock() {
+                fail_map.insert(sym, std::time::Instant::now());
+            }
+        }
+    }
+
+    (
+        updates,
+        ExtremesBatchResponse {
+            items: result_items,
+            remaining,
+        },
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -2322,5 +2651,39 @@ mod tests {
         let fubon = &parsed["2881.TW"];
         assert_eq!(fubon.price, Some(130.5));
         assert_eq!(fubon.prev_close, Some(130.5));
+    }
+
+    #[test]
+    fn computes_all_time_high_and_low_from_monthly_candles_and_tencent_json() {
+        let pts = vec![
+            ChartPoint {
+                ts: 1_500_000_000,
+                price: 12.0,
+                open: Some(10.0),
+                high: Some(15.0),
+                low: Some(8.5),
+                volume: Some(100),
+            },
+            ChartPoint {
+                ts: 1_700_000_000,
+                price: 210.0,
+                open: Some(180.0),
+                high: Some(243.37),
+                low: Some(175.0),
+                volume: Some(500),
+            },
+        ];
+        let ext = compute_extremes_from_points(&pts, Some(240.0), Some(100.0))
+            .expect("should compute extremes");
+        assert_eq!(ext.ath, 243.37);
+        assert_eq!(ext.ath_ts, Some(1_700_000_000));
+        assert_eq!(ext.atl, 8.5);
+        assert_eq!(ext.atl_ts, Some(1_500_000_000));
+
+        let tencent_json = r#"{"data":{"sh600519":{"qfqmonth":[["2015-01-30","100.0","110.0","120.0","95.5","1000"],["2021-02-26","2000.0","2100.0","2608.59","1950.0","2000"]]}}}"#.as_bytes();
+        let t_ext =
+            parse_tencent_monthly_extremes(tencent_json, "sh600519").expect("tencent monthly");
+        assert_eq!(t_ext.ath, 2608.59);
+        assert_eq!(t_ext.atl, 95.5);
     }
 }

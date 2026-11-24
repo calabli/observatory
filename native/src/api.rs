@@ -763,6 +763,30 @@ impl UsageBackend {
                 to_json(crate::markets::search_symbols(&query).await)
             }
             "markets_fx" => to_json(crate::markets::fetch_fx_rates().await?),
+            "markets_extremes" => {
+                let symbols: Vec<String> = args
+                    .get("symbols")
+                    .cloned()
+                    .and_then(|v| serde_json::from_value(v).ok())
+                    .unwrap_or_default();
+                let batch_limit = args
+                    .get("batchLimit")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(16) as usize;
+                let cached = self
+                    .call_blocking(move |db| crate::markets::load_extremes_cache(db))
+                    .await?;
+                let (updates, response) =
+                    crate::markets::fetch_extremes_batch(cached, symbols, batch_limit).await;
+                if !updates.is_empty() {
+                    self.call_blocking(move |db| {
+                        crate::markets::merge_and_save_extremes(db, updates)?;
+                        Ok(())
+                    })
+                    .await?;
+                }
+                to_json(response)
+            }
             "benchmarks_get" => {
                 self.call_blocking(move |db| to_json(crate::benchmarks::load_state(db)?))
                     .await

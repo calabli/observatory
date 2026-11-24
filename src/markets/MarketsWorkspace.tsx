@@ -3,9 +3,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addCompanyToPoolEdit,
   applyPoolEdit,
+  benchmarkForMarket,
+  CHART_RANGES,
   type ChartRange,
   type CustomPool,
+  type ExtremesBatchResponse,
   fmtClock,
+  fmtExtremePct,
   FALLBACK_FX_TO_USD,
   fmtLastTrade,
   type FxRates,
@@ -14,14 +18,19 @@ import {
   fmtSigned,
   fmtTurnover,
   fmtVolume,
+  fmtYearMonth,
   formatPoolLabel,
+  type HeatmapMetricMode,
   isStale,
+  type LiveExtremes,
   MARKET_META,
   type MarketFilter,
   type MarketsConfig,
   POOL_ID_KEY,
+  type PriceExtremes,
   removeCompanyFromPoolEdit,
   type ResolvedPool,
+  resolveLiveExtremes,
   type SearchHit,
   STALE_HINT,
   type StockChartDetail,
@@ -38,6 +47,9 @@ import { MARKET_PRESETS } from "./presets";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { usageCall } from "../native/usageClient";
 import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   Check,
   FolderPlus,
   LayoutGrid,
@@ -87,8 +99,19 @@ export function MarketsWorkspace() {
     }
   });
   const [sizeMode, setSizeMode] = useState<TreemapSizeMode>("cap");
+  const [metricMode, setMetricMode] = useState<HeatmapMetricMode>("change");
+  const [listSort, setListSort] = useState<{
+    col: "none" | "price" | "changePercent" | "fromAth" | "fromAtl";
+    dir: "asc" | "desc";
+  }>({ col: "none", dir: "desc" });
+  const [extremesMap, setExtremesMap] = useState<Record<string, PriceExtremes>>(
+    {},
+  );
+  const [extremesRemaining, setExtremesRemaining] = useState<number>(0);
   const [selectedSymbol, setSelectedSymbol] = useState<string>("NVDA");
-  const [chartRange, setChartRange] = useState<ChartRange>("1d");
+  const [chartRange, setChartRange] = useState<ChartRange>("1y");
+  const [showBenchmark, setShowBenchmark] = useState<boolean>(false);
+  const [chartModalOpen, setChartModalOpen] = useState<boolean>(false);
   const [searchText, setSearchText] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -136,6 +159,11 @@ export function MarketsWorkspace() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && chartModalOpen) {
+        e.preventDefault();
+        setChartModalOpen(false);
+        return;
+      }
       if (e.key === "Escape" && isFullscreen) {
         e.preventDefault();
         if (fsDrawerOpen) {
@@ -164,7 +192,14 @@ export function MarketsWorkspace() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [isFullscreen, fsDrawerOpen, viewMode, enterFullscreen, exitFullscreen]);
+  }, [
+    chartModalOpen,
+    isFullscreen,
+    fsDrawerOpen,
+    viewMode,
+    enterFullscreen,
+    exitFullscreen,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -451,6 +486,89 @@ export function MarketsWorkspace() {
     retry: false,
   });
 
+  const activeMarketForBench =
+    quoteBySymbol.get(activeSymbol)?.market ??
+    knownItems.find((i) => i.symbol === activeSymbol)?.market ??
+    "US";
+  const benchmarkInfo = useMemo(
+    () => benchmarkForMarket(activeMarketForBench),
+    [activeMarketForBench],
+  );
+  const canOverlayBench =
+    !!activeSymbol && benchmarkInfo.symbol !== activeSymbol;
+
+  const benchChartQuery = useQuery({
+    queryKey: ["markets", "chart", benchmarkInfo.symbol, chartRange],
+    queryFn: () =>
+      usageCall<StockChartDetail>("markets_chart", {
+        symbol: benchmarkInfo.symbol,
+        range: chartRange,
+      }),
+    enabled: showBenchmark && canOverlayBench,
+    staleTime: 60_000,
+    placeholderData: (prev) => prev,
+    retry: false,
+  });
+
+  // Progressive SQLite-cached ATH/ATL hydration for the visible pool + active symbol.
+  const extremesTargetKey = useMemo(() => {
+    const syms: string[] = [];
+    if (activeSymbol) syms.push(activeSymbol.trim().toUpperCase());
+    for (const w of activePoolItems) {
+      syms.push(w.symbol.trim().toUpperCase());
+    }
+    return Array.from(new Set(syms.filter(Boolean))).join(",");
+  }, [activeSymbol, activePoolItems]);
+
+  useEffect(() => {
+    const symbols = extremesTargetKey
+      ? extremesTargetKey.split(",").filter(Boolean)
+      : [];
+    if (symbols.length === 0) {
+      setExtremesRemaining(0);
+      return;
+    }
+    let cancelled = false;
+    const hydrate = async () => {
+      for (let round = 0; round < 35 && !cancelled; round++) {
+        try {
+          const res = await usageCall<ExtremesBatchResponse>(
+            "markets_extremes",
+            { symbols, batchLimit: 18 },
+          );
+          if (cancelled) return;
+          if (res?.items && Object.keys(res.items).length > 0) {
+            setExtremesMap((prev) => ({ ...prev, ...res.items }));
+          }
+          const rem = res?.remaining ?? 0;
+          setExtremesRemaining(rem);
+          if (rem <= 0) break;
+          await new Promise((r) => window.setTimeout(r, 260));
+        } catch {
+          if (!cancelled) setExtremesRemaining(0);
+          break;
+        }
+      }
+    };
+    void hydrate();
+    return () => {
+      cancelled = true;
+    };
+  }, [extremesTargetKey]);
+
+  const liveExtremesBySymbol = useMemo(() => {
+    const map = new Map<string, LiveExtremes>();
+    for (const w of knownItems) {
+      const key = w.symbol.trim().toUpperCase();
+      const ext = resolveLiveExtremes(
+        quoteBySymbol.get(w.symbol),
+        extremesMap[key],
+      );
+      if (ext) map.set(key, ext);
+    }
+    return map;
+  }, [knownItems, quoteBySymbol, extremesMap]);
+
   const searchQuery = useQuery({
     queryKey: ["markets", "search", debouncedQuery],
     queryFn: () =>
@@ -499,6 +617,61 @@ export function MarketsWorkspace() {
         (w.sector?.toLowerCase().includes(q) ?? false),
     );
   }, [shownItems, isCustomWatchlist, filter, sectorFilter, poolQuery]);
+
+  const sortedWatchlist = useMemo(() => {
+    if (listSort.col === "none") return filteredWatchlist;
+    const valOf = (w: WatchItem): number | null => {
+      const q = quoteBySymbol.get(w.symbol);
+      const ext = liveExtremesBySymbol.get(w.symbol.trim().toUpperCase());
+      switch (listSort.col) {
+        case "price":
+          return q?.price ?? null;
+        case "changePercent":
+          return q?.changePercent ?? null;
+        case "fromAth":
+          return ext?.fromAthPct ?? null;
+        case "fromAtl":
+          return ext?.fromAtlPct ?? null;
+        default:
+          return null;
+      }
+    };
+    const mult = listSort.dir === "desc" ? -1 : 1;
+    return [...filteredWatchlist].sort((a, b) => {
+      const va = valOf(a);
+      const vb = valOf(b);
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1;
+      if (vb == null) return -1;
+      if (va !== vb) return (va - vb) * mult;
+      return a.symbol.localeCompare(b.symbol);
+    });
+  }, [filteredWatchlist, listSort, quoteBySymbol, liveExtremesBySymbol]);
+
+  const toggleListSort = (
+    col: "price" | "changePercent" | "fromAth" | "fromAtl",
+  ) => {
+    setListSort((cur) => {
+      if (cur.col !== col) {
+        // For "fromAth" (drawdown, negative), asc puts deepest drawdown (-80%) first by default!
+        return { col, dir: col === "fromAth" ? "asc" : "desc" };
+      }
+      if (cur.dir === "desc") return { col, dir: "asc" };
+      if (cur.dir === "asc" && col === "fromAth") return { col, dir: "desc" };
+      return { col: "none", dir: "desc" };
+    });
+  };
+
+  const renderSortGlyph = (
+    col: "price" | "changePercent" | "fromAth" | "fromAtl",
+  ) => {
+    if (listSort.col !== col) return <ArrowUpDown size={11} opacity={0.45} />;
+    return listSort.dir === "desc" ? (
+      <ArrowDown size={11} />
+    ) : (
+      <ArrowUp size={11} />
+    );
+  };
 
   const addSymbol = (hit: { symbol: string; name: string; market: string }) => {
     if (!config) return;
@@ -1021,6 +1194,10 @@ export function MarketsWorkspace() {
             <MarketHeatmap
               items={filteredWatchlist}
               quoteBySymbol={quoteBySymbol}
+              extremesBySymbol={liveExtremesBySymbol}
+              extremesRemaining={extremesRemaining}
+              metricMode={metricMode}
+              onMetricModeChange={setMetricMode}
               colorScheme={colorScheme}
               groupBy={
                 activePool
@@ -1094,23 +1271,58 @@ export function MarketsWorkspace() {
             />
           ) : (
             <div className="markets-table-wrap">
+              {extremesRemaining > 0 && (
+                <div className="markets-table-sync-bar">
+                  正在后台补齐历史高低点并缓存至本地（剩余 {extremesRemaining}{" "}
+                  只）…
+                </div>
+              )}
               <table className="markets-table">
                 <thead>
                   <tr>
                     <th>标的</th>
-                    <th className="num">最新价</th>
-                    <th className="num">涨跌</th>
+                    <th
+                      className="num sortable"
+                      onClick={() => toggleListSort("price")}
+                    >
+                      <span>最新价 {renderSortGlyph("price")}</span>
+                    </th>
+                    <th
+                      className="num sortable"
+                      onClick={() => toggleListSort("changePercent")}
+                    >
+                      <span>涨跌 {renderSortGlyph("changePercent")}</span>
+                    </th>
+                    <th
+                      className="num sortable"
+                      onClick={() => toggleListSort("fromAth")}
+                      title="当前价相对历史最高点（ATH）的回撤幅度，点击排序"
+                    >
+                      <span>距历史高点 {renderSortGlyph("fromAth")}</span>
+                    </th>
+                    <th
+                      className="num sortable"
+                      onClick={() => toggleListSort("fromAtl")}
+                      title="当前价相对历史最低点（ATL）的反弹幅度，点击排序"
+                    >
+                      <span>距历史低点 {renderSortGlyph("fromAtl")}</span>
+                    </th>
                     <th className="num">分时</th>
                     <th className="num">来源 / 时间</th>
                     <th />
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredWatchlist.map((w) => {
+                  {sortedWatchlist.map((w) => {
                     const q = quoteBySymbol.get(w.symbol);
+                    const ext = liveExtremesBySymbol.get(
+                      w.symbol.trim().toUpperCase(),
+                    );
                     const tone = trendTone(q?.change, colorScheme);
                     const color = toneColor(tone);
                     const active = activeSymbol === w.symbol;
+                    const athTone = trendTone(ext?.fromAthPct, colorScheme);
+                    const atlTone = trendTone(ext?.fromAtlPct, colorScheme);
                     return (
                       <tr
                         key={w.symbol}
@@ -1160,6 +1372,46 @@ export function MarketsWorkspace() {
                           <div className="markets-chg-sub" style={{ color }}>
                             {fmtSigned(q?.change)}
                           </div>
+                        </td>
+                        <td className="num">
+                          {ext ? (
+                            <div className="markets-ext-cell">
+                              <span
+                                className="markets-ext-pct"
+                                style={{ color: toneColor(athTone) }}
+                              >
+                                {fmtExtremePct(ext.fromAthPct)}
+                              </span>
+                              <small>
+                                高 {fmtPrice(ext.ath, q?.currency)}
+                                {fmtYearMonth(ext.athTs)
+                                  ? ` · ${fmtYearMonth(ext.athTs)}`
+                                  : ""}
+                              </small>
+                            </div>
+                          ) : (
+                            <span className="markets-muted">—</span>
+                          )}
+                        </td>
+                        <td className="num">
+                          {ext ? (
+                            <div className="markets-ext-cell">
+                              <span
+                                className="markets-ext-pct"
+                                style={{ color: toneColor(atlTone) }}
+                              >
+                                {fmtExtremePct(ext.fromAtlPct)}
+                              </span>
+                              <small>
+                                低 {fmtPrice(ext.atl, q?.currency)}
+                                {fmtYearMonth(ext.atlTs)
+                                  ? ` · ${fmtYearMonth(ext.atlTs)}`
+                                  : ""}
+                              </small>
+                            </div>
+                          ) : (
+                            <span className="markets-muted">—</span>
+                          )}
                         </td>
                         <td className="num">
                           <MiniSparkline
@@ -1264,9 +1516,9 @@ export function MarketsWorkspace() {
                       </tr>
                     );
                   })}
-                  {filteredWatchlist.length === 0 && (
+                  {sortedWatchlist.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="markets-empty-cell">
+                      <td colSpan={8} className="markets-empty-cell">
                         当前分类暂无自选股，可在右上角搜索代码添加
                       </td>
                     </tr>
@@ -1380,16 +1632,8 @@ export function MarketsWorkspace() {
                   </div>
                 </div>
                 <div className="markets-detail-head-right">
-                  <div className="markets-pill-group">
-                    {(
-                      [
-                        ["1d", "分时"],
-                        ["5d", "5日"],
-                        ["1mo", "1月"],
-                        ["3mo", "3月"],
-                        ["1y", "1年"],
-                      ] as const
-                    ).map(([r, label]) => (
+                  <div className="markets-pill-group markets-range-pills">
+                    {CHART_RANGES.map(([r, label]) => (
                       <button
                         key={r}
                         type="button"
@@ -1487,9 +1731,62 @@ export function MarketsWorkspace() {
                       </strong>
                     </div>
                   )}
+                {(() => {
+                  const ext = liveExtremesBySymbol.get(
+                    activeSymbol.trim().toUpperCase(),
+                  );
+                  if (!ext) return null;
+                  return (
+                    <>
+                      <div>
+                        <span>
+                          历史最高
+                          {fmtYearMonth(ext.athTs)
+                            ? ` (${fmtYearMonth(ext.athTs)})`
+                            : ""}
+                        </span>
+                        <strong>
+                          {fmtPrice(ext.ath, selectedQuote?.currency)}{" "}
+                          <em
+                            className="markets-ohlc-pct"
+                            style={{
+                              color: toneColor(
+                                trendTone(ext.fromAthPct, colorScheme),
+                              ),
+                            }}
+                          >
+                            {fmtExtremePct(ext.fromAthPct)}
+                          </em>
+                        </strong>
+                      </div>
+                      <div>
+                        <span>
+                          历史最低
+                          {fmtYearMonth(ext.atlTs)
+                            ? ` (${fmtYearMonth(ext.atlTs)})`
+                            : ""}
+                        </span>
+                        <strong>
+                          {fmtPrice(ext.atl, selectedQuote?.currency)}{" "}
+                          <em
+                            className="markets-ohlc-pct"
+                            style={{
+                              color: toneColor(
+                                trendTone(ext.fromAtlPct, colorScheme),
+                              ),
+                            }}
+                          >
+                            {fmtExtremePct(ext.fromAtlPct)}
+                          </em>
+                        </strong>
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
 
               <InteractivePriceChart
+                symbol={activeSymbol}
                 points={
                   chartQuery.data?.points?.length
                     ? chartQuery.data.points
@@ -1503,6 +1800,7 @@ export function MarketsWorkspace() {
                 }
                 range={chartRange}
                 color={toneColor(trendTone(selectedQuote?.change, colorScheme))}
+                colorScheme={colorScheme}
                 loading={
                   chartQuery.isPending && !selectedQuote?.sparkline?.length
                 }
@@ -1511,6 +1809,22 @@ export function MarketsWorkspace() {
                     ? String(chartQuery.error)
                     : (selectedQuote?.error ?? null)
                 }
+                extremes={
+                  liveExtremesBySymbol.get(activeSymbol.trim().toUpperCase()) ??
+                  null
+                }
+                fiftyTwoWeekHigh={chartQuery.data?.fiftyTwoWeekHigh ?? null}
+                fiftyTwoWeekLow={chartQuery.data?.fiftyTwoWeekLow ?? null}
+                benchmarkName={canOverlayBench ? benchmarkInfo.name : undefined}
+                benchmarkPoints={benchChartQuery.data?.points}
+                benchmarkLoading={showBenchmark && benchChartQuery.isFetching}
+                showBenchmark={showBenchmark && canOverlayBench}
+                onToggleBenchmark={
+                  canOverlayBench
+                    ? () => setShowBenchmark((v) => !v)
+                    : undefined
+                }
+                onExpand={() => setChartModalOpen(true)}
               />
             </>
           ) : (
@@ -1518,6 +1832,107 @@ export function MarketsWorkspace() {
           )}
         </section>
       </div>
+
+      {chartModalOpen && activeSymbol && (
+        <div
+          className="markets-modal-backdrop"
+          onClick={() => setChartModalOpen(false)}
+        >
+          <div
+            className="markets-kline-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="markets-kline-modal-head">
+              <div className="markets-detail-title">
+                <span className="markets-mkt-tag">
+                  {selectedQuote?.market ?? selectedItem?.market ?? "US"}
+                </span>
+                <h2>
+                  {selectedQuote?.name ?? selectedItem?.name ?? activeSymbol}
+                </h2>
+                <code>{activeSymbol}</code>
+                <strong className="markets-modal-price">
+                  {fmtPrice(selectedQuote?.price, selectedQuote?.currency)}
+                </strong>
+                <span
+                  style={{
+                    color: toneColor(
+                      trendTone(selectedQuote?.change, colorScheme),
+                    ),
+                    fontWeight: 600,
+                    fontSize: 13,
+                  }}
+                >
+                  {fmtSigned(selectedQuote?.change)} (
+                  {fmtSigned(selectedQuote?.changePercent, "%")})
+                </span>
+              </div>
+              <div className="markets-kline-modal-actions">
+                <div className="markets-pill-group">
+                  {CHART_RANGES.map(([r, label]) => (
+                    <button
+                      key={r}
+                      type="button"
+                      className={`markets-pill-btn${chartRange === r ? " active" : ""}`}
+                      onClick={() => setChartRange(r)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  className="markets-drawer-close labeled"
+                  onClick={() => setChartModalOpen(false)}
+                >
+                  <X size={13} />
+                  <span>关闭</span>
+                </button>
+              </div>
+            </div>
+
+            <InteractivePriceChart
+              symbol={activeSymbol}
+              points={
+                chartQuery.data?.points?.length
+                  ? chartQuery.data.points
+                  : (selectedQuote?.sparkline ?? [])
+              }
+              prevClose={
+                chartQuery.data?.prevClose ?? selectedQuote?.prevClose ?? null
+              }
+              currency={
+                chartQuery.data?.currency ?? selectedQuote?.currency ?? "USD"
+              }
+              range={chartRange}
+              color={toneColor(trendTone(selectedQuote?.change, colorScheme))}
+              colorScheme={colorScheme}
+              loading={
+                chartQuery.isPending && !selectedQuote?.sparkline?.length
+              }
+              error={
+                chartQuery.isError
+                  ? String(chartQuery.error)
+                  : (selectedQuote?.error ?? null)
+              }
+              extremes={
+                liveExtremesBySymbol.get(activeSymbol.trim().toUpperCase()) ??
+                null
+              }
+              fiftyTwoWeekHigh={chartQuery.data?.fiftyTwoWeekHigh ?? null}
+              fiftyTwoWeekLow={chartQuery.data?.fiftyTwoWeekLow ?? null}
+              benchmarkName={canOverlayBench ? benchmarkInfo.name : undefined}
+              benchmarkPoints={benchChartQuery.data?.points}
+              benchmarkLoading={showBenchmark && benchChartQuery.isFetching}
+              showBenchmark={showBenchmark && canOverlayBench}
+              onToggleBenchmark={
+                canOverlayBench ? () => setShowBenchmark((v) => !v) : undefined
+              }
+              expanded
+            />
+          </div>
+        </div>
+      )}
 
       {editorMode && (
         <PoolEditorModal

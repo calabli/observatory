@@ -6,6 +6,11 @@ rename it to the new version (`## [x.y.z] - YYYY-MM-DD`) before tagging.
 
 ## Unreleased
 
+## [0.1.17] - 2026-11-24
+
+- Markets: added All-Time High drawdown (`距历史高点`) and All-Time Low rebound (`距历史低点`) backed by a 7-day SQLite cache + live intraday breakout updates (`markets_extremes`), displayed with multi-column sorting in list view and switchable color modes (`今日涨跌` / `距历史高点` / `距历史低点`) + tooltip details in the heatmap.
+- Markets charts: upgraded individual stock charts with extended timeframes (`6月` / `2年` / `5年` / `全部`), true OHLC candlesticks & volume bars, `MA5/10/20/60` moving averages, ATH/ATL/52W reference lines, live range stats (max drawdown, amplitude, avg volume), `MACD` / `RSI` / `KDJ` sub-indicators, normalized market-benchmark overlay (Alpha vs S&P 500 / CSI 300 / HSI / TWII), wheel zoom & drag pan, a wide expanded-chart modal, and 1:1 responsive full-width SVG rendering.
+
 ## [0.1.16] - 2026-11-24
 
 - Benchmarks: added a new "模型榜单" (Model Benchmarks) page powered by Artificial Analysis API v2 (multi-page ingestion, local SQLite caching, outbound HTTP logging to Activity Log, masked API key storage, 9-dimension rankings, interactive Pareto frontier scatter charts for price & speed, full effort-tier family grouping & comparison for Max/Xhigh/High/Medium/Low variants, and side-by-side comparison against your local measured speed and spending).

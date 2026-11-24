@@ -43,6 +43,34 @@ export interface MarketsConfig {
 export interface ChartPoint {
   ts: number;
   price: number;
+  open?: number | null;
+  high?: number | null;
+  low?: number | null;
+  volume?: number | null;
+}
+
+export interface PriceExtremes {
+  ath: number;
+  athTs?: number | null;
+  atl: number;
+  atlTs?: number | null;
+  fetchedAt: number;
+}
+
+export interface ExtremesBatchResponse {
+  items: Record<string, PriceExtremes>;
+  remaining: number;
+}
+
+export interface LiveExtremes {
+  ath: number;
+  athTs: number | null;
+  atl: number;
+  atlTs: number | null;
+  /** Percentage change from all-time high (<= 0, e.g. -24.5 means down 24.5% from ATH). */
+  fromAthPct: number | null;
+  /** Percentage change from all-time low (>= 0, e.g. +185.2 means up 185.2% from ATL). */
+  fromAtlPct: number | null;
 }
 
 export interface StockQuote {
@@ -79,6 +107,8 @@ export interface StockChartDetail {
   prevClose: number | null;
   source: string;
   points: ChartPoint[];
+  fiftyTwoWeekHigh?: number | null;
+  fiftyTwoWeekLow?: number | null;
 }
 
 export interface SearchHit {
@@ -90,11 +120,34 @@ export interface SearchHit {
 
 export type MarketFilter = "ALL" | "US" | "TW" | "CN" | "HK" | "GLOBAL";
 
-export type ChartRange = "1d" | "5d" | "1mo" | "3mo" | "1y";
+export type ChartRange =
+  | "1d"
+  | "5d"
+  | "1mo"
+  | "3mo"
+  | "6mo"
+  | "1y"
+  | "2y"
+  | "5y"
+  | "max";
+
+export const CHART_RANGES: ReadonlyArray<readonly [ChartRange, string]> = [
+  ["1d", "分时"],
+  ["5d", "5日"],
+  ["1mo", "1月"],
+  ["3mo", "3月"],
+  ["6mo", "6月"],
+  ["1y", "1年"],
+  ["2y", "2年"],
+  ["5y", "5年"],
+  ["max", "全部"],
+];
 
 export type WatchViewMode = "heatmap" | "list";
 
 export type TreemapSizeMode = "cap" | "turnover" | "move" | "equal";
+
+export type HeatmapMetricMode = "change" | "fromAth" | "fromAtl";
 
 export const VIEW_MODE_KEY = "observatory.markets.view-mode";
 
@@ -268,11 +321,110 @@ export function fmtChartTime(tsSec: number, range: ChartRange): string {
       hour12: false,
     });
   }
+  if (range === "max" || range === "5y") {
+    return d.toLocaleDateString("zh-CN", {
+      year: "numeric",
+      month: "2-digit",
+    });
+  }
   return d.toLocaleDateString("zh-CN", {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
   });
+}
+
+export function fmtYearMonth(tsSec: number | null | undefined): string {
+  if (!tsSec || !Number.isFinite(tsSec) || tsSec <= 0) return "";
+  return new Date(tsSec * 1000).toLocaleDateString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+  });
+}
+
+/**
+ * Merge live intraday quote with cached ATH/ATL so new highs/lows made today
+ * reflect immediately, then compute drawdown from ATH and rebound from ATL.
+ */
+export function resolveLiveExtremes(
+  quote: StockQuote | undefined,
+  cached: PriceExtremes | undefined,
+): LiveExtremes | null {
+  if (!cached || !(cached.ath > 0) || !(cached.atl > 0)) return null;
+  let ath = cached.ath;
+  let athTs = cached.athTs ?? null;
+  let atl = cached.atl;
+  let atlTs = cached.atlTs ?? null;
+
+  const liveHigh =
+    quote?.high != null && Number.isFinite(quote.high) && quote.high > 0
+      ? quote.high
+      : null;
+  const liveLow =
+    quote?.low != null && Number.isFinite(quote.low) && quote.low > 0
+      ? quote.low
+      : null;
+  const livePrice =
+    quote?.price != null && Number.isFinite(quote.price) && quote.price > 0
+      ? quote.price
+      : null;
+
+  const topCandidate = Math.max(liveHigh ?? 0, livePrice ?? 0);
+  if (topCandidate > ath) {
+    ath = topCandidate;
+    athTs = quote?.quoteTime ?? null;
+  }
+  const lowCandidates = [liveLow, livePrice].filter(
+    (v): v is number => v != null && v > 0,
+  );
+  if (lowCandidates.length > 0) {
+    const botCandidate = Math.min(...lowCandidates);
+    if (botCandidate < atl) {
+      atl = botCandidate;
+      atlTs = quote?.quoteTime ?? null;
+    }
+  }
+
+  const fromAthPct =
+    livePrice != null && ath > 0
+      ? Math.min(0, ((livePrice - ath) / ath) * 100)
+      : null;
+  const fromAtlPct =
+    livePrice != null && atl > 0
+      ? Math.max(0, ((livePrice - atl) / atl) * 100)
+      : null;
+
+  return { ath, athTs, atl, atlTs, fromAthPct, fromAtlPct };
+}
+
+/** Compact formatting for large rebounds from all-time lows (e.g. +18.4%, +245%, +12.4倍). */
+export function fmtExtremePct(v: number | null | undefined): string {
+  if (v == null || !Number.isFinite(v)) return "—";
+  if (v >= 1000) {
+    const mult = v / 100;
+    return `+${mult >= 100 ? Math.round(mult).toLocaleString() : mult.toFixed(1)}倍`;
+  }
+  if (v >= 100) {
+    return `+${Math.round(v)}%`;
+  }
+  const sign = v > 0 ? "+" : "";
+  return `${sign}${v.toFixed(2)}%`;
+}
+
+export function benchmarkForMarket(market: string): {
+  symbol: string;
+  name: string;
+} {
+  switch (market) {
+    case "CN":
+      return { symbol: "000300.SS", name: "沪深300" };
+    case "HK":
+      return { symbol: "^HSI", name: "恒生指数" };
+    case "TW":
+      return { symbol: "^TWII", name: "台湾加权" };
+    default:
+      return { symbol: "^GSPC", name: "标普500" };
+  }
 }
 
 export function trendTone(

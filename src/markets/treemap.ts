@@ -167,3 +167,44 @@ export function heatTileColor(
     return "#3d6b56";
   }
 }
+
+/**
+ * Color ramp for ATH drawdown (`fromAth`, <= 0%) or ATL rebound (`fromAtl`, >= 0%).
+ * Respects CN (`redUp`) and US (`greenUp`) conventions.
+ */
+export function heatExtremeColor(
+  pct: number | null | undefined,
+  mode: "fromAth" | "fromAtl",
+  scheme: "cn" | "us",
+): string {
+  if (pct == null || !Number.isFinite(pct)) return "#334155";
+  if (mode === "fromAth") {
+    const drop = Math.max(0, -pct);
+    // Near ATH (< 5% off high): highlight in strong rise color
+    if (drop < 5) {
+      return scheme === "cn" ? "#b91c1c" : "#15803d";
+    }
+    if (drop < 12) return "#475569";
+    // Deeper drawdown -> stronger fall color
+    const fallRamp =
+      scheme === "cn"
+        ? ["#3d6b56", "#2f8f5b", "#16a34a", "#166534"]
+        : ["#8c4a4e", "#c24141", "#dc2626", "#991b1b"];
+    if (drop < 25) return fallRamp[0];
+    if (drop < 40) return fallRamp[1];
+    if (drop < 60) return fallRamp[2];
+    return fallRamp[3];
+  }
+  // mode === "fromAtl": larger rebound -> stronger rise color (log-scaled thresholds)
+  const rise = Math.max(0, pct);
+  if (rise < 10) return "#3f495a";
+  const riseRamp =
+    scheme === "cn"
+      ? ["#8c4a4e", "#c24141", "#dc2626", "#b91c1c", "#991b1b"]
+      : ["#3d6b56", "#2f8f5b", "#16a34a", "#15803d", "#166534"];
+  if (rise < 35) return riseRamp[0];
+  if (rise < 100) return riseRamp[1];
+  if (rise < 300) return riseRamp[2];
+  if (rise < 1000) return riseRamp[3];
+  return riseRamp[4];
+}
