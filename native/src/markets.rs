@@ -1380,9 +1380,7 @@ async fn fetch_yahoo_chart_raw(
                         .and_then(|a| a.get(i))
                         .and_then(Value::as_f64)
                         .filter(|v| v.is_finite() && *v > 0.0);
-                    let volume = volumes
-                        .and_then(|a| a.get(i))
-                        .and_then(Value::as_u64);
+                    let volume = volumes.and_then(|a| a.get(i)).and_then(Value::as_u64);
                     points.push(ChartPoint {
                         ts,
                         price,
@@ -1995,8 +1993,14 @@ fn compute_extremes_from_points(
     let mut ath: Option<(f64, Option<i64>)> = None;
     let mut atl: Option<(f64, Option<i64>)> = None;
     for pt in points {
-        let hi = pt.high.filter(|v| v.is_finite() && *v > 0.0).unwrap_or(pt.price);
-        let lo = pt.low.filter(|v| v.is_finite() && *v > 0.0).unwrap_or(pt.price);
+        let hi = pt
+            .high
+            .filter(|v| v.is_finite() && *v > 0.0)
+            .unwrap_or(pt.price);
+        let lo = pt
+            .low
+            .filter(|v| v.is_finite() && *v > 0.0)
+            .unwrap_or(pt.price);
         if hi.is_finite() && hi > 0.0 && ath.is_none_or(|(cur, _)| hi > cur) {
             ath = Some((hi, Some(pt.ts)));
         }
