@@ -14,6 +14,7 @@ Built with Tauri 2, React, TypeScript, Rust and SQLite. Releases are published f
 - **Multi-device**: pair devices on the LAN with a one-time code and see combined usage. Off by default.
 - **Read-only HTTP API** for dashboards and scripts, authenticated with an API key.
 - **Network overview**: adapters, addresses, gateway, DNS and live transfer rates.
+- **Model benchmarks**: Artificial Analysis rankings across nine dimensions with price and speed charts, effort-tier comparison, and your locally measured speed and spend alongside (needs your own API key).
 - **Markets**: real-time quotes for US, Taiwan, mainland China and Hong Kong stocks and global indices, built-in stock pools with market-cap treemap heat maps, detail charts and cross-market search.
 - **Activity log**: what each scan read, who called the local service, outbound requests to outside services, device syncs and key actions.
 - **Tray / menu-bar panel** with today's totals; the app keeps collecting after the window is closed.
@@ -59,7 +60,7 @@ Builds: `npm run desktop:build` (debug executable), `npm run desktop:release` (o
 
 ## Privacy
 
-Observatory stores usage metadata only in `observatory.db`. It never imports or exports API keys, provider configuration or conversation contents. On-demand session drill-down (titles, project directories, git branches and Agent tool-call trace waterfalls) reads local session logs directly from disk without persisting conversation bodies to the database. LAN sharing is off by default; when enabled it uses plain HTTP, so only turn it on in trusted networks. The only requests to outside services are for public data: market quotes, charts and search (Tencent, TWSE, Yahoo Finance), daily exchange rates (ExchangeRate-API), models.dev prices and the egress IP lookup (ipify), made while the page that needs them is open (models.dev also by the optional automatic price sync) and logged in the Activity Log. They carry stock symbols or search text, never usage data.
+Observatory stores usage metadata only in `observatory.db`. It never imports or exports API keys, provider configuration or conversation contents. On-demand session drill-down (titles, project directories, git branches and Agent tool-call trace waterfalls) reads local session logs directly from disk without persisting conversation bodies to the database. LAN sharing is off by default; when enabled it uses plain HTTP, so only turn it on in trusted networks. The only requests to outside services are for public data: market quotes, charts and search (Tencent, TWSE, Yahoo Finance), daily exchange rates (ExchangeRate-API), models.dev prices, the egress IP lookup (ipify), and model benchmarks from Artificial Analysis (with your own API key, sent only in a request header and stored only in the local database), made while the page that needs them is open (models.dev also by the optional automatic price sync) and logged in the Activity Log. They carry stock symbols or search text, never usage data.
 
 ## Sources and Licensing
 

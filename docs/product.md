@@ -59,12 +59,22 @@ The app has a collapsible left sidebar with three groups.
 
 **Network (网络诊断)** — Local adapters with IPv4/IPv6, state, gateway, DNS, and live receive/transmit rates with interactive chart hover tooltips. Rates are sampled every 3 seconds only while the page is visible; the chart keeps the last 60 samples in memory. The internet egress IPv4 is looked up through ipify only when the user clicks. The recommended adapter can be overridden because VPNs and split routing can make the guess wrong.
 
+**Model Benchmarks (模型榜单)** — Public benchmark results for AI models from [Artificial Analysis](https://artificialanalysis.ai), next to what you measured locally.
+
+- _Rankings_ across nine dimensions: overall intelligence, engineering, coding, agentic, finance & accounting, strategy & operations, legal, healthcare and economics, plus output speed, first-token time and blended price per million tokens.
+- _Charts_: score against price and score against speed, with the Pareto frontier marked, so the best-value models stand out.
+- _Effort tiers_: variants of one model (Max, Xhigh, High, Medium, Low, Minimal and others) are grouped as a family and can be compared side by side.
+- _Local comparison_: models you use are matched to their benchmark entries and shown with your own measured output speed and spend from the usage data.
+- _Setup_: it needs your own Artificial Analysis API key (free or Pro tier; a Pro request that is refused falls back to the free endpoint). The key is stored only in the local database, shown masked, hidden in the Activity Log and never shared with paired devices. Results are cached locally, so the page works offline after a refresh, and each refresh is logged as an outbound request.
+
 **Markets (市场行情)** — A watch board for US, Taiwan, mainland China and Hong Kong stocks plus major global indices, using free public quote endpoints (Tencent, TWSE MIS, Yahoo Finance) chosen per market for the lowest delay.
 
 - _Indices strip_ and a _stock pool_: built-in pools (S&P 500, CSI 300, Taiwan 150, Hong Kong 100, US-listed Chinese companies 中概股, the global AI supply chain) or a custom watchlist, shown as a list with sparklines or as a treemap heat map sized by market cap, traded value, move or equally. Sizes across currencies are compared in USD using live daily exchange rates (ExchangeRate-API), falling back to built-in approximate rates; the page says which it is using.
-- _Detail chart_ for the selected symbol over 1 day, 5 days, 1 month, 3 months or 1 year, with volume and traded value. Traded value is exact for A-shares, Hong Kong and US stocks (including small watchlists whose US prices come from Yahoo); Taiwan stocks show an estimate (price × volume) marked "≈".
+- _Detail chart_ for the selected symbol over 1 day, 5 days, 1 month, 3 months or 1 year, with volume and traded value. Traded value is exact for A-shares, Hong Kong and US stocks (including small watchlists whose US prices come from Yahoo); Taiwan stocks show an estimate (price × volume) marked "≈". Before the 09:00 open, outside trading hours or when the live TWSE feed leaves gaps, Taiwan quotes fall back to TWSE's official daily summary (closing price, change, volume and turnover), so the pool is never blank.
 - _Stale quotes_: a stock with no trade for more than 10 days is grayed on the heat map, labelled "停牌或退市？" with its last trade date, and left out of the up/down counts and sector averages.
 - _Search_ by code or name across markets; a bare four-digit code is also offered as a Taiwan listing.
+- _Pool editing_: any pool, built-in or custom, can be edited: search and add companies to a sector, remove them, move them between sectors, restore removed defaults, and create, rename or delete custom pools. Edits are stored as changes on top of the built-in lists, so a later list refresh keeps them.
+- _Fullscreen_ (F) shows the sector or market filters and the pool editor too; the corner chart closes with its close button, by clicking the selected tile again, by switching pools or sectors, or with Esc.
 - _Settings_: red-up/green-down (CN) or green-up/red-down (US) colors and a refresh interval of 5, 15 or 30 seconds or manual. Polling stops while the window is hidden; pools over 100 symbols refresh at most every 15 seconds. One request accepts at most 600 symbols.
 - The watchlist and settings are stored locally. Saving them is a preference write: it does not invalidate usage caches or change what paired devices see.
 
@@ -138,7 +148,8 @@ On first launch, if the database is empty and `~/.cc-switch/cc-switch.db` exists
 - Cost is an estimate from a local price table, not the provider's invoice.
 - Collector coverage depends on each tool's version and log format.
 - The macOS build is ad-hoc signed and not notarized.
-- Market data comes from free public endpoints (Tencent, TWSE MIS, Yahoo Finance) that offer no service guarantee and may throttle or block a client. When that happens the app backs off and shows the last good quotes marked "（缓存）"; Taiwan traded value is an estimate, and cross-currency comparisons use daily exchange rates.
+- Benchmark data is Artificial Analysis's, needs your own API key, and is only as current as your last refresh; matching benchmark entries to the model names in your usage data is by name and can miss renamed or unusual variants.
+- Market data comes from free public endpoints (Tencent, TWSE MIS and OpenAPI, Yahoo Finance) that offer no service guarantee and may throttle or block a client. When that happens the app backs off and shows the last good quotes marked "（缓存）"; Taiwan traded value is an estimate, and cross-currency comparisons use daily exchange rates.
 - The CSI 300 and S&P 500 pools change with index reviews; `npm run universes:refresh` checks them, but the Taiwan and Hong Kong pools are maintained by hand.
 
 ## 10. Roadmap Candidates
