@@ -15,6 +15,8 @@ import {
   type ResolvedPool,
   type SearchHit,
   type WatchItem,
+  MAX_POOL_SIZE,
+  POOL_LIMIT_HINT,
 } from "./marketsShared";
 
 interface PoolEditorModalProps {
@@ -169,7 +171,10 @@ export function PoolEditorModal({
       : filteredItems.slice(0, MAX_UNFILTERED_ROWS);
   const hiddenCount = filteredItems.length - visibleItems.length;
 
+  const atLimit = items.length >= MAX_POOL_SIZE;
+
   const handleAddHit = (hit: SearchHit) => {
+    if (atLimit) return;
     const sector = isWatchlist
       ? undefined
       : targetSector.trim() || sectors[0] || "自定义";
@@ -371,7 +376,11 @@ export function PoolEditorModal({
                 </label>
                 {searchOpen && debouncedSearch.length >= 1 && (
                   <div className="markets-search-dropdown left">
-                    {searchQuery.isFetching ? (
+                    {atLimit ? (
+                      <div className="markets-search-empty">
+                        {POOL_LIMIT_HINT}
+                      </div>
+                    ) : searchQuery.isFetching ? (
                       <div className="markets-search-empty">搜索中…</div>
                     ) : (searchQuery.data ?? []).length === 0 ? (
                       <div className="markets-search-empty">

@@ -42,6 +42,8 @@ import {
   VIEW_MODE_KEY,
   type WatchItem,
   type WatchViewMode,
+  MAX_POOL_SIZE,
+  POOL_LIMIT_HINT,
 } from "./marketsShared";
 import { MARKET_PRESETS } from "./presets";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -66,6 +68,11 @@ import {
 import { InteractivePriceChart, MiniSparkline } from "./MarketCharts";
 import { MarketHeatmap } from "./MarketHeatmap";
 import { PoolEditorModal } from "./PoolEditorModal";
+
+/** ATH/ATL hydration pacing: symbols per round, pause between rounds, rounds per visit. */
+const EXTREMES_BATCH = 8;
+const EXTREMES_ROUND_PAUSE_MS = 1500;
+const EXTREMES_MAX_ROUNDS = 40;
 
 export function MarketsWorkspace() {
   const qc = useQueryClient();
@@ -529,12 +536,16 @@ export function MarketsWorkspace() {
       return;
     }
     let cancelled = false;
+    // Full-history requests are heavy: fetch a few symbols per round with a pause
+    // between rounds, and stop as soon as a round makes no progress (the sources
+    // are refusing). The engine caches results for 7 days, so the rest load on
+    // later visits instead of in one burst.
     const hydrate = async () => {
-      for (let round = 0; round < 35 && !cancelled; round++) {
+      for (let round = 0; round < EXTREMES_MAX_ROUNDS && !cancelled; round++) {
         try {
           const res = await usageCall<ExtremesBatchResponse>(
             "markets_extremes",
-            { symbols, batchLimit: 18 },
+            { symbols, batchLimit: EXTREMES_BATCH },
           );
           if (cancelled) return;
           if (res?.items && Object.keys(res.items).length > 0) {
@@ -543,7 +554,13 @@ export function MarketsWorkspace() {
           const rem = res?.remaining ?? 0;
           setExtremesRemaining(rem);
           if (rem <= 0) break;
-          await new Promise((r) => window.setTimeout(r, 260));
+          if ((res?.attempted ?? 0) > 0 && (res?.fetched ?? 0) === 0) {
+            setExtremesRemaining(0);
+            break;
+          }
+          await new Promise((r) =>
+            window.setTimeout(r, EXTREMES_ROUND_PAUSE_MS),
+          );
         } catch {
           if (!cancelled) setExtremesRemaining(0);
           break;
@@ -680,6 +697,7 @@ export function MarketsWorkspace() {
       setSearchOpen(false);
       return;
     }
+    if (config.watchlist.length >= MAX_POOL_SIZE) return;
     const next: MarketsConfig = {
       ...config,
       watchlist: [
@@ -721,6 +739,7 @@ export function MarketsWorkspace() {
       return;
     }
     if (!activePool) return;
+    if (activePoolItems.length >= MAX_POOL_SIZE) return;
     const sector =
       item.sector?.trim() ||
       (sectorFilter !== "ALL" ? sectorFilter : "") ||
@@ -1133,7 +1152,11 @@ export function MarketsWorkspace() {
               </label>
               {searchOpen && debouncedQuery.length >= 1 && (
                 <div className="markets-search-dropdown">
-                  {searchQuery.isFetching ? (
+                  {activePoolItems.length >= MAX_POOL_SIZE ? (
+                    <div className="markets-search-empty">
+                      {POOL_LIMIT_HINT}
+                    </div>
+                  ) : searchQuery.isFetching ? (
                     <div className="markets-search-empty">搜索中…</div>
                   ) : (searchQuery.data ?? []).length === 0 ? (
                     <div className="markets-search-empty">

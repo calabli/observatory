@@ -488,6 +488,14 @@ impl Database {
         self.write_epoch.load(std::sync::atomic::Ordering::Relaxed)
     }
 
+    /// The bookkeeping version of [`Self::delete_setting`], see [`Self::write_quietly`].
+    pub fn delete_setting_quietly(&self, key: &str) -> Result<(), AppError> {
+        self.write_quietly(|conn| {
+            conn.execute("DELETE FROM settings WHERE key=?1", [key])?;
+            Ok(())
+        })
+    }
+
     /// The bookkeeping version of [`Self::set_setting`], see [`Self::write_quietly`].
     pub fn set_setting_quietly(&self, key: &str, value: &str) -> Result<(), AppError> {
         self.write_quietly(|conn| {

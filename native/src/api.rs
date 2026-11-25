@@ -103,6 +103,22 @@ fn store_result(key: ResultKey, value: &Value) {
     }
 }
 
+/// The data directory holds usage history and the optional Artificial Analysis API
+/// key, so only the owning account may open it (0700 on Unix). Best effort: a
+/// failure is logged and does not stop the app.
+fn restrict_to_owner(dir: &std::path::Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Err(e) = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700)) {
+            log::warn!("无法限制数据目录权限 {}: {e}", dir.display());
+        }
+    }
+    // Windows profile folders are already private to the user.
+    #[cfg(not(unix))]
+    let _ = dir;
+}
+
 impl UsageBackend {
     /// Cache key for the tray's today summary: changes only when data is written
     /// (`data_epoch`) or when the local calendar date rolls over.
@@ -133,6 +149,7 @@ impl UsageBackend {
     pub fn open() -> Result<Self, AppError> {
         let home = crate::config::get_app_config_dir();
         std::fs::create_dir_all(&home).map_err(|e| AppError::io(&home, e))?;
+        restrict_to_owner(&home);
         let lock_path = home.join("engine.lock");
         let lock = std::fs::OpenOptions::new()
             .create(true)

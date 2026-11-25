@@ -135,22 +135,24 @@ pub fn load_state(db: &Database) -> Result<BenchmarksState, AppError> {
     })
 }
 
+/// Benchmark settings are written quietly (see [`Database::write_quietly`]): they
+/// are not usage data and must not invalidate caches or re-sync paired devices.
 pub fn save_config(
     db: &Database,
     input: &BenchmarksConfigSave,
 ) -> Result<BenchmarksState, AppError> {
     if input.clear_api_key {
-        db.delete_setting(AA_API_KEY_SETTING)?;
+        db.delete_setting_quietly(AA_API_KEY_SETTING)?;
     } else if let Some(raw_key) = input.api_key.as_deref() {
         let trimmed = raw_key.trim();
         if trimmed.is_empty() {
-            db.delete_setting(AA_API_KEY_SETTING)?;
+            db.delete_setting_quietly(AA_API_KEY_SETTING)?;
         } else {
-            db.set_setting(AA_API_KEY_SETTING, trimmed)?;
+            db.set_setting_quietly(AA_API_KEY_SETTING, trimmed)?;
         }
     }
     if let Some(tier) = input.tier.as_deref() {
-        db.set_setting(AA_TIER_SETTING, &normalize_tier(Some(tier)))?;
+        db.set_setting_quietly(AA_TIER_SETTING, &normalize_tier(Some(tier)))?;
     }
     load_state(db)
 }
@@ -167,7 +169,9 @@ pub fn load_api_key_and_tier(db: &Database) -> Result<(Option<String>, String), 
 pub fn save_snapshot(db: &Database, snapshot: &BenchmarkSnapshot) -> Result<(), AppError> {
     let raw = serde_json::to_string(snapshot)
         .map_err(|e| AppError::Message(format!("序列化模型榜单缓存失败: {e}")))?;
-    db.set_setting(AA_CACHE_SETTING, &raw)
+    // Quiet: the leaderboard is not usage data, so saving it must not invalidate
+    // usage caches or change the LAN export fingerprint (peers would re-sync).
+    db.set_setting_quietly(AA_CACHE_SETTING, &raw)
 }
 
 fn num(v: Option<&Value>) -> Option<f64> {
@@ -532,6 +536,40 @@ mod tests {
         assert_eq!(m.mean_tps, Some(114.23));
         assert_eq!(m.median_tps, Some(98.5));
         assert_eq!(m.median_e2e_s, Some(14.2));
+    }
+
+    #[test]
+    fn saving_benchmark_settings_leaves_the_data_epoch_alone() {
+        let db = Database::memory().expect("memory db");
+        let before = db.data_epoch();
+        save_config(
+            &db,
+            &BenchmarksConfigSave {
+                api_key: Some("aa-test-key-1234".into()),
+                clear_api_key: false,
+                tier: Some("pro".into()),
+            },
+        )
+        .expect("save config");
+        let snap = BenchmarkSnapshot {
+            provider: "artificial_analysis".into(),
+            tier: "pro".into(),
+            intelligence_index_version: None,
+            fetched_at: 0,
+            total_pages: 1,
+            models: vec![],
+        };
+        save_snapshot(&db, &snap).expect("save snapshot");
+        save_config(
+            &db,
+            &BenchmarksConfigSave {
+                api_key: None,
+                clear_api_key: true,
+                tier: None,
+            },
+        )
+        .expect("clear key");
+        assert_eq!(db.data_epoch(), before, "no usage cache or LAN re-sync");
     }
 
     #[test]

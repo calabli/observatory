@@ -23,6 +23,10 @@ use crate::error::AppError;
 const WATCHLIST_SETTINGS_KEY: &str = "markets_watchlist_v1";
 const EXTREMES_CACHE_KEY: &str = "markets_ath_cache_v1";
 const EXTREMES_TTL_SECS: i64 = 7 * 86_400;
+/// Full-history requests are heavy and easy to get throttled for; each call fetches
+/// at most this many symbols, two at a time.
+const EXTREMES_MAX_PER_CALL: usize = 10;
+const EXTREMES_CONCURRENCY: usize = 2;
 const USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 
 fn http_client() -> &'static reqwest::Client {
@@ -330,6 +334,10 @@ pub struct PriceExtremes {
 pub struct ExtremesBatchResponse {
     pub items: HashMap<String, PriceExtremes>,
     pub remaining: usize,
+    /// Symbols this call tried to fetch and how many of them succeeded; a round with
+    /// attempts but no successes means the sources are refusing, so callers stop.
+    pub attempted: usize,
+    pub fetched: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1126,6 +1134,20 @@ fn parse_twse_day_all(bytes: &[u8]) -> HashMap<String, TwseSnapshot> {
 
 /// Official TWSE OpenAPI daily summary for all listed TWSE stocks (~1,000 rows in one request).
 /// Cached for 5 minutes so pre-market / off-hours / MIS-gap fills cost a single lightweight call.
+/// Whether the Taiwan Stock Exchange is in its trading session (09:00-13:30 Taipei
+/// time, UTC+8, Monday to Friday). Holidays are not known here and count as open,
+/// which only means the daily summary is not used to fill gaps on those days.
+fn twse_session_open(now: chrono::DateTime<chrono::Utc>) -> bool {
+    use chrono::{Datelike, Timelike};
+    let Some(taipei) = chrono::FixedOffset::east_opt(8 * 3600) else {
+        return false;
+    };
+    let t = now.with_timezone(&taipei);
+    let weekday = t.weekday().num_days_from_monday() < 5;
+    let minutes = t.hour() * 60 + t.minute();
+    weekday && (9 * 60..13 * 60 + 30).contains(&minutes)
+}
+
 async fn fetch_twse_day_all_cached() -> HashMap<String, TwseSnapshot> {
     /// When the summary was fetched, and the snapshots by symbol.
     type DayAllCache = Option<(std::time::Instant, HashMap<String, TwseSnapshot>)>;
@@ -1543,10 +1565,15 @@ pub async fn fetch_quotes(items: Vec<WatchItem>, skip_sparkline: bool) -> Vec<St
     // TWSE MIS clears `z` to "-" before 09:00 Taipei time (and can drop chunks on rate limit).
     // When any `.TW` symbol lacks a live price, fill all missing `.TW` stocks in one cached call
     // to TWSE's official daily summary (`STOCK_DAY_ALL`) so Taiwan pools never blank out.
-    let needs_twse_daily = tw_channels.iter().any(|(sym, _)| {
-        sym.to_ascii_uppercase().ends_with(".TW")
-            && twse_map.get(sym).and_then(|s| s.price).is_none()
-    });
+    // Only outside the trading session: during it the summary is the previous day's
+    // close and change, which would show yesterday's move as today's for any stock
+    // whose live quote is missing (a chunk dropped by the rate limit, say). Those
+    // stay on the Yahoo route and the last good quote instead.
+    let needs_twse_daily = !twse_session_open(chrono::Utc::now())
+        && tw_channels.iter().any(|(sym, _)| {
+            sym.to_ascii_uppercase().ends_with(".TW")
+                && twse_map.get(sym).and_then(|s| s.price).is_none()
+        });
     if needs_twse_daily {
         let daily_map = fetch_twse_day_all_cached().await;
         for (sym, _) in &tw_channels {
@@ -2077,14 +2104,22 @@ async fn fetch_single_extremes(symbol: &str) -> Option<PriceExtremes> {
             return Some(ext);
         }
     }
-    if let Some(code) = to_tencent_batch_code(symbol) {
+    // The fallback is served by web.ifzq.gtimg.cn, the same host as the intraday
+    // quotes, so it shares that service's back-off and reports to it.
+    if let Some(code) =
+        to_tencent_batch_code(symbol).filter(|_| tencent_available(TencentService::Minute))
+    {
         let url = format!(
             "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={code},month,,,500,qfq"
         );
-        if let Ok(bytes) = traced_get_bytes("腾讯历史月K", &url, None).await {
-            if let Some(ext) = parse_tencent_monthly_extremes(&bytes, &code) {
-                return Some(ext);
+        match traced_get_bytes("腾讯历史月K", &url, None).await {
+            Ok(bytes) if !looks_blocked(&bytes) => {
+                tencent_report(TencentService::Minute, true);
+                if let Some(ext) = parse_tencent_monthly_extremes(&bytes, &code) {
+                    return Some(ext);
+                }
             }
+            _ => tencent_report(TencentService::Minute, false),
         }
     }
     None
@@ -2127,10 +2162,12 @@ pub async fn fetch_extremes_batch(
         }
     }
 
-    let limit = batch_limit.min(30);
+    let limit = batch_limit.min(EXTREMES_MAX_PER_CALL);
     let to_fetch: Vec<String> = missing.iter().take(limit).cloned().collect();
     let remaining = missing.len().saturating_sub(to_fetch.len());
 
+    let attempted = to_fetch.len();
+    let mut fetched_ok = 0usize;
     let mut updates: HashMap<String, PriceExtremes> = HashMap::new();
     if !to_fetch.is_empty() {
         let fetched: Vec<(String, Option<PriceExtremes>)> = stream::iter(to_fetch)
@@ -2138,11 +2175,12 @@ pub async fn fetch_extremes_batch(
                 let res = fetch_single_extremes(&sym).await;
                 (sym, res)
             })
-            .buffer_unordered(4)
+            .buffer_unordered(EXTREMES_CONCURRENCY)
             .collect()
             .await;
 
         for (sym, opt) in fetched {
+            fetched_ok += usize::from(opt.is_some());
             if let Some(ext) = opt {
                 if let Ok(mut fail_map) = extremes_fail().lock() {
                     fail_map.remove(&sym);
@@ -2160,6 +2198,8 @@ pub async fn fetch_extremes_batch(
         ExtremesBatchResponse {
             items: result_items,
             remaining,
+            attempted,
+            fetched: fetched_ok,
         },
     )
 }
@@ -2453,6 +2493,22 @@ mod tests {
         assert!((q.price.unwrap() - 125.53).abs() < 1e-6);
         assert!((q.change_percent.unwrap() - (-14.01)).abs() < 1e-6);
         assert!((q.market_cap.unwrap() - 3_031_172_910_000.0).abs() < 1e5);
+    }
+
+    #[test]
+    fn twse_daily_fill_only_outside_the_session() {
+        use chrono::TimeZone;
+        // 2026-11-24 is a Tuesday; times are UTC (Taipei is UTC+8).
+        let at = |h, m| chrono::Utc.with_ymd_and_hms(2026, 11, 24, h, m, 0).unwrap();
+        assert!(
+            !twse_session_open(at(0, 59)),
+            "08:59 Taipei: before the open"
+        );
+        assert!(twse_session_open(at(1, 0)), "09:00 Taipei: open");
+        assert!(twse_session_open(at(5, 29)), "13:29 Taipei: open");
+        assert!(!twse_session_open(at(5, 30)), "13:30 Taipei: closed");
+        let saturday = chrono::Utc.with_ymd_and_hms(2026, 11, 28, 2, 0, 0).unwrap();
+        assert!(!twse_session_open(saturday), "weekend");
     }
 
     #[test]

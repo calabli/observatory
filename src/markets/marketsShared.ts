@@ -60,6 +60,9 @@ export interface PriceExtremes {
 export interface ExtremesBatchResponse {
   items: Record<string, PriceExtremes>;
   remaining: number;
+  /** Symbols this call tried to fetch, and how many succeeded. */
+  attempted: number;
+  fetched: number;
 }
 
 export interface LiveExtremes {
@@ -618,3 +621,11 @@ export function formatPoolLabel(
   }
   return `${baseLabel} (${actualCount})`;
 }
+
+/**
+ * Most stocks one pool or watchlist can hold: the engine accepts at most this many
+ * symbols per quote request (`MAX_QUOTE_ITEMS` in native/src/markets.rs), and a
+ * larger pool would fail to load entirely.
+ */
+export const MAX_POOL_SIZE = 600;
+export const POOL_LIMIT_HINT = `每个板块最多 ${MAX_POOL_SIZE} 家公司，请先移除一些再添加`;

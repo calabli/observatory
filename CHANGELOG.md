@@ -6,6 +6,14 @@ rename it to the new version (`## [x.y.z] - YYYY-MM-DD`) before tagging.
 
 ## Unreleased
 
+## [0.1.18] - 2026-11-25
+
+- Markets: all-time highs and lows load gradually (a few stocks per round, stopping when the sources refuse) instead of a burst of ~600 history requests per pool, and the Tencent fallback respects its back-off; these requests are now logged in the Activity Log.
+- Markets: Taiwan stocks missing a live quote during trading hours no longer show yesterday's close and change as today's; the TWSE daily summary only fills gaps outside the session.
+- Markets: a pool or watchlist stops at 600 stocks (the per-request quote limit) instead of failing to load.
+- Benchmarks: saving the API key, tier or a refreshed leaderboard no longer clears usage caches or makes paired devices re-sync.
+- The data folder (`~/.observatory`) is now readable only by your account, since it holds the optional Artificial Analysis API key.
+
 ## [0.1.17] - 2026-11-24
 
 - Markets: added All-Time High drawdown (`距历史高点`) and All-Time Low rebound (`距历史低点`) backed by a 7-day SQLite cache + live intraday breakout updates (`markets_extremes`), displayed with multi-column sorting in list view and switchable color modes (`今日涨跌` / `距历史高点` / `距历史低点`) + tooltip details in the heatmap.
