@@ -34,7 +34,10 @@ const POLLING_RESPONSE_PREVIEW_BYTES: usize = 8 * 1024;
 
 /// Outbound ops the UI polls on a timer.
 fn is_polling_op(op: &str) -> bool {
-    matches!(op, "markets_quotes" | "markets_chart" | "markets_extremes")
+    matches!(
+        op,
+        "markets_quotes" | "markets_chart" | "markets_extremes" | "markets_sparklines"
+    )
 }
 
 /// A successful poll identical to one already logged within this window is not
@@ -234,7 +237,7 @@ pub fn list(
              FROM activity_log
              WHERE (?1 IS NULL OR kind = ?1) AND (?2 IS NULL OR id < ?2)
                AND NOT (?4 AND kind = 'api_out' AND status = 'ok'
-                        AND json_extract(summary, '$.op') IN ('markets_quotes', 'markets_chart', 'markets_extremes'))
+                        AND json_extract(summary, '$.op') IN ('markets_quotes', 'markets_chart', 'markets_extremes', 'markets_sparklines'))
              ORDER BY id DESC LIMIT ?3",
         )?;
         let rows = stmt.query_map(params![kind, before_id, limit, hide_polling], |row| {
@@ -580,6 +583,7 @@ pub fn api_out_label(op: &str) -> Option<&'static str> {
         "markets_search" => "搜索股票代码",
         "markets_fx" => "拉取汇率",
         "markets_extremes" => "拉取历史最高/最低价",
+        "markets_sparklines" => "拉取分时走势",
         "benchmarks_fetch" => "拉取模型评比榜单",
         "modelsdev_fetch" => "拉取 models.dev 价格",
         "network_international_ipv4" => "查询国际出口 IP",

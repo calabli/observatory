@@ -2205,6 +2205,106 @@ pub async fn fetch_extremes_batch(
 }
 
 // ---------------------------------------------------------------------------
+// Intraday points for list-view trend charts (pools over 24 stocks fetch batch
+// quotes, which carry none). Loaded a few at a time for the rows on screen.
+// ---------------------------------------------------------------------------
+
+/// Points per symbol and per-call limits; results (and failures, briefly) are cached.
+const SPARKLINE_POINTS: usize = 48;
+const SPARKLINES_MAX_PER_CALL: usize = 10;
+const SPARKLINES_CONCURRENCY: usize = 2;
+const SPARKLINE_TTL: Duration = Duration::from_secs(300);
+const SPARKLINE_FAIL_TTL: Duration = Duration::from_secs(120);
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SparklinesResponse {
+    pub items: HashMap<String, Vec<ChartPoint>>,
+    /// Symbols fetched over the network in this call, and how many succeeded.
+    pub attempted: usize,
+    pub fetched: usize,
+}
+
+type SparklineCache = HashMap<String, (std::time::Instant, Option<Vec<ChartPoint>>)>;
+
+fn sparkline_cache() -> &'static std::sync::Mutex<SparklineCache> {
+    static CACHE: OnceLock<std::sync::Mutex<SparklineCache>> = OnceLock::new();
+    CACHE.get_or_init(Default::default)
+}
+
+async fn fetch_one_sparkline(symbol: &str) -> Option<Vec<ChartPoint>> {
+    let market = detect_market(symbol);
+    if matches!(market, "CN" | "HK") && tencent_available(TencentService::Minute) {
+        if let Some(code) = to_tencent_code(symbol) {
+            match fetch_tencent_quote(symbol, "", &code, SPARKLINE_POINTS).await {
+                Ok(q) => {
+                    tencent_report(TencentService::Minute, true);
+                    if q.sparkline.len() >= 2 {
+                        return Some(q.sparkline);
+                    }
+                }
+                Err(e) if e.contains("无报价数据") => {}
+                Err(_) => tencent_report(TencentService::Minute, false),
+            }
+        }
+    }
+    let (_, points) = fetch_yahoo_chart_raw(symbol, "1d", false).await.ok()?;
+    (points.len() >= 2).then(|| downsample_points(points, SPARKLINE_POINTS))
+}
+
+/// Intraday points for up to [`SPARKLINES_MAX_PER_CALL`] symbols not cached yet;
+/// cached ones (including recent failures, as empty) are returned without a request.
+pub async fn fetch_sparklines(symbols: Vec<String>) -> SparklinesResponse {
+    let now = std::time::Instant::now();
+    let mut items = HashMap::new();
+    let mut missing = Vec::new();
+    {
+        let cache = sparkline_cache().lock().ok();
+        for sym in symbols {
+            let sym = sym.trim().to_string();
+            if sym.is_empty() || items.contains_key(&sym) || missing.contains(&sym) {
+                continue;
+            }
+            match cache.as_ref().and_then(|c| c.get(&sym)) {
+                Some((at, Some(points))) if now.duration_since(*at) < SPARKLINE_TTL => {
+                    items.insert(sym, points.clone());
+                }
+                Some((at, None)) if now.duration_since(*at) < SPARKLINE_FAIL_TTL => {}
+                _ => missing.push(sym),
+            }
+        }
+    }
+    missing.truncate(SPARKLINES_MAX_PER_CALL);
+    let attempted = missing.len();
+    let fetched: Vec<(String, Option<Vec<ChartPoint>>)> = stream::iter(missing)
+        .map(|sym| async move {
+            let points = fetch_one_sparkline(&sym).await;
+            (sym, points)
+        })
+        .buffer_unordered(SPARKLINES_CONCURRENCY)
+        .collect()
+        .await;
+    let mut ok = 0;
+    if let Ok(mut cache) = sparkline_cache().lock() {
+        if cache.len() > 4000 {
+            cache.clear();
+        }
+        for (sym, points) in fetched {
+            if let Some(p) = &points {
+                ok += 1;
+                items.insert(sym.clone(), p.clone());
+            }
+            cache.insert(sym, (std::time::Instant::now(), points));
+        }
+    }
+    SparklinesResponse {
+        items,
+        attempted,
+        fetched: ok,
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Multi-market search (Tencent SmartBox UTF-8 escapes + Yahoo Finance Search)
 // ---------------------------------------------------------------------------
 
@@ -2493,6 +2593,41 @@ mod tests {
         assert!((q.price.unwrap() - 125.53).abs() < 1e-6);
         assert!((q.change_percent.unwrap() - (-14.01)).abs() < 1e-6);
         assert!((q.market_cap.unwrap() - 3_031_172_910_000.0).abs() < 1e5);
+    }
+
+    #[tokio::test]
+    async fn cached_sparklines_are_served_without_a_request() {
+        let pts = vec![
+            ChartPoint {
+                ts: 1,
+                price: 10.0,
+                open: None,
+                high: None,
+                low: None,
+                volume: None,
+            },
+            ChartPoint {
+                ts: 2,
+                price: 11.0,
+                open: None,
+                high: None,
+                low: None,
+                volume: None,
+            },
+        ];
+        {
+            let mut cache = sparkline_cache().lock().unwrap();
+            let now = std::time::Instant::now();
+            cache.insert("TEST-OK".into(), (now, Some(pts.clone())));
+            cache.insert("TEST-FAILED".into(), (now, None));
+        }
+        let res = fetch_sparklines(vec!["TEST-OK".into(), "TEST-FAILED".into()]).await;
+        assert_eq!(res.attempted, 0, "both come from the cache");
+        assert_eq!(res.items.get("TEST-OK").map(Vec::len), Some(2));
+        assert!(
+            !res.items.contains_key("TEST-FAILED"),
+            "recent failure is not retried"
+        );
     }
 
     #[test]

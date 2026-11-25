@@ -780,6 +780,14 @@ impl UsageBackend {
                 to_json(crate::markets::search_symbols(&query).await)
             }
             "markets_fx" => to_json(crate::markets::fetch_fx_rates().await?),
+            "markets_sparklines" => {
+                let symbols: Vec<String> = args
+                    .get("symbols")
+                    .cloned()
+                    .and_then(|v| serde_json::from_value(v).ok())
+                    .unwrap_or_default();
+                to_json(crate::markets::fetch_sparklines(symbols).await)
+            }
             "markets_extremes" => {
                 let symbols: Vec<String> = args
                     .get("symbols")

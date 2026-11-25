@@ -9,6 +9,13 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 });
 
+/** Open a Markets pool, allowing for a cold engine (first run, no cache yet). */
+const openPool = async (page: Page, name: RegExp) => {
+  const button = page.getByRole("button", { name });
+  await expect(button).toBeVisible({ timeout: 30_000 });
+  await button.click();
+};
+
 const openPage = async (page: Page, label: string) => {
   await page
     .locator(".app-sidebar")
@@ -79,7 +86,7 @@ test("Markets lists the built-in pools and switches views", async ({
   await expect(
     page.getByRole("button", { name: /中概股 \(53\)/ }),
   ).toBeVisible();
-  await page.getByRole("button", { name: /中概股 \(53\)/ }).click();
+  await openPool(page, /中概股 \(53\)/);
   // The heat map fits in the window: its bottom edge is visible without scrolling.
   const canvas = page.locator(".markets-hm-canvas");
   await expect(canvas).toBeVisible();
@@ -105,4 +112,54 @@ test("Activity Log hides routine polls by default", async ({ page }) => {
       .getByRole("group", { name: "按类型筛选" })
       .getByRole("button", { name: "接口请求" }),
   ).toHaveAttribute("aria-pressed", "true");
+});
+
+test("Benchmarks without a key offers setup and does not fetch", async ({
+  page,
+}) => {
+  const fetches: string[] = [];
+  page.on("request", (req) => {
+    const body = req.postData() ?? "";
+    if (body.includes("benchmarks_fetch")) fetches.push(body);
+  });
+  await openPage(page, "模型榜单");
+  const setup = page.getByRole("button", { name: "配置 API Key" });
+  await expect(setup).toBeVisible();
+  await setup.click();
+  await expect(
+    page.getByPlaceholder(/输入 Artificial Analysis API Key/),
+  ).toBeVisible();
+  expect(fetches).toEqual([]);
+});
+
+test("The pool editor removes a company and restores the default", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await openPage(page, "市场行情");
+  await openPool(page, /中概股 \(53\)/);
+  await page.getByRole("button", { name: "编辑板块" }).click();
+  const dialog = page.getByRole("dialog", { name: "编辑股票板块" });
+  await expect(dialog.getByText("共 53 家")).toBeVisible();
+  await dialog.getByRole("button", { name: "移除 BABA" }).click();
+  await expect(dialog.getByText("共 52 家")).toBeVisible();
+  await expect(dialog.getByText("已自定义")).toBeVisible();
+  await dialog.getByRole("button", { name: /恢复默认/ }).click();
+  await expect(dialog.getByText("共 53 家")).toBeVisible();
+  await dialog.getByRole("button", { name: "关闭" }).first().click();
+  await expect(dialog).toBeHidden();
+});
+
+test("The heat map swaps in a complete snapshot", async ({ page }) => {
+  test.setTimeout(60_000);
+  await openPage(page, "市场行情");
+  await openPool(page, /中概股 \(53\)/);
+  const canvas = page.locator(".markets-hm-canvas");
+  // While quotes load the canvas is busy (shimmer or dimmed previous map);
+  // once they arrive every stock of the pool is drawn at once.
+  await expect(canvas).toHaveAttribute("aria-busy", "false", {
+    timeout: 30_000,
+  });
+  await expect(canvas.locator(".markets-hm-tile")).toHaveCount(53);
+  await expect(canvas.locator(".markets-hm-skeleton")).toHaveCount(0);
 });

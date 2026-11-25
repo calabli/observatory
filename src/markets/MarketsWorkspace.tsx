@@ -66,6 +66,7 @@ import {
   X,
 } from "lucide-react";
 import { InteractivePriceChart, MiniSparkline } from "./MarketCharts";
+import { useLazySparklines } from "./useLazySparklines";
 import { MarketHeatmap } from "./MarketHeatmap";
 import { PoolEditorModal } from "./PoolEditorModal";
 
@@ -126,6 +127,7 @@ export function MarketsWorkspace() {
   const [fsDrawerOpen, setFsDrawerOpen] = useState(false);
   const enteredOsFsRef = useRef(false);
   const searchWrapRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   const enterFullscreen = useCallback(async () => {
     setIsFullscreen(true);
@@ -664,6 +666,26 @@ export function MarketsWorkspace() {
       return a.symbol.localeCompare(b.symbol);
     });
   }, [filteredWatchlist, listSort, quoteBySymbol, liveExtremesBySymbol]);
+
+  // Rows whose quote has no intraday points (batch quotes for pools over 24) load
+  // their trend chart lazily, a few on-screen rows at a time.
+  const sparkRowsKey = useMemo(
+    () =>
+      viewMode === "list"
+        ? sortedWatchlist
+            .filter(
+              (w) => (quoteBySymbol.get(w.symbol)?.sparkline?.length ?? 0) < 2,
+            )
+            .map((w) => w.symbol)
+            .join(",")
+        : "",
+    [viewMode, sortedWatchlist, quoteBySymbol],
+  );
+  const lazySparks = useLazySparklines(
+    listRef,
+    sparkRowsKey !== "",
+    sparkRowsKey,
+  );
 
   const toggleListSort = (
     col: "price" | "changePercent" | "fromAth" | "fromAtl",
@@ -1293,7 +1315,7 @@ export function MarketsWorkspace() {
               loading={shown === null}
             />
           ) : (
-            <div className="markets-table-wrap">
+            <div className="markets-table-wrap" ref={listRef}>
               {extremesRemaining > 0 && (
                 <div className="markets-table-sync-bar">
                   正在后台补齐历史高低点并缓存至本地（剩余 {extremesRemaining}{" "}
@@ -1436,9 +1458,20 @@ export function MarketsWorkspace() {
                             <span className="markets-muted">—</span>
                           )}
                         </td>
-                        <td className="num">
+                        <td
+                          className="num"
+                          data-spark-symbol={
+                            (q?.sparkline?.length ?? 0) < 2
+                              ? w.symbol
+                              : undefined
+                          }
+                        >
                           <MiniSparkline
-                            points={q?.sparkline ?? []}
+                            points={
+                              (q?.sparkline?.length ?? 0) >= 2
+                                ? q!.sparkline
+                                : (lazySparks[w.symbol] ?? [])
+                            }
                             prevClose={q?.prevClose ?? null}
                             color={color}
                             width={74}

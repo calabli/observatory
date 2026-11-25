@@ -6,6 +6,12 @@ rename it to the new version (`## [x.y.z] - YYYY-MM-DD`) before tagging.
 
 ## Unreleased
 
+## [0.1.19] - 2026-11-25
+
+- Markets: the CSI 300 pool is updated to the current constituents (62 stocks swapped), and `npm run universes:refresh` now writes only real changes, formatted.
+- Markets list: the trend column loads intraday charts for the rows on screen, a few at a time, so big pools no longer show "—" for every stock.
+- Browser UI tests now cover the benchmarks page without a key, editing and restoring a stock pool, and the heat map's complete-snapshot swap.
+
 ## [0.1.18] - 2026-11-25
 
 - Markets: all-time highs and lows load gradually (a few stocks per round, stopping when the sources refuse) instead of a burst of ~600 history requests per pool, and the Tencent fallback respects its back-off; these requests are now logged in the Activity Log.

@@ -6,6 +6,7 @@
 // name and sector; new ones get the source's name and a mapped sector, so review the
 // added rows before committing. The Taiwan and Hong Kong pools are hand-picked by
 // market cap rather than an index list, so they are not touched.
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 
 const FILE = "src/markets/universes.json";
@@ -152,8 +153,13 @@ const updated = {
   csi300: await refresh("CSI 300", universes.csi300, csi300),
 };
 
+const changed = Object.keys(updated).some(
+  (key) => JSON.stringify(updated[key]) !== JSON.stringify(universes[key]),
+);
 if (!write) {
   console.log("\nDry run. Re-run with --write to update", FILE);
+} else if (!changed) {
+  console.log(`\nNo pool changed; ${FILE} left as it is.`);
 } else {
   // One row per line, the same layout as the hand-maintained file.
   const body = Object.entries(updated)
@@ -163,5 +169,7 @@ if (!write) {
     )
     .join(",\n");
   fs.writeFileSync(FILE, `{\n${body}\n}\n`);
+  // Match the repository's formatting so the diff shows only real changes.
+  spawnSync("npx", ["prettier", "--write", FILE], { stdio: "ignore" });
   console.log(`\nUpdated ${FILE}. Review the added rows' names and sectors.`);
 }
