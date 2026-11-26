@@ -54,7 +54,10 @@ test("AI usage offers the shared time ranges and remembers the choice", async ({
     "近 30 天",
     "全部时间",
     "自定义时间",
+    "按周期查询",
   ]);
+  await range.selectOption("cycle");
+  await expect(page.locator("[data-cycle-navigator]")).toBeVisible();
   await range.selectOption("3d");
   await page.reload();
   await openPage(page, "AI 用量");

@@ -6,6 +6,12 @@ rename it to the new version (`## [x.y.z] - YYYY-MM-DD`) before tagging.
 
 ## Unreleased
 
+## [0.1.20] - 2026-11-26
+
+- AI Usage: added standalone quota-cycle querying (`按周期查询`) tailored for AI Plans, with full support for adding, editing, saving, and deleting independent cycle profiles in local SQLite (`usage_cycles_v1`).
+- AI Usage cycles support 4 reset rules: weekly fixed reset (weekday + exact local `HH:mm`), rolling windows (`5h` / `24h` / `7d` / custom hours), monthly anchor day (1–31 with month-end clamping), and custom day intervals, plus optional linked app filtering and reference quotas (USD / Token / requests).
+- AI Usage cycle navigation includes previous/next cycle stepping, live reset countdown, elapsed-time vs usage pace progress & projection alerts, period-over-period KPI deltas, and a clickable 4-cycle history comparison (`usage_cycle_history`).
+
 ## [0.1.19] - 2026-11-25
 
 - Markets: the CSI 300 pool is updated to the current constituents (62 stocks swapped), and `npm run universes:refresh` now writes only real changes, formatted.

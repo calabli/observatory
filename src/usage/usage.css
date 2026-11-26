@@ -749,3 +749,535 @@
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* KPI period-over-period delta badge */
+#observatory-root .stat-label-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+#observatory-root .stat-delta {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+#observatory-root .stat-delta.tone-good {
+  color: var(--good);
+  background: var(--good-soft);
+}
+#observatory-root .stat-delta.tone-warn {
+  color: var(--warning);
+  background: light-dark(#fdf3e4, #342a1c);
+}
+#observatory-root .stat-delta.tone-muted {
+  color: var(--muted);
+  background: var(--soft);
+}
+
+/* AI Plan Cycle Navigator */
+#observatory-root .usage-cycle-bar {
+  margin: 12px 0 6px;
+  padding: 13px 15px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+#observatory-root .usage-cycle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+#observatory-root .usage-cycle-pills {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+#observatory-root .usage-cycle-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--soft);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+#observatory-root .usage-cycle-pill:hover {
+  border-color: var(--accent);
+}
+#observatory-root .usage-cycle-pill.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-text);
+}
+#observatory-root .usage-cycle-pill small {
+  font-size: 10px;
+  opacity: 0.78;
+  padding-left: 4px;
+  border-left: 1px solid currentColor;
+}
+#observatory-root .usage-cycle-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+#observatory-root .usage-cycle-btn {
+  padding: 5px 10px;
+  font-size: 12px;
+}
+#observatory-root .usage-cycle-linked {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+}
+#observatory-root .usage-cycle-linked button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-decoration: underline;
+  padding: 0;
+  font-size: 11px;
+}
+#observatory-root .usage-cycle-nav-row {
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+#observatory-root .usage-cycle-stepper-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+#observatory-root .usage-cycle-stepper {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  overflow: hidden;
+  font-size: 12px;
+}
+#observatory-root .usage-cycle-stepper > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 6px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+}
+#observatory-root .usage-cycle-stepper > button:hover:not(:disabled) {
+  background: var(--soft);
+}
+#observatory-root .usage-cycle-stepper > button:first-child {
+  border-right: 1px solid var(--line);
+}
+#observatory-root .usage-cycle-stepper > button:last-child {
+  border-left: 1px solid var(--line);
+}
+#observatory-root .usage-cycle-window {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  color: var(--text);
+  font-weight: 500;
+}
+#observatory-root .usage-cycle-window svg {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+#observatory-root .usage-cycle-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--soft);
+  color: var(--muted);
+}
+#observatory-root .usage-cycle-badge.current {
+  background: var(--primary);
+  color: var(--primary-text);
+}
+#observatory-root .usage-cycle-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+#observatory-root .usage-cycle-meta-tags {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+#observatory-root .usage-cycle-tag {
+  font-size: 11px;
+  padding: 4px 9px;
+  border-radius: 6px;
+  background: var(--soft);
+  color: var(--muted);
+}
+#observatory-root .usage-cycle-tag.accent {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* Pace & Quota Progress Strip */
+#observatory-root .usage-cycle-pace {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+#observatory-root .usage-cycle-pace-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+#observatory-root .usage-cycle-pace-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+#observatory-root .usage-cycle-pace-right b {
+  color: var(--text);
+}
+#observatory-root .usage-cycle-verdict {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 999px;
+}
+#observatory-root .usage-cycle-verdict.tone-healthy {
+  color: var(--good);
+  background: var(--good-soft);
+}
+#observatory-root .usage-cycle-verdict.tone-fast {
+  color: var(--warning);
+  background: light-dark(#fdf3e4, #342a1c);
+}
+#observatory-root .usage-cycle-verdict.tone-over {
+  color: light-dark(#b4342a, #f29a94);
+  background: light-dark(#fdecea, #3a2324);
+}
+#observatory-root .usage-cycle-verdict.tone-completed,
+#observatory-root .usage-cycle-verdict.tone-tracking {
+  color: var(--muted);
+  background: var(--soft);
+}
+#observatory-root .usage-cycle-track {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--soft);
+  overflow: visible;
+}
+#observatory-root .usage-cycle-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.25s ease;
+}
+#observatory-root .usage-cycle-fill.tone-healthy {
+  background: var(--good);
+}
+#observatory-root .usage-cycle-fill.tone-fast {
+  background: var(--warning);
+}
+#observatory-root .usage-cycle-fill.tone-over {
+  background: light-dark(#d14338, #e67c73);
+}
+#observatory-root .usage-cycle-fill.tone-completed,
+#observatory-root .usage-cycle-fill.tone-tracking {
+  background: var(--accent);
+}
+#observatory-root .usage-cycle-marker {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--text);
+  pointer-events: none;
+}
+#observatory-root .usage-cycle-pace-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 11px;
+}
+#observatory-root .usage-cycle-pace-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+}
+#observatory-root .usage-cycle-pace-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+#observatory-root .usage-cycle-pace-legend i.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  display: inline-block;
+}
+#observatory-root .usage-cycle-pace-legend i.dot.tone-healthy {
+  background: var(--good);
+}
+#observatory-root .usage-cycle-pace-legend i.dot.tone-fast {
+  background: var(--warning);
+}
+#observatory-root .usage-cycle-pace-legend i.dot.tone-over {
+  background: light-dark(#d14338, #e67c73);
+}
+#observatory-root .usage-cycle-pace-legend i.dot.tone-completed,
+#observatory-root .usage-cycle-pace-legend i.dot.tone-tracking {
+  background: var(--accent);
+}
+#observatory-root .usage-cycle-pace-legend i.tick {
+  width: 2px;
+  height: 10px;
+  background: var(--text);
+  display: inline-block;
+}
+
+/* Recent 4 Cycles History Comparison */
+#observatory-root .usage-cycle-history-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+@media (max-width: 900px) {
+  #observatory-root .usage-cycle-history-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+#observatory-root .usage-cycle-history-card {
+  text-align: left;
+  padding: 11px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+#observatory-root .usage-cycle-history-card:hover {
+  border-color: var(--accent);
+}
+#observatory-root .usage-cycle-history-card.active {
+  border-color: var(--primary);
+  background: var(--accent-soft);
+}
+#observatory-root .usage-cycle-history-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 12px;
+}
+#observatory-root .usage-cycle-history-tag {
+  font-weight: 600;
+  color: var(--text);
+}
+#observatory-root .usage-cycle-history-dates {
+  font-size: 11px;
+}
+#observatory-root .usage-cycle-history-bar {
+  height: 5px;
+  border-radius: 999px;
+  background: var(--soft);
+  overflow: hidden;
+}
+#observatory-root .usage-cycle-history-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+#observatory-root
+  .usage-cycle-history-card.active
+  .usage-cycle-history-bar
+  span {
+  background: var(--primary);
+}
+#observatory-root .usage-cycle-history-sub {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 11px;
+}
+
+/* Cycle Config Modal */
+#observatory-root .usage-cycle-manager {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 4px;
+}
+#observatory-root .usage-cycle-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+#observatory-root .usage-cycle-saved-box {
+  padding: 11px 12px;
+  border-radius: 8px;
+  background: var(--soft);
+  border: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+#observatory-root .usage-cycle-saved-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+#observatory-root .usage-cycle-saved-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+#observatory-root .usage-cycle-saved-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+}
+#observatory-root .usage-cycle-saved-chip:hover {
+  border-color: var(--accent);
+}
+#observatory-root .usage-cycle-saved-chip.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-text);
+}
+#observatory-root .usage-cycle-saved-chip small {
+  color: var(--muted);
+  font-size: 11px;
+}
+#observatory-root .usage-cycle-saved-chip.active small {
+  color: var(--primary-text);
+  opacity: 0.82;
+}
+#observatory-root .usage-cycle-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+#observatory-root .usage-cycle-grid.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+@media (max-width: 620px) {
+  #observatory-root .usage-cycle-grid,
+  #observatory-root .usage-cycle-grid.three {
+    grid-template-columns: 1fr;
+  }
+}
+#observatory-root .usage-cycle-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
+}
+#observatory-root .usage-cycle-field > span {
+  color: var(--muted);
+  font-size: 11px;
+}
+#observatory-root .usage-cycle-field input,
+#observatory-root .usage-cycle-field select {
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--text);
+}
+#observatory-root .usage-cycle-type-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  width: 100%;
+}
+#observatory-root .usage-cycle-rule-box {
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--soft);
+  border: 1px solid var(--line);
+}
+#observatory-root .usage-cycle-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+#observatory-root .usage-cycle-preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+}
+#observatory-root .usage-cycle-preview strong {
+  color: var(--text);
+}
+#observatory-root .usage-cycle-modal-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+#observatory-root .usage-cycle-danger {
+  color: light-dark(#b4342a, #f29a94);
+  border-color: light-dark(#e7b5b0, #5a3435);
+}

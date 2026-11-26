@@ -10,7 +10,7 @@ export type Props = {
   onStatus?: (status: NativeStatus) => void;
 };
 
-export type Range = RangePreset | "all" | "custom";
+export type Range = RangePreset | "all" | "custom" | "cycle";
 
 export type UsageScope = "local" | "multi";
 
@@ -33,6 +33,7 @@ export function loadView(): {
   app?: string;
   model?: string;
   provider?: string;
+  cyclePlanId?: string;
 } {
   try {
     return JSON.parse(localStorage.getItem("observatory.usage.view") || "{}");
@@ -47,7 +48,7 @@ export function bounds(
   end: string,
   dayKey = localDayKey(),
 ): { startDate?: number; endDate?: number } {
-  if (range === "all") return {};
+  if (range === "all" || range === "cycle") return {};
   if (range === "custom") {
     return customTimeRange(start, end) ?? {};
   }

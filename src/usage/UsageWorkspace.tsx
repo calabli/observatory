@@ -27,10 +27,21 @@ import {
   type NativeStatus,
   type UsageFilters,
 } from "./types";
+import type { UsageSummary } from "../types/usage";
 import { useLocalDayKey } from "./useLocalDayKey";
 import { formatMoney, formatTokens, friendlyError, UsageDialog } from "./ui";
 import { syncModelsDevPricingOnStartup } from "../lib/modelsDevAutoSync";
 import { modelDisplayName } from "./modelDisplay";
+import {
+  computeCycleWindow,
+  DEFAULT_CYCLE_PLANS,
+  normalizeCyclePlan,
+  periodDeltaPct,
+  type UsageCyclePlan,
+} from "./cycles";
+import { CycleNavigator } from "./CycleNavigator";
+import { CycleConfigModal } from "./CycleConfigModal";
+import { CycleHistoryPanel, type CycleHistoryEntry } from "./CycleHistoryPanel";
 import {
   Activity,
   ArrowLeft,
@@ -115,10 +126,19 @@ function UsageWorkspaceImpl({
   );
   const [selectedDevices, setSelectedDevices] = useState<string[] | null>(null);
   const [range, setRange] = useState<Range>(() =>
-    saved.range === "all" || saved.range === "custom"
+    saved.range === "all" || saved.range === "custom" || saved.range === "cycle"
       ? saved.range
       : (parseRangePreset(saved.range, USAGE_RANGES, true) ?? "today"),
   );
+  const [cyclePlanId, setCyclePlanId] = useState(saved.cyclePlanId ?? "");
+  const [cycleOffset, setCycleOffset] = useState(0);
+  const [cycleNow, setCycleNow] = useState(() => Date.now());
+  const [manualAppOverride, setManualAppOverride] = useState(false);
+  const [cycleModal, setCycleModal] = useState<{
+    open: true;
+    planId: string | null;
+  } | null>(null);
+  const [cycleSaveError, setCycleSaveError] = useState("");
   const [app, setApp] = useState(saved.app ?? "");
   const [model, setModel] = useState(saved.model ?? "");
   const [provider, setProvider] = useState(saved.provider ?? "");
@@ -173,8 +193,53 @@ function UsageWorkspaceImpl({
     if (scanRevision.data?.epoch === undefined) return;
     void qc.invalidateQueries({ queryKey: ["usage", "status"] });
     void qc.invalidateQueries({ queryKey: ["usage", "dashboard"] });
+    void qc.invalidateQueries({ queryKey: ["usage", "cycle-history"] });
     void qc.invalidateQueries({ queryKey: ["usage", "insights"] });
   }, [scanRevision.data?.epoch, qc]);
+  useEffect(() => {
+    if (range !== "cycle") return;
+    const tick = () => {
+      if (document.visibilityState === "visible") setCycleNow(Date.now());
+    };
+    const timer = setInterval(tick, 60000);
+    document.addEventListener("visibilitychange", tick);
+    window.addEventListener("focus", tick);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", tick);
+      window.removeEventListener("focus", tick);
+    };
+  }, [range]);
+  const cyclesQuery = useQuery({
+    queryKey: ["usage", "cycles"],
+    queryFn: () => usageCall<Partial<UsageCyclePlan>[]>("usage_cycles_get"),
+    enabled: !!status.data,
+    staleTime: 60000,
+    retry: false,
+  });
+  const saveCycles = useMutation({
+    mutationFn: (plans: UsageCyclePlan[]) =>
+      usageCall("usage_cycles_save", { plans }),
+    onSuccess: (_res, plans) => {
+      qc.setQueryData(["usage", "cycles"], plans);
+      void qc.invalidateQueries({ queryKey: ["usage", "cycles"] });
+    },
+  });
+  const cyclePlans = useMemo<UsageCyclePlan[]>(() => {
+    const raw = cyclesQuery.data;
+    if (Array.isArray(raw) && raw.length > 0) {
+      return raw.map((item, i) => normalizeCyclePlan(item, i));
+    }
+    return DEFAULT_CYCLE_PLANS;
+  }, [cyclesQuery.data]);
+  const activeCyclePlan = useMemo(
+    () => cyclePlans.find((p) => p.id === cyclePlanId) ?? cyclePlans[0],
+    [cyclePlans, cyclePlanId],
+  );
+  const activeCycleWindow = useMemo(
+    () => computeCycleWindow(activeCyclePlan, new Date(cycleNow), cycleOffset),
+    [activeCyclePlan, cycleNow, cycleOffset],
+  );
   const lan = useQuery({
     queryKey: ["usage", "lan"],
     queryFn: () => usageCall<LanStatus>("lan_status"),
@@ -185,8 +250,14 @@ function UsageWorkspaceImpl({
   });
   const [dayKey, syncDayKey] = useLocalDayKey();
   const period = useMemo(
-    () => bounds(range, customStart, customEnd, dayKey),
-    [range, customStart, customEnd, dayKey],
+    () =>
+      range === "cycle"
+        ? {
+            startDate: activeCycleWindow.startDate,
+            endDate: activeCycleWindow.endDate,
+          }
+        : bounds(range, customStart, customEnd, dayKey),
+    [range, activeCycleWindow, customStart, customEnd, dayKey],
   );
   const validPeriod =
     range !== "custom" || customTimeRange(customStart, customEnd) !== null;
@@ -221,7 +292,9 @@ function UsageWorkspaceImpl({
     queryKey: ["usage", "dashboard", range, dayKey, filters],
     queryFn: () => {
       const liveBounds =
-        range === "custom" ? period : bounds(range, customStart, customEnd);
+        range === "custom" || range === "cycle"
+          ? period
+          : bounds(range, customStart, customEnd);
       return usageCall<Dashboard>("dashboard", {
         ...filters,
         ...liveBounds,
@@ -232,6 +305,62 @@ function UsageWorkspaceImpl({
     refetchOnWindowFocus: false,
     retry: false,
   });
+  const historyWindows = useMemo(() => {
+    const offsets =
+      cycleOffset >= -2
+        ? [0, -1, -2, -3]
+        : [cycleOffset, cycleOffset - 1, cycleOffset - 2, cycleOffset - 3];
+    const nowDate = new Date(cycleNow);
+    return offsets.map((off) => ({
+      offset: off,
+      window: computeCycleWindow(activeCyclePlan, nowDate, off),
+    }));
+  }, [activeCyclePlan, cycleNow, cycleOffset]);
+  const historyKey = historyWindows
+    .map((w) => `${w.window.startDate}-${w.window.endDate}`)
+    .join(",");
+  const cycleHistory = useQuery({
+    queryKey: [
+      "usage",
+      "cycle-history",
+      activeCyclePlan.id,
+      scope,
+      activeDevices,
+      app,
+      provider,
+      model,
+      historyKey,
+    ],
+    queryFn: () =>
+      usageCall<UsageSummary[]>("usage_cycle_history", {
+        windows: historyWindows.map((w) => ({
+          startDate: w.window.startDate,
+          endDate: w.window.endDate,
+        })),
+        appType: app || undefined,
+        providerName: provider || undefined,
+        model: model || undefined,
+        multiDevice: scope === "multi",
+        deviceIds: scope === "multi" ? (activeDevices ?? undefined) : undefined,
+      }),
+    enabled: !!status.data && range === "cycle",
+    staleTime: 5000,
+    refetchOnWindowFocus: false,
+    retry: false,
+  });
+  const historyEntries = useMemo<CycleHistoryEntry[]>(
+    () =>
+      historyWindows.map((item, idx) => ({
+        offset: item.offset,
+        window: item.window,
+        summary: cycleHistory.data?.[idx],
+      })),
+    [historyWindows, cycleHistory.data],
+  );
+  const prevCycleSummary = useMemo(() => {
+    const idx = historyWindows.findIndex((w) => w.offset === cycleOffset - 1);
+    return idx >= 0 ? cycleHistory.data?.[idx] : undefined;
+  }, [historyWindows, cycleHistory.data, cycleOffset]);
   const peerRevision = JSON.stringify(
     lan.data?.devices.map((d) => [
       d.deviceId,
@@ -486,13 +615,96 @@ function UsageWorkspaceImpl({
     refresh,
   ]);
   useEffect(
-    () => saveView({ scope, range, app, provider, model }),
-    [scope, range, app, provider, model],
+    () =>
+      saveView({
+        scope,
+        range,
+        app,
+        provider,
+        model,
+        cyclePlanId: activeCyclePlan.id,
+      }),
+    [scope, range, app, provider, model, activeCyclePlan.id],
   );
   const change = (fn: () => void) => {
     setPage(1);
     setDetail(null);
     fn();
+  };
+  const handleSelectCyclePlan = (id: string) => {
+    const next = cyclePlans.find((p) => p.id === id);
+    if (!next) return;
+    change(() => {
+      setCyclePlanId(next.id);
+      setCycleOffset(0);
+      setManualAppOverride(false);
+      if (next.appType) {
+        setApp(next.appType);
+        setProvider("");
+        setModel("");
+      }
+    });
+  };
+  const handleSaveCyclePlan = (savedPlan: UsageCyclePlan) => {
+    setCycleSaveError("");
+    const exists = cyclePlans.some((p) => p.id === savedPlan.id);
+    const nextPlans = exists
+      ? cyclePlans.map((p) => (p.id === savedPlan.id ? savedPlan : p))
+      : [...cyclePlans, savedPlan];
+    saveCycles.mutate(nextPlans, {
+      onSuccess: () => {
+        change(() => {
+          setRange("cycle");
+          setCyclePlanId(savedPlan.id);
+          setCycleOffset(0);
+          setManualAppOverride(false);
+          if (savedPlan.appType) {
+            setApp(savedPlan.appType);
+            setProvider("");
+            setModel("");
+          }
+        });
+        setCycleModal(null);
+      },
+      onError: (e) => {
+        setCycleSaveError("保存周期方案失败：" + friendlyError(e));
+      },
+    });
+  };
+  const handleDeleteCyclePlan = (id: string) => {
+    setCycleSaveError("");
+    const nextPlans = cyclePlans.filter((p) => p.id !== id);
+    if (!nextPlans.length) return;
+    saveCycles.mutate(nextPlans, {
+      onSuccess: () => {
+        change(() => {
+          setCyclePlanId(nextPlans[0].id);
+          setCycleOffset(0);
+          setManualAppOverride(false);
+        });
+        setCycleModal(null);
+      },
+      onError: (e) => {
+        setCycleSaveError("删除周期方案失败：" + friendlyError(e));
+      },
+    });
+  };
+  const makeDelta = (
+    current: number | undefined,
+    previous: number | undefined,
+    invertGood = false,
+  ): { text: string; tone: "good" | "warn" | "muted" } | undefined => {
+    if (range !== "cycle" || current === undefined || previous === undefined)
+      return undefined;
+    const pct = periodDeltaPct(current, previous);
+    if (pct === null) return undefined;
+    const sign = pct >= 0 ? "+" : "";
+    const warn = invertGood ? pct < -5 : pct > 15;
+    const good = invertGood ? pct >= 0 : pct <= 0;
+    return {
+      text: `较上周期 ${sign}${pct.toFixed(1)}%`,
+      tone: warn ? "warn" : good ? "good" : "muted",
+    };
   };
   const importHistory = useMutation({
     mutationFn: () =>
@@ -557,7 +769,22 @@ function UsageWorkspaceImpl({
           <select
             aria-label="统计时间"
             value={range}
-            onChange={(e) => change(() => setRange(e.target.value as Range))}
+            onChange={(e) => {
+              const next = e.target.value as Range;
+              change(() => {
+                setRange(next);
+                if (next === "cycle") {
+                  setCycleOffset(0);
+                  setCycleNow(Date.now());
+                  setManualAppOverride(false);
+                  if (activeCyclePlan.appType && !app) {
+                    setApp(activeCyclePlan.appType);
+                    setProvider("");
+                    setModel("");
+                  }
+                }
+              });
+            }}
           >
             {USAGE_RANGES.map((key) => (
               <option key={key} value={key}>
@@ -566,6 +793,7 @@ function UsageWorkspaceImpl({
             ))}
             <option value="all">全部时间</option>
             <option value="custom">自定义时间</option>
+            <option value="cycle">按周期查询</option>
           </select>
           {scope === "multi" && (
             <details className="usage-device-select">
@@ -624,6 +852,7 @@ function UsageWorkspaceImpl({
             value={app}
             onChange={(value) =>
               change(() => {
+                if (range === "cycle") setManualAppOverride(true);
                 setApp(value);
                 setProvider("");
                 setModel("");
@@ -680,6 +909,47 @@ function UsageWorkspaceImpl({
           </button>
         </div>
       </div>
+      {range === "cycle" && (
+        <CycleNavigator
+          plans={cyclePlans}
+          activePlan={activeCyclePlan}
+          window={activeCycleWindow}
+          offset={cycleOffset}
+          summary={s}
+          linkedAppName={
+            !manualAppOverride &&
+            activeCyclePlan.appType &&
+            app === activeCyclePlan.appType
+              ? appName(activeCyclePlan.appType)
+              : undefined
+          }
+          onSelectPlan={handleSelectCyclePlan}
+          onPrev={() => change(() => setCycleOffset((o) => o - 1))}
+          onNext={() => change(() => setCycleOffset((o) => Math.min(0, o + 1)))}
+          onResetOffset={() =>
+            change(() => {
+              setCycleOffset(0);
+              setCycleNow(Date.now());
+            })
+          }
+          onEditPlan={(planId) => {
+            setCycleSaveError("");
+            setCycleModal({ open: true, planId });
+          }}
+          onNewPlan={() => {
+            setCycleSaveError("");
+            setCycleModal({ open: true, planId: null });
+          }}
+          onUnlinkApp={() =>
+            change(() => {
+              setManualAppOverride(true);
+              setApp("");
+              setProvider("");
+              setModel("");
+            })
+          }
+        />
+      )}
       {range === "custom" && (
         <div className="usage-date-range">
           <DateTimeFields
@@ -798,6 +1068,10 @@ function UsageWorkspaceImpl({
           detail="USD · 不按接收端价格重算远端记录"
           icon={Tags}
           selected={metric === "cost"}
+          delta={makeDelta(
+            s ? Number(s.totalCost) : undefined,
+            prevCycleSummary ? Number(prevCycleSummary.totalCost) : undefined,
+          )}
           onSelect={() => setMetric("cost")}
         />
         <Metric
@@ -806,6 +1080,7 @@ function UsageWorkspaceImpl({
           detail={s ? "成功率 " + s.successRate.toFixed(1) + "%" : "读取统计中"}
           icon={Activity}
           selected={metric === "requests"}
+          delta={makeDelta(s?.totalRequests, prevCycleSummary?.totalRequests)}
           onSelect={() => setMetric("requests")}
         />
         <Metric
@@ -821,6 +1096,10 @@ function UsageWorkspaceImpl({
           }
           icon={Layers3}
           selected={metric === "tokens"}
+          delta={makeDelta(
+            s?.realTotalTokens,
+            prevCycleSummary?.realTotalTokens,
+          )}
           onSelect={() => setMetric("tokens")}
         />
         <Metric
@@ -836,6 +1115,11 @@ function UsageWorkspaceImpl({
           }
           icon={Database}
           selected={metric === "hitRate"}
+          delta={makeDelta(
+            s ? s.cacheHitRate * 100 : undefined,
+            prevCycleSummary ? prevCycleSummary.cacheHitRate * 100 : undefined,
+            true,
+          )}
           onSelect={() => setMetric("hitRate")}
         />
       </div>
@@ -1030,6 +1314,15 @@ function UsageWorkspaceImpl({
           </div>
         </section>
       </div>
+      {range === "cycle" && (
+        <CycleHistoryPanel
+          entries={historyEntries}
+          activeOffset={cycleOffset}
+          metric={metric}
+          loading={cycleHistory.isFetching}
+          onSelectOffset={(off) => change(() => setCycleOffset(off))}
+        />
+      )}
       <ModelSpeedChart models={dashboard.data?.models ?? []} />
       <ActivityGrid
         data={dashboard.data?.trends ?? []}
@@ -1173,6 +1466,21 @@ function UsageWorkspaceImpl({
         )}
       </section>
       {modal === "pricing" && <PricingManager close={() => setModal(null)} />}
+      {cycleModal !== null && (
+        <CycleConfigModal
+          plans={cyclePlans}
+          initialPlanId={cycleModal.planId}
+          sources={sources}
+          saving={saveCycles.isPending}
+          saveError={cycleSaveError}
+          onSave={handleSaveCyclePlan}
+          onDelete={handleDeleteCyclePlan}
+          onClose={() => {
+            setCycleSaveError("");
+            setCycleModal(null);
+          }}
+        />
+      )}
       {modal === "devices" && (
         <UsageDialog title="多设备用量同步" close={() => setModal(null)} wide>
           <DeviceManager />

@@ -113,6 +113,7 @@ export function Metric({
   icon: Icon,
   selected,
   onSelect,
+  delta,
 }: {
   label: string;
   value: string;
@@ -120,6 +121,7 @@ export function Metric({
   icon: typeof Tags;
   selected: boolean;
   onSelect: () => void;
+  delta?: { text: string; tone?: "good" | "warn" | "muted" };
 }) {
   return (
     <button
@@ -129,8 +131,15 @@ export function Metric({
       onClick={onSelect}
     >
       <div className="stat-label">
-        {label}
-        <Icon size={15} />
+        <span>{label}</span>
+        <span className="stat-label-right">
+          {delta && (
+            <span className={`stat-delta tone-${delta.tone ?? "muted"}`}>
+              {delta.text}
+            </span>
+          )}
+          <Icon size={15} />
+        </span>
       </div>
       <div className="stat-value">{value}</div>
       <div className="stat-detail" title={detail}>

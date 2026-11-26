@@ -630,6 +630,89 @@ impl UsageBackend {
                 })
                 .await
             }
+            "usage_cycles_get" => {
+                self.call_blocking(move |db| {
+                    let raw = db.get_setting("usage_cycles_v1")?;
+                    let parsed: Value = match raw {
+                        Some(text) => serde_json::from_str(&text).unwrap_or_else(|_| json!([])),
+                        None => json!([]),
+                    };
+                    if parsed.is_array() {
+                        Ok(parsed)
+                    } else {
+                        Ok(json!([]))
+                    }
+                })
+                .await
+            }
+            "usage_cycles_save" => {
+                let plans = args
+                    .get("plans")
+                    .and_then(Value::as_array)
+                    .ok_or_else(|| AppError::InvalidInput("周期方案列表无效".into()))?;
+                if plans.len() > 50 {
+                    return Err(AppError::InvalidInput("周期方案数量不能超过 50 个".into()));
+                }
+                let encoded = serde_json::to_string(plans)
+                    .map_err(|e| AppError::InvalidInput(e.to_string()))?;
+                self.call_blocking(move |db| {
+                    db.set_setting("usage_cycles_v1", &encoded)?;
+                    Ok(json!(true))
+                })
+                .await
+            }
+            "usage_cycle_history" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct WindowBound {
+                    start_date: i64,
+                    end_date: i64,
+                }
+                let q: Query = serde_json::from_value(args.clone())
+                    .map_err(|e| AppError::InvalidInput(e.to_string()))?;
+                let windows: Vec<WindowBound> = serde_json::from_value(
+                    args.get("windows").cloned().unwrap_or_else(|| json!([])),
+                )
+                .map_err(|e| AppError::InvalidInput(e.to_string()))?;
+                if windows.len() > 8 {
+                    return Err(AppError::InvalidInput("周期窗口数量超出限制".into()));
+                }
+                let cache_args = args.clone();
+                self.call_blocking(move |db| {
+                    let target_db = Self::query_selected_database(db, &q)?;
+                    let epoch = target_db
+                        .write_epoch
+                        .load(std::sync::atomic::Ordering::Relaxed);
+                    let key = result_key(&target_db, epoch, "usage_cycle_history", &cache_args);
+                    if let Some(hit) = cached_result(&key) {
+                        return Ok(hit);
+                    }
+                    let f = &q.filters;
+                    let a = f.app_type.as_deref();
+                    let p = f.provider_name.as_deref();
+                    let m = f.model.as_deref();
+                    let summaries = target_db.with_read_connection(|conn| {
+                        let mut out = Vec::with_capacity(windows.len());
+                        for w in &windows {
+                            let summary = Database::usage_summary_impl(
+                                conn,
+                                Some(w.start_date),
+                                Some(w.end_date),
+                                a,
+                                p,
+                                m,
+                                false,
+                            )?;
+                            out.push(summary);
+                        }
+                        Ok::<_, AppError>(out)
+                    })?;
+                    let value = to_json(summaries)?;
+                    store_result(key, &value);
+                    Ok(value)
+                })
+                .await
+            }
             "subscription_usage" => {
                 // `dailyLimit` only affects the length of the returned daily series, not the aggregation,
                 // so it must not be folded into `SummaryQuery` (that is the public contract of the HTTP API).
