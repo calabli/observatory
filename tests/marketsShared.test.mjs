@@ -20,6 +20,13 @@ const {
   addCompanyToPoolEdit,
   removeCompanyFromPoolEdit,
   formatPoolLabel,
+  isEquitySymbol,
+  fmtFinancialValue,
+  fmtFinancialPeriod,
+  resolveCurrentMarketCap,
+  resolveAthMarketCap,
+  computeFinancialPeriods,
+  calcFloatingTooltipPos,
 } = await import(
   "data:text/javascript;base64," + Buffer.from(code).toString("base64")
 );
@@ -116,4 +123,181 @@ test("pool edits add, remove, reassign sector, and restore built-in companies cl
     formatPoolLabel("台股 Top 150", 148, true),
     "台股 Top 150 (148)",
   );
+});
+
+test("resolveCurrentMarketCap and resolveAthMarketCap combine live quotes, ATH and historical snapshots", () => {
+  const q = quote("NVDA", { price: 180, marketCap: 4.32e12 });
+  const ext = {
+    ath: 212.5,
+    athTs: 1_760_000_000,
+    atl: 0.06,
+    atlTs: 1_000_000_000,
+    fromAthPct: -15.29,
+    fromAtlPct: 300000,
+  };
+  // Price-scaled ATH market cap: 4.32T * (212.5 / 180) = 5.1T
+  const athEst = resolveAthMarketCap(q, ext);
+  assert.ok(athEst);
+  assert.ok(Math.abs(athEst.value - 5.1e12) < 1e9);
+  assert.equal(athEst.estimated, true);
+  assert.ok(athEst.fromAthCapPct < -15 && athEst.fromAthCapPct > -16);
+
+  // When an observed historical market-cap peak exceeds the price-scaled estimate
+  // (e.g. after share buybacks), the higher observed peak wins as exact.
+  const finWithHigherPeak = {
+    symbol: "NVDA",
+    currency: "USD",
+    marketCapCurrency: "USD",
+    latestMarketCap: 4.32e12,
+    latestMarketCapDate: "2026-11-23",
+    peakMarketCap: 5.4e12,
+    peakMarketCapDate: "2025-10-31",
+    annual: [],
+    quarterly: [],
+    source: "Yahoo Finance",
+    fetchedAt: 1_795_000_000,
+  };
+  const athObserved = resolveAthMarketCap(q, ext, finWithHigherPeak);
+  assert.ok(athObserved);
+  assert.equal(athObserved.value, 5.4e12);
+  assert.equal(athObserved.estimated, false);
+  assert.equal(athObserved.dateLabel, "2025/10");
+  assert.equal(Math.round(athObserved.fromAthCapPct), -20);
+
+  // Taiwan stock without live marketCap from TWSE MIS falls back to financials snapshot in TWD.
+  const twQuote = quote("2330.TW", {
+    currency: "TWD",
+    price: 1000,
+    marketCap: null,
+  });
+  const twFin = {
+    symbol: "2330.TW",
+    currency: "TWD",
+    marketCapCurrency: "TWD",
+    latestMarketCap: 2.6e13,
+    latestMarketCapDate: "2026-11-23",
+    peakMarketCap: 2.9e13,
+    peakMarketCapDate: "2026-07-31",
+    annual: [],
+    quarterly: [],
+    source: "Yahoo Finance",
+    fetchedAt: 1_795_000_000,
+  };
+  const twCur = resolveCurrentMarketCap(twQuote, twFin);
+  assert.equal(twCur.value, 2.6e13);
+  assert.equal(twCur.estimated, true);
+
+  // Currency mismatch between snapshot and quote is ignored instead of mixing units.
+  const mismatch = resolveCurrentMarketCap(twQuote, {
+    ...twFin,
+    marketCapCurrency: "USD",
+  });
+  assert.equal(mismatch, null);
+});
+
+test("financial value formatting, period labels, equity detection and margin/YoY calculations", () => {
+  assert.equal(isEquitySymbol("NVDA"), true);
+  assert.equal(isEquitySymbol("2330.TW"), true);
+  assert.equal(isEquitySymbol("^GSPC"), false);
+  assert.equal(isEquitySymbol("000300.SS"), false);
+  assert.equal(isEquitySymbol("BTC-USD"), false);
+
+  assert.equal(fmtFinancialValue(215.94e9, "USD"), "$215.9B");
+  assert.equal(fmtFinancialValue(-2.35e9, "USD"), "-$2.4B");
+  assert.equal(fmtFinancialValue(0, "USD"), "$0");
+  assert.equal(fmtFinancialValue(1.94e12, "TWD"), "NT$1.94万亿");
+  assert.equal(fmtFinancialValue(-1.24e9, "CNY"), "-¥12.40亿");
+
+  assert.equal(fmtFinancialPeriod("2025-12-31", "annual"), "2025");
+  assert.equal(fmtFinancialPeriod("2026-01-31", "annual"), "2026/01");
+  assert.equal(fmtFinancialPeriod("2026-07-31", "quarterly"), "26/07");
+
+  const annual = computeFinancialPeriods(
+    [
+      {
+        asOfDate: "2024-12-31",
+        revenue: 100,
+        grossProfit: 60,
+        operatingIncome: 40,
+        netIncome: 30,
+      },
+      {
+        asOfDate: "2025-12-31",
+        revenue: 150,
+        grossProfit: 105,
+        operatingIncome: 75,
+        netIncome: 60,
+      },
+    ],
+    "annual",
+  );
+  assert.equal(annual[0].revenueYoYPct, null);
+  assert.equal(annual[1].revenueYoYPct, 50);
+  assert.equal(annual[1].netIncomeYoYPct, 100);
+  assert.equal(annual[1].grossMarginPct, 70);
+  assert.equal(annual[1].operatingMarginPct, 50);
+  assert.equal(annual[1].netMarginPct, 40);
+
+  const quarterly = computeFinancialPeriods(
+    [
+      { asOfDate: "2025-09-30", revenue: 100, netIncome: -10 },
+      { asOfDate: "2026-06-30", revenue: 120, netIncome: 20 },
+      { asOfDate: "2026-09-30", revenue: 150, netIncome: 30 },
+    ],
+    "quarterly",
+  );
+  assert.equal(quarterly[2].revenueYoYPct, 50);
+  assert.equal(quarterly[2].revenueQoQPct, 25);
+  // Prior-year net income was negative: YoY percentage is omitted instead of misleading.
+  assert.equal(quarterly[2].netIncomeYoYPct, null);
+});
+
+test("calcFloatingTooltipPos flips sides near right edge and clamps inside chart bounds", () => {
+  // Left side of chart -> opens to the right of anchor
+  const rightSide = calcFloatingTooltipPos({
+    anchorX: 120,
+    anchorY: 120,
+    containerW: 720,
+    containerH: 260,
+    tipW: 200,
+    tipH: 120,
+  });
+  assert.equal(rightSide.side, "right");
+  assert.equal(rightSide.left, 134);
+  assert.ok(rightSide.top >= 6 && rightSide.top + 120 <= 254);
+
+  // Near right edge -> flips to the left of anchor without clipping
+  const leftSide = calcFloatingTooltipPos({
+    anchorX: 640,
+    anchorY: 20,
+    containerW: 720,
+    containerH: 260,
+    tipW: 200,
+    tipH: 120,
+  });
+  assert.equal(leftSide.side, "left");
+  assert.equal(leftSide.left, 426);
+  assert.equal(leftSide.top, 6);
+
+  // Near bottom edge -> clamps vertically inside container
+  const bottomClamp = calcFloatingTooltipPos({
+    anchorX: 200,
+    anchorY: 255,
+    containerW: 720,
+    containerH: 260,
+    tipW: 200,
+    tipH: 120,
+  });
+  assert.equal(bottomClamp.top, 134);
+
+  // Very narrow container -> stays clamped cleanly inside [pad, containerW - tipW - pad]
+  const narrow = calcFloatingTooltipPos({
+    anchorX: 160,
+    anchorY: 100,
+    containerW: 320,
+    containerH: 220,
+    tipW: 210,
+    tipH: 130,
+  });
+  assert.ok(narrow.left >= 6 && narrow.left + 210 <= 314);
 });

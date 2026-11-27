@@ -6,6 +6,13 @@ rename it to the new version (`## [x.y.z] - YYYY-MM-DD`) before tagging.
 
 ## Unreleased
 
+## [0.1.21] - 2026-11-28
+
+- Subscriptions & Quota: expanded supported currencies from 2 to 30 major ISO 4217 market currencies (USD, CNY, TWD, HKD, JPY, EUR, GBP, KRW, SGD, AUD, CAD, CHF, and more) with locale-aware `Intl.NumberFormat` formatting, zero-decimal integer display for JPY/KRW/VND/IDR, and frontend/backend currency-list sync tests.
+- Markets: added All-Time High Market Cap (`历史最高市值`) and drawdown-from-peak display across the detail panel, watchlist table, heatmap tooltips, and expanded modal, combining observed historical peaks with ATH-price-scaled estimates and currency-safe snapshot fallback for Taiwan stocks.
+- Markets financials: added an interactive multi-market financial statements chart (`财报`) supporting Annual/Quarterly views, `营收与利润` (with right-axis gross/net margin lines), `现金流`, `每股收益`, PE/PS/PB badges, and `近 5 期 / 近 10 期 / 全部` window switching, backed by concurrent long-history sources (SEC EDGAR up to 20 years for US, Eastmoney 15–20 years for CN/HK, FinMind 10–16+ years for TW) merged with Yahoo Finance and cached locally in SQLite (`markets_financials`).
+- Markets charts: added smooth cursor-following floating tooltips with automatic edge flipping and clamping for both price charts (K-line, line, intraday, benchmark Alpha overlay, MA & MACD/RSI/KDJ indicators) and financial statement charts.
+
 ## [0.1.20] - 2026-11-26
 
 - AI Usage: added standalone quota-cycle querying (`按周期查询`) tailored for AI Plans, with full support for adding, editing, saving, and deleting independent cycle profiles in local SQLite (`usage_cycles_v1`).

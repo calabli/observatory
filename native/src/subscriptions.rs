@@ -4,6 +4,14 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 const KEY: &str = "subscriptions_v1";
+
+/// Major market currencies accepted for subscription records (ISO 4217).
+/// Keep in sync with `SUBSCRIPTION_CURRENCIES` in `src/subscriptions/format.ts`.
+pub const SUPPORTED_CURRENCIES: &[&str] = &[
+    "USD", "CNY", "TWD", "HKD", "JPY", "EUR", "GBP", "KRW", "SGD", "AUD", "CAD", "CHF", "NZD",
+    "MOP", "INR", "MYR", "THB", "VND", "IDR", "PHP", "SEK", "NOK", "DKK", "PLN", "TRY", "BRL",
+    "MXN", "ZAR", "AED", "SAR",
+];
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WeeklyRule {
@@ -137,7 +145,7 @@ pub fn save(db: &Database, items: Vec<Subscription>) -> Result<(), AppError> {
             || !crate::lan_usage::SHARED_APP_TYPES.contains(&item.app_type.as_str())
             || !item.price.is_finite()
             || !(0.0..=1_000_000_000.0).contains(&item.price)
-            || !["USD", "CNY", "EUR"].contains(&item.currency.as_str())
+            || !SUPPORTED_CURRENCIES.contains(&item.currency.as_str())
             || !["月", "年", "期"].contains(&item.billing.as_str())
             // Custom billing term: picking the custom-term marker requires the number of days; any other billing value must not carry one.
             || (item.billing == "期") != item.custom_interval_days.is_some()

@@ -46,8 +46,12 @@ test("full-day fallback covers the entire interval and excludes a midnight end",
   });
   assert.throws(() => coveringLocalDates(start, start));
 });
-const { currencySymbol, billingLabel, formatSubscriptionPrice } =
-  await loadModule("../src/subscriptions/format.ts");
+const {
+  SUBSCRIPTION_CURRENCIES,
+  currencySymbol,
+  billingLabel,
+  formatSubscriptionPrice,
+} = await loadModule("../src/subscriptions/format.ts");
 const { filterAndSort } = await loadModule("../src/subscriptions/list.ts");
 const { parseUsageError } = await loadModule("../src/native/usageClient.ts");
 
@@ -118,10 +122,20 @@ test("local date renders as a zero padded YYYY-MM-DD in local time", () => {
 test("currency symbols and billing labels describe the recorded plan", () => {
   assert.equal(currencySymbol("USD"), "$");
   assert.equal(currencySymbol("CNY"), "¥");
+  assert.equal(currencySymbol("TWD"), "NT$");
+  assert.equal(currencySymbol("HKD"), "HK$");
+  assert.equal(currencySymbol("JPY"), "JP¥");
   assert.equal(currencySymbol("EUR"), "€");
+  assert.equal(currencySymbol("GBP"), "£");
+  assert.equal(currencySymbol("KRW"), "₩");
+  assert.equal(currencySymbol("SGD"), "S$");
+  assert.equal(currencySymbol("AUD"), "A$");
+  assert.equal(currencySymbol("CAD"), "CA$");
+  assert.equal(currencySymbol("CHF"), "CHF");
+  assert.equal(currencySymbol("MYR"), "RM");
   // An unknown currency falls back to the ISO code itself instead of an empty
   // symbol.
-  assert.equal(currencySymbol("JPY"), "JPY");
+  assert.equal(currencySymbol("XXX"), "XXX");
   assert.equal(billingLabel("月"), "月");
   assert.equal(billingLabel("年"), "年");
   assert.equal(billingLabel("期", 30), "每 30 天");
@@ -131,6 +145,38 @@ test("currency symbols and billing labels describe the recorded plan", () => {
     formatSubscriptionPrice(30, "CNY", "期", 30),
     "¥30.00 / 每 30 天",
   );
+  assert.equal(formatSubscriptionPrice(650, "TWD", "月"), "NT$650.00 / 月");
+  assert.equal(formatSubscriptionPrice(6500, "TWD", "年"), "NT$6,500.00 / 年");
+  assert.equal(formatSubscriptionPrice(3000, "JPY", "月"), "JP¥3,000 / 月");
+  assert.equal(
+    formatSubscriptionPrice(3000.5, "JPY", "月"),
+    "JP¥3,000.50 / 月",
+  );
+  assert.equal(formatSubscriptionPrice(29000, "KRW", "月"), "₩29,000 / 月");
+  assert.equal(formatSubscriptionPrice(20, "CHF", "月"), "CHF 20.00 / 月");
+  assert.equal(formatSubscriptionPrice(90, "MYR", "月"), "RM 90.00 / 月");
+  assert.equal(formatSubscriptionPrice(300000, "IDR", "月"), "Rp 300,000 / 月");
+  assert.equal(formatSubscriptionPrice(10, "XXX", "月"), "XXX 10.00 / 月");
+  assert.equal(formatSubscriptionPrice(-0, "USD", "月"), "$0.00 / 月");
+  assert.equal(formatSubscriptionPrice(NaN, "JPY", "月"), "JP¥0 / 月");
+});
+
+test("supported currencies stay in sync between frontend and backend", async () => {
+  const rustSource = await readFile(
+    new URL("../native/src/subscriptions.rs", import.meta.url),
+    "utf8",
+  );
+  const match = rustSource.match(
+    /pub const SUPPORTED_CURRENCIES:\s*&\[&str\]\s*=\s*&\[([\s\S]*?)\];/,
+  );
+  assert.ok(match, "SUPPORTED_CURRENCIES constant must exist in Rust");
+  const backendCodes = [...match[1].matchAll(/"([A-Z]{3})"/g)].map((m) => m[1]);
+  const frontendCodes = SUBSCRIPTION_CURRENCIES.map((c) => c.code);
+  assert.deepEqual(frontendCodes, backendCodes);
+  assert.equal(new Set(frontendCodes).size, frontendCodes.length);
+  for (const required of ["USD", "CNY", "TWD", "HKD", "JPY", "EUR", "GBP"]) {
+    assert.ok(frontendCodes.includes(required), `missing ${required}`);
+  }
 });
 
 test("subscription list filters by keyword and sorts by the chosen order", () => {

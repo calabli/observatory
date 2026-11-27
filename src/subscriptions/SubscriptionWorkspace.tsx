@@ -34,7 +34,7 @@ import {
   weeklyCycle,
   type WeeklyRule,
 } from "./cycles";
-import { formatSubscriptionPrice } from "./format";
+import { SUBSCRIPTION_CURRENCIES, formatSubscriptionPrice } from "./format";
 import { aggregateConsistently } from "./aggregate";
 import { filterAndSort } from "./list";
 
@@ -1434,9 +1434,14 @@ function SubscriptionWorkspaceImpl() {
                 value={form.currency}
                 onChange={(e) => patch({ currency: e.target.value })}
               >
-                <option>USD</option>
-                <option>CNY</option>
-                <option>EUR</option>
+                {SUBSCRIPTION_CURRENCIES.map((c) => (
+                  <option key={c.code} value={c.code}>
+                    {c.code} · {c.label}
+                  </option>
+                ))}
+                {!SUBSCRIPTION_CURRENCIES.some(
+                  (c) => c.code === form.currency,
+                ) && <option value={form.currency}>{form.currency}</option>}
               </select>
             </label>
             <label>

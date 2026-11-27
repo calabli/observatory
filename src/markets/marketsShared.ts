@@ -121,6 +121,61 @@ export interface SearchHit {
   exchange: string;
 }
 
+export type FinancialPeriodMode = "annual" | "quarterly";
+
+export interface FinancialPeriod {
+  asOfDate: string;
+  revenue?: number | null;
+  grossProfit?: number | null;
+  operatingIncome?: number | null;
+  netIncome?: number | null;
+  dilutedEps?: number | null;
+  operatingCashFlow?: number | null;
+  freeCashFlow?: number | null;
+}
+
+export interface StockFinancials {
+  symbol: string;
+  /** Financial statement reporting currency (e.g. CNY for 0700.HK). */
+  currency: string;
+  /** Trading currency of market-cap snapshots (e.g. HKD for 0700.HK, USD for TSM). */
+  marketCapCurrency?: string | null;
+  latestMarketCap?: number | null;
+  latestMarketCapDate?: string | null;
+  peakMarketCap?: number | null;
+  peakMarketCapDate?: string | null;
+  trailingPe?: number | null;
+  trailingPs?: number | null;
+  trailingPb?: number | null;
+  annual: FinancialPeriod[];
+  quarterly: FinancialPeriod[];
+  source: string;
+  fetchedAt: number;
+}
+
+export interface ComputedFinancialPeriod extends FinancialPeriod {
+  grossMarginPct: number | null;
+  operatingMarginPct: number | null;
+  netMarginPct: number | null;
+  revenueYoYPct: number | null;
+  netIncomeYoYPct: number | null;
+  revenueQoQPct: number | null;
+}
+
+export interface CurrentMarketCapInfo {
+  value: number;
+  estimated: boolean;
+  asOfDate: string | null;
+}
+
+export interface AthMarketCapInfo {
+  value: number;
+  dateLabel: string | null;
+  fromAthCapPct: number | null;
+  estimated: boolean;
+  note: string;
+}
+
 export type MarketFilter = "ALL" | "US" | "TW" | "CN" | "HK" | "GLOBAL";
 
 export type ChartRange =
@@ -171,6 +226,12 @@ export const CURRENCY_SYM: Record<string, string> = {
   TWD: "NT$",
   JPY: "¥",
   EUR: "€",
+  GBP: "£",
+  KRW: "₩",
+  SGD: "S$",
+  AUD: "A$",
+  CAD: "CA$",
+  CHF: "CHF ",
 };
 
 export function fmtPrice(
@@ -342,6 +403,272 @@ export function fmtYearMonth(tsSec: number | null | undefined): string {
   return new Date(tsSec * 1000).toLocaleDateString("zh-CN", {
     year: "numeric",
     month: "2-digit",
+  });
+}
+
+export function fmtIsoYearMonth(dateStr: string | null | undefined): string {
+  if (!dateStr) return "";
+  const m = /^(\d{4})-(\d{2})/.exec(dateStr.trim());
+  return m ? `${m[1]}/${m[2]}` : "";
+}
+
+const CN_INDEX_SYMBOLS = new Set([
+  "000001.SS",
+  "000300.SS",
+  "000016.SS",
+  "000905.SS",
+  "000688.SS",
+  "399001.SZ",
+  "399006.SZ",
+]);
+
+/** False for market indices, forex pairs and crypto tickers that have no company financials. */
+export function isEquitySymbol(symbol: string | null | undefined): boolean {
+  const upper = (symbol ?? "").trim().toUpperCase();
+  if (!upper) return false;
+  if (
+    upper.startsWith("^") ||
+    upper.includes("=") ||
+    upper.endsWith("-USD") ||
+    CN_INDEX_SYMBOLS.has(upper)
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/** Format financial statement values, supporting positive, zero, and negative figures. */
+export function fmtFinancialValue(
+  v: number | null | undefined,
+  currency?: string,
+): string {
+  if (v == null || !Number.isFinite(v)) return "—";
+  const prefix = currency ? (CURRENCY_SYM[currency] ?? "") : "";
+  if (v === 0) return `${prefix}0`;
+  const sign = v < 0 ? "-" : "";
+  const abs = Math.abs(v);
+  if (currency === "CNY" || currency === "HKD" || currency === "TWD") {
+    if (abs >= 1e12) return `${sign}${prefix}${(abs / 1e12).toFixed(2)}万亿`;
+    if (abs >= 1e10) return `${sign}${prefix}${(abs / 1e8).toFixed(0)}亿`;
+    if (abs >= 1e8) return `${sign}${prefix}${(abs / 1e8).toFixed(2)}亿`;
+    if (abs >= 1e4) return `${sign}${prefix}${(abs / 1e4).toFixed(1)}万`;
+    return `${sign}${prefix}${Math.round(abs).toLocaleString("en-US")}`;
+  }
+  if (abs >= 1e12) return `${sign}${prefix}${(abs / 1e12).toFixed(2)}T`;
+  if (abs >= 1e9) return `${sign}${prefix}${(abs / 1e9).toFixed(1)}B`;
+  if (abs >= 1e6) return `${sign}${prefix}${(abs / 1e6).toFixed(1)}M`;
+  if (abs >= 1e3) return `${sign}${prefix}${(abs / 1e3).toFixed(1)}K`;
+  return `${sign}${prefix}${abs.toFixed(2)}`;
+}
+
+export function fmtFinancialPeriod(
+  asOfDate: string,
+  mode: FinancialPeriodMode,
+): string {
+  const m = /^(\d{4})-(\d{2})/.exec(asOfDate.trim());
+  if (!m) return asOfDate;
+  const [, year, month] = m;
+  if (mode === "annual") {
+    return month === "12" ? year : `${year}/${month}`;
+  }
+  return `${year.slice(2)}/${month}`;
+}
+
+function currencyMatches(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): boolean {
+  if (!a || !b) return true;
+  return a.trim().toUpperCase() === b.trim().toUpperCase();
+}
+
+/** Resolve live market cap, falling back to the latest Yahoo snapshot when a feed omits it (e.g. TWSE MIS). */
+export function resolveCurrentMarketCap(
+  quote: StockQuote | undefined,
+  financials?: StockFinancials | null,
+): CurrentMarketCapInfo | null {
+  if (
+    quote?.marketCap != null &&
+    Number.isFinite(quote.marketCap) &&
+    quote.marketCap > 0
+  ) {
+    return { value: quote.marketCap, estimated: false, asOfDate: null };
+  }
+  if (
+    financials?.latestMarketCap != null &&
+    Number.isFinite(financials.latestMarketCap) &&
+    financials.latestMarketCap > 0 &&
+    currencyMatches(financials.marketCapCurrency, quote?.currency)
+  ) {
+    return {
+      value: financials.latestMarketCap,
+      estimated: true,
+      asOfDate: financials.latestMarketCapDate ?? null,
+    };
+  }
+  return null;
+}
+
+/**
+ * Resolve All-Time High market capitalization in the stock's trading currency.
+ *
+ * Combines live price-scaled estimate (`currentCap * ATH / price`, split-invariant because ATH
+ * comes from split-adjusted history) with directly observed historical market-cap snapshots from
+ * Yahoo fundamentals timeseries when available.
+ */
+export function resolveAthMarketCap(
+  quote: StockQuote | undefined,
+  ext: LiveExtremes | undefined,
+  financials?: StockFinancials | null,
+): AthMarketCapInfo | null {
+  const currentInfo = resolveCurrentMarketCap(quote, financials);
+  const currentCap = currentInfo?.value ?? null;
+  const livePrice =
+    quote?.price != null && Number.isFinite(quote.price) && quote.price > 0
+      ? quote.price
+      : null;
+
+  const scaledCap =
+    currentCap != null && livePrice != null && ext != null && ext.ath > 0
+      ? Math.max(currentCap, currentCap * (ext.ath / livePrice))
+      : null;
+
+  const observedPeak =
+    financials?.peakMarketCap != null &&
+    Number.isFinite(financials.peakMarketCap) &&
+    financials.peakMarketCap > 0 &&
+    currencyMatches(financials.marketCapCurrency, quote?.currency)
+      ? financials.peakMarketCap
+      : null;
+
+  if (scaledCap == null && observedPeak == null) return null;
+
+  let value: number;
+  let dateLabel: string | null;
+  let estimated: boolean;
+  let note: string;
+
+  if (observedPeak != null && (scaledCap == null || observedPeak > scaledCap)) {
+    value = Math.max(observedPeak, currentCap ?? 0);
+    dateLabel =
+      fmtIsoYearMonth(financials?.peakMarketCapDate) ||
+      fmtYearMonth(ext?.athTs) ||
+      null;
+    estimated = false;
+    note = financials?.peakMarketCapDate
+      ? `取自历史市值峰值记录（${financials.peakMarketCapDate}）`
+      : "取自历史市值峰值记录";
+  } else {
+    value = scaledCap!;
+    dateLabel = fmtYearMonth(ext?.athTs) || null;
+    const atHigh =
+      currentCap != null &&
+      !currentInfo?.estimated &&
+      value <= currentCap * 1.0001;
+    estimated = !atHigh;
+    note = atHigh
+      ? "当前市值即处于历史最高水平"
+      : "按历史最高复权价 × 当前总股本推算（若期间存在回购或增发会有小幅偏差）";
+  }
+
+  const fromAthCapPct =
+    currentCap != null && value > 0
+      ? Math.min(0, ((currentCap - value) / value) * 100)
+      : (ext?.fromAthPct ?? null);
+
+  return {
+    value,
+    dateLabel,
+    fromAthCapPct,
+    estimated,
+    note,
+  };
+}
+
+function parseIsoDayMs(dateStr: string): number | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateStr.trim());
+  if (!m) return null;
+  return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+
+/** Enrich raw annual/quarterly financial rows with margin percentages and YoY/QoQ growth. */
+export function computeFinancialPeriods(
+  periods: FinancialPeriod[],
+  mode: FinancialPeriodMode,
+): ComputedFinancialPeriod[] {
+  const dayMs = 86_400_000;
+  const timestamps = periods.map((p) => parseIsoDayMs(p.asOfDate));
+
+  const pctChange = (
+    cur: number | null | undefined,
+    prev: number | null | undefined,
+  ): number | null => {
+    if (
+      cur == null ||
+      prev == null ||
+      !Number.isFinite(cur) ||
+      !Number.isFinite(prev)
+    ) {
+      return null;
+    }
+    if (prev <= 0) return null;
+    return ((cur - prev) / prev) * 100;
+  };
+
+  return periods.map((p, i) => {
+    const rev = p.revenue ?? null;
+    const grossMarginPct =
+      rev != null && rev > 0 && p.grossProfit != null
+        ? (p.grossProfit / rev) * 100
+        : null;
+    const operatingMarginPct =
+      rev != null && rev > 0 && p.operatingIncome != null
+        ? (p.operatingIncome / rev) * 100
+        : null;
+    const netMarginPct =
+      rev != null && rev > 0 && p.netIncome != null
+        ? (p.netIncome / rev) * 100
+        : null;
+
+    let yoyBase: FinancialPeriod | null = null;
+    let qoqBase: FinancialPeriod | null = null;
+    const curTs = timestamps[i];
+
+    if (mode === "annual") {
+      if (i > 0) {
+        const prevTs = timestamps[i - 1];
+        if (
+          curTs == null ||
+          prevTs == null ||
+          Math.abs((curTs - prevTs) / dayMs - 365) <= 45
+        ) {
+          yoyBase = periods[i - 1];
+        }
+      }
+    } else if (curTs != null) {
+      for (let j = i - 1; j >= 0; j--) {
+        const prevTs = timestamps[j];
+        if (prevTs == null) continue;
+        const diffDays = (curTs - prevTs) / dayMs;
+        if (qoqBase == null && diffDays >= 65 && diffDays <= 115) {
+          qoqBase = periods[j];
+        }
+        if (yoyBase == null && diffDays >= 330 && diffDays <= 400) {
+          yoyBase = periods[j];
+          break;
+        }
+      }
+    }
+
+    return {
+      ...p,
+      grossMarginPct,
+      operatingMarginPct,
+      netMarginPct,
+      revenueYoYPct: pctChange(p.revenue, yoyBase?.revenue),
+      netIncomeYoYPct: pctChange(p.netIncome, yoyBase?.netIncome),
+      revenueQoQPct: pctChange(p.revenue, qoqBase?.revenue),
+    };
   });
 }
 
@@ -629,3 +956,52 @@ export function formatPoolLabel(
  */
 export const MAX_POOL_SIZE = 600;
 export const POOL_LIMIT_HINT = `每个板块最多 ${MAX_POOL_SIZE} 家公司，请先移除一些再添加`;
+
+/**
+ * Place a floating chart tooltip beside an anchor point inside a chart container:
+ * prefers the right side of the anchor, flips to the left when room runs out,
+ * and clamps horizontally & vertically so the tooltip stays inside the plot box.
+ */
+export function calcFloatingTooltipPos(params: {
+  anchorX: number;
+  anchorY: number;
+  containerW: number;
+  containerH: number;
+  tipW: number;
+  tipH: number;
+  gap?: number;
+  pad?: number;
+}): { left: number; top: number; side: "left" | "right" } {
+  const gap = params.gap ?? 14;
+  const pad = params.pad ?? 6;
+  const maxLeft = Math.max(pad, params.containerW - params.tipW - pad);
+  const maxTop = Math.max(pad, params.containerH - params.tipH - pad);
+
+  const rightX = params.anchorX + gap;
+  const leftX = params.anchorX - gap - params.tipW;
+
+  let side: "left" | "right";
+  let rawLeft: number;
+  if (rightX + params.tipW <= params.containerW - pad) {
+    side = "right";
+    rawLeft = rightX;
+  } else if (leftX >= pad) {
+    side = "left";
+    rawLeft = leftX;
+  } else {
+    const roomRight = params.containerW - params.anchorX;
+    const roomLeft = params.anchorX;
+    if (roomRight >= roomLeft) {
+      side = "right";
+      rawLeft = rightX;
+    } else {
+      side = "left";
+      rawLeft = leftX;
+    }
+  }
+
+  const left = Math.round(Math.max(pad, Math.min(maxLeft, rawLeft)));
+  const rawTop = params.anchorY - params.tipH * 0.42;
+  const top = Math.round(Math.max(pad, Math.min(maxTop, rawTop)));
+  return { left, top, side };
+}

@@ -1,4 +1,5 @@
 import {
+  calcFloatingTooltipPos,
   type ChartPoint,
   type ChartRange,
   fmtChartTime,
@@ -141,12 +142,20 @@ export function InteractivePriceChart({
   const [showMA, setShowMA] = useState<boolean>(true);
   const [showRefLines, setShowRefLines] = useState<boolean>(false);
   const [subMode, setSubMode] = useState<SubIndicatorMode>("vol");
-  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const [hover, setHover] = useState<{
+    idx: number;
+    y: number;
+    wrapW: number;
+    wrapH: number;
+    tipW: number;
+    tipH: number;
+  } | null>(null);
   const [windowSlice, setWindowSlice] = useState<{
     start: number;
     end: number;
   } | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const tipRef = useRef<HTMLDivElement>(null);
   const [measuredW, setMeasuredW] = useState<number>(expanded ? 1080 : 760);
   const dragRef = useRef<{
     dragging: boolean;
@@ -172,7 +181,7 @@ export function InteractivePriceChart({
   // Reset zoom/pan and style override when switching symbol or range
   useEffect(() => {
     setWindowSlice(null);
-    setHoverIdx(null);
+    setHover(null);
     setUserStyle(null);
   }, [symbol, range]);
 
@@ -334,7 +343,7 @@ export function InteractivePriceChart({
 
   // Hover point details
   const clampedHover =
-    hoverIdx != null ? Math.max(0, Math.min(visCount - 1, hoverIdx)) : null;
+    hover != null ? Math.max(0, Math.min(visCount - 1, hover.idx)) : null;
   const activeLocalIdx = clampedHover ?? visCount - 1;
   const activeGlobalIdx = startIdx + activeLocalIdx;
   const activePt = visiblePoints[activeLocalIdx];
@@ -405,6 +414,7 @@ export function InteractivePriceChart({
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0 || !isZoomed) return;
     e.currentTarget.setPointerCapture(e.pointerId);
+    setHover(null);
     dragRef.current = {
       dragging: true,
       startClientX: e.clientX,
@@ -426,9 +436,26 @@ export function InteractivePriceChart({
       return;
     }
     const relX = ((e.clientX - rect.left) / Math.max(1, rect.width)) * W;
+    if (relX < padL - 8 || relX > W - padR + 8) {
+      setHover(null);
+      return;
+    }
     const ratio = Math.max(0, Math.min(1, (relX - padL) / plotW));
     const idx = Math.round(ratio * (visCount - 1));
-    setHoverIdx((prev) => (prev === idx ? prev : idx));
+    const y = e.clientY - rect.top;
+    const tipW = tipRef.current?.offsetWidth || 216;
+    const tipH = tipRef.current?.offsetHeight || 148;
+    setHover((prev) =>
+      prev &&
+      prev.idx === idx &&
+      Math.abs(prev.y - y) < 2 &&
+      Math.abs(prev.wrapW - rect.width) < 1 &&
+      Math.abs(prev.wrapH - rect.height) < 1 &&
+      prev.tipW === tipW &&
+      prev.tipH === tipH
+        ? prev
+        : { idx, y, wrapW: rect.width, wrapH: rect.height, tipW, tipH },
+    );
   };
 
   const handlePointerUp = () => {
@@ -704,7 +731,7 @@ export function InteractivePriceChart({
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
         onPointerLeave={() => {
-          setHoverIdx(null);
+          setHover(null);
           handlePointerUp();
         }}
       >
@@ -1143,9 +1170,291 @@ export function InteractivePriceChart({
                 stroke="var(--surface)"
                 strokeWidth={1.5}
               />
+              {showBenchmark &&
+                alignedBench &&
+                alignedBench.benchPct[clampedHover] != null && (
+                  <circle
+                    cx={xOf(clampedHover)}
+                    cy={yOf(alignedBench.benchPct[clampedHover]!)}
+                    r={3.4}
+                    fill="#f59e0b"
+                    stroke="var(--surface)"
+                    strokeWidth={1.5}
+                  />
+                )}
             </g>
           )}
         </svg>
+
+        {clampedHover != null &&
+          hover != null &&
+          (() => {
+            const tipPos = calcFloatingTooltipPos({
+              anchorX: (xOf(clampedHover) / W) * hover.wrapW,
+              anchorY: hover.y,
+              containerW: hover.wrapW,
+              containerH: hover.wrapH,
+              tipW: hover.tipW,
+              tipH: hover.tipH,
+            });
+            const benchPctVal =
+              showBenchmark && alignedBench
+                ? alignedBench.benchPct[activeLocalIdx]
+                : null;
+            const stockPctVal =
+              showBenchmark && alignedBench
+                ? alignedBench.stockPct[activeLocalIdx]
+                : null;
+            const maItems =
+              !showBenchmark && showMA && range !== "1d"
+                ? fullIndicators.mas.flatMap((ma) => {
+                    const value = ma.values[activeGlobalIdx];
+                    return value != null
+                      ? [{ label: ma.label, color: ma.color, value }]
+                      : [];
+                  })
+                : [];
+            return (
+              <div
+                ref={tipRef}
+                className="markets-chart-tip"
+                style={{ left: tipPos.left, top: tipPos.top }}
+              >
+                <div className="markets-chart-tip-head">
+                  <span className="markets-chart-tip-time">
+                    {fmtChartTime(activePt.ts, range)}
+                  </span>
+                  {!showBenchmark && (
+                    <span
+                      className="markets-chart-tip-badge"
+                      style={{
+                        color: toneColor(trendTone(barDiff, colorScheme)),
+                      }}
+                    >
+                      {fmtSigned(barPct, "%")}
+                    </span>
+                  )}
+                </div>
+
+                {showBenchmark && alignedBench && stockPctVal != null ? (
+                  <>
+                    <div className="markets-chart-tip-row">
+                      <span className="markets-chart-tip-label">
+                        <i
+                          className="markets-chart-tip-dot"
+                          style={{ background: color }}
+                        />
+                        {symbol || "标的"}
+                      </span>
+                      <span className="markets-chart-tip-val">
+                        <strong>{fmtSigned(stockPctVal, "%")}</strong>
+                      </span>
+                    </div>
+                    <div className="markets-chart-tip-row">
+                      <span className="markets-chart-tip-label">价格</span>
+                      <span className="markets-chart-tip-val">
+                        {fmtPrice(activePt.price, currency)}
+                      </span>
+                    </div>
+                    {benchPctVal != null && (
+                      <>
+                        <div className="markets-chart-tip-row">
+                          <span className="markets-chart-tip-label">
+                            <i
+                              className="markets-chart-tip-dot line"
+                              style={{ background: "#f59e0b" }}
+                            />
+                            {benchmarkName || "基准"}
+                          </span>
+                          <span className="markets-chart-tip-val">
+                            {fmtSigned(benchPctVal, "%")}
+                          </span>
+                        </div>
+                        <div className="markets-chart-tip-sep" />
+                        <div className="markets-chart-tip-row">
+                          <span className="markets-chart-tip-label">
+                            相对超额
+                          </span>
+                          <span
+                            className="markets-chart-tip-val"
+                            style={{
+                              color: toneColor(
+                                trendTone(
+                                  stockPctVal - benchPctVal,
+                                  colorScheme,
+                                ),
+                              ),
+                            }}
+                          >
+                            {fmtSigned(stockPctVal - benchPctVal, "%")}
+                          </span>
+                        </div>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div className="markets-chart-tip-row">
+                      <span className="markets-chart-tip-label">
+                        {activePt.open != null ? "收盘" : "价格"}
+                      </span>
+                      <span className="markets-chart-tip-val">
+                        <strong>{fmtPrice(activePt.price, currency)}</strong>
+                      </span>
+                    </div>
+                    <div className="markets-chart-tip-row">
+                      <span className="markets-chart-tip-label">
+                        {range === "1d" ? "较昨收" : "涨跌额"}
+                      </span>
+                      <span
+                        className="markets-chart-tip-val"
+                        style={{
+                          color: toneColor(trendTone(barDiff, colorScheme)),
+                        }}
+                      >
+                        {fmtSigned(barDiff)}
+                      </span>
+                    </div>
+                    {(activePt.open != null ||
+                      activePt.high != null ||
+                      activePt.low != null) && (
+                      <div className="markets-chart-tip-grid">
+                        {activePt.open != null && (
+                          <div className="markets-chart-tip-cell">
+                            <span>开</span>
+                            <b>{fmtPrice(activePt.open, currency)}</b>
+                          </div>
+                        )}
+                        {activePt.high != null && (
+                          <div className="markets-chart-tip-cell">
+                            <span>高</span>
+                            <b>{fmtPrice(activePt.high, currency)}</b>
+                          </div>
+                        )}
+                        {activePt.low != null && (
+                          <div className="markets-chart-tip-cell">
+                            <span>低</span>
+                            <b>{fmtPrice(activePt.low, currency)}</b>
+                          </div>
+                        )}
+                        {activePt.volume != null && activePt.volume > 0 && (
+                          <div className="markets-chart-tip-cell">
+                            <span>量</span>
+                            <b>{fmtVolume(activePt.volume)}</b>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {activePt.open == null &&
+                      activePt.high == null &&
+                      activePt.low == null &&
+                      activePt.volume != null &&
+                      activePt.volume > 0 && (
+                        <div className="markets-chart-tip-row">
+                          <span className="markets-chart-tip-label">
+                            成交量
+                          </span>
+                          <span className="markets-chart-tip-val">
+                            {fmtVolume(activePt.volume)}
+                          </span>
+                        </div>
+                      )}
+                    {maItems.length > 0 && (
+                      <>
+                        <div className="markets-chart-tip-sep" />
+                        <div className="markets-chart-tip-grid">
+                          {maItems.map((m) => (
+                            <div
+                              key={m.label}
+                              className="markets-chart-tip-cell"
+                            >
+                              <span style={{ color: m.color }}>{m.label}</span>
+                              <b>
+                                {m.value >= 100
+                                  ? m.value.toFixed(1)
+                                  : m.value.toFixed(2)}
+                              </b>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                    {subMode !== "none" && subMode !== "vol" && (
+                      <>
+                        <div className="markets-chart-tip-sep" />
+                        <div className="markets-chart-tip-sub">
+                          {subMode === "macd" ? (
+                            <>
+                              <span>
+                                DIF{" "}
+                                {(
+                                  fullIndicators.macd.dif[activeGlobalIdx] ?? 0
+                                ).toFixed(2)}
+                              </span>
+                              <span>
+                                DEA{" "}
+                                {(
+                                  fullIndicators.macd.dea[activeGlobalIdx] ?? 0
+                                ).toFixed(2)}
+                              </span>
+                              <span>
+                                柱{" "}
+                                {(
+                                  fullIndicators.macd.hist[activeGlobalIdx] ?? 0
+                                ).toFixed(2)}
+                              </span>
+                            </>
+                          ) : subMode === "rsi" ? (
+                            <>
+                              <span>
+                                RSI6{" "}
+                                {fullIndicators.rsi6[activeGlobalIdx]?.toFixed(
+                                  1,
+                                ) ?? "—"}
+                              </span>
+                              <span>
+                                12{" "}
+                                {fullIndicators.rsi12[activeGlobalIdx]?.toFixed(
+                                  1,
+                                ) ?? "—"}
+                              </span>
+                              <span>
+                                24{" "}
+                                {fullIndicators.rsi24[activeGlobalIdx]?.toFixed(
+                                  1,
+                                ) ?? "—"}
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <span>
+                                K{" "}
+                                {(
+                                  fullIndicators.kdj.k[activeGlobalIdx] ?? 50
+                                ).toFixed(1)}
+                              </span>
+                              <span>
+                                D{" "}
+                                {(
+                                  fullIndicators.kdj.d[activeGlobalIdx] ?? 50
+                                ).toFixed(1)}
+                              </span>
+                              <span>
+                                J{" "}
+                                {(
+                                  fullIndicators.kdj.j[activeGlobalIdx] ?? 50
+                                ).toFixed(1)}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          })()}
       </div>
 
       {totalLen >= 16 && (

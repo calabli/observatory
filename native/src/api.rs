@@ -895,6 +895,27 @@ impl UsageBackend {
                 }
                 to_json(response)
             }
+            "markets_financials" => {
+                let symbol = args
+                    .get("symbol")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                let cached = self
+                    .call_blocking(move |db| crate::markets::load_financials_cache(db))
+                    .await?;
+                let (updated, response) =
+                    crate::markets::fetch_financials(cached, &symbol).await?;
+                if let Some(entry) = updated {
+                    let sym_for_save = symbol.clone();
+                    self.call_blocking(move |db| {
+                        crate::markets::save_financials_entry(db, &sym_for_save, entry)?;
+                        Ok(())
+                    })
+                    .await?;
+                }
+                to_json(response)
+            }
             "benchmarks_get" => {
                 self.call_blocking(move |db| to_json(crate::benchmarks::load_state(db)?))
                     .await

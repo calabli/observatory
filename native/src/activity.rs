@@ -584,6 +584,7 @@ pub fn api_out_label(op: &str) -> Option<&'static str> {
         "markets_fx" => "拉取汇率",
         "markets_extremes" => "拉取历史最高/最低价",
         "markets_sparklines" => "拉取分时走势",
+        "markets_financials" => "拉取个股财报数据",
         "benchmarks_fetch" => "拉取模型评比榜单",
         "modelsdev_fetch" => "拉取 models.dev 价格",
         "network_international_ipv4" => "查询国际出口 IP",

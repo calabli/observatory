@@ -334,6 +334,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
   color: var(--muted);
 }
 #observatory-root .sp-clock {

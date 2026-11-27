@@ -23,6 +23,15 @@ use crate::error::AppError;
 const WATCHLIST_SETTINGS_KEY: &str = "markets_watchlist_v1";
 const EXTREMES_CACHE_KEY: &str = "markets_ath_cache_v1";
 const EXTREMES_TTL_SECS: i64 = 7 * 86_400;
+const FINANCIALS_CACHE_KEY: &str = "markets_financials_cache_v3";
+const FINANCIALS_TTL_SECS: i64 = 24 * 3600;
+/// Shorter TTL when only Yahoo fallback succeeded (primary deep-history source failed transiently).
+const FINANCIALS_FALLBACK_TTL_SECS: i64 = 10 * 60;
+const FINANCIALS_MAX_CACHE_ENTRIES: usize = 80;
+const FINANCIALS_MAX_ANNUAL: usize = 20;
+const FINANCIALS_MAX_QUARTERLY: usize = 40;
+/// SEC EDGAR Fair Access policy requires a contact email address in User-Agent (otherwise Akamai returns HTTP 403).
+const SEC_USER_AGENT: &str = "ObservatoryDesktop/0.1 (observatory@local.dev)";
 /// Full-history requests are heavy and easy to get throttled for; each call fetches
 /// at most this many symbols, two at a time.
 const EXTREMES_MAX_PER_CALL: usize = 10;
@@ -123,10 +132,26 @@ async fn traced_get_bytes(
     url: &str,
     referer: Option<&str>,
 ) -> Result<Vec<u8>, String> {
+    traced_get_bytes_opts(provider, url, referer, None, None).await
+}
+
+async fn traced_get_bytes_opts(
+    provider: &str,
+    url: &str,
+    referer: Option<&str>,
+    user_agent: Option<&str>,
+    timeout_secs: Option<u64>,
+) -> Result<Vec<u8>, String> {
     let started = std::time::Instant::now();
     let mut req = http_client().get(url);
     if let Some(r) = referer {
         req = req.header("Referer", r);
+    }
+    if let Some(ua) = user_agent {
+        req = req.header("User-Agent", ua);
+    }
+    if let Some(secs) = timeout_secs {
+        req = req.timeout(Duration::from_secs(secs));
     }
     let resp = match req.send().await {
         Ok(r) => r,
@@ -393,6 +418,56 @@ pub struct SearchHit {
     pub name: String,
     pub market: String,
     pub exchange: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct FinancialPeriod {
+    /// Period end date (`YYYY-MM-DD`).
+    pub as_of_date: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revenue: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gross_profit: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operating_income: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub net_income: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diluted_eps: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operating_cash_flow: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub free_cash_flow: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct StockFinancials {
+    pub symbol: String,
+    /// Reporting currency for financial statement rows (may differ from trading currency, e.g. CNY for 0700.HK).
+    pub currency: String,
+    /// Currency of `latest_market_cap` / `peak_market_cap` snapshots (matches stock trading currency).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub market_cap_currency: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latest_market_cap: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latest_market_cap_date: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub peak_market_cap: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub peak_market_cap_date: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trailing_pe: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trailing_ps: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trailing_pb: Option<f64>,
+    pub annual: Vec<FinancialPeriod>,
+    pub quarterly: Vec<FinancialPeriod>,
+    pub source: String,
+    pub fetched_at: i64,
 }
 
 // ---------------------------------------------------------------------------
@@ -2205,6 +2280,1374 @@ pub async fn fetch_extremes_batch(
 }
 
 // ---------------------------------------------------------------------------
+// Company financials & historical market-cap snapshots (Yahoo fundamentals-timeseries)
+// ---------------------------------------------------------------------------
+
+const YAHOO_FINANCIAL_TYPES: &str = concat!(
+    "annualTotalRevenue,annualGrossProfit,annualOperatingIncome,annualNetIncome,",
+    "annualDilutedEPS,annualOperatingCashFlow,annualFreeCashFlow,",
+    "quarterlyTotalRevenue,quarterlyGrossProfit,quarterlyOperatingIncome,quarterlyNetIncome,",
+    "quarterlyDilutedEPS,quarterlyOperatingCashFlow,quarterlyFreeCashFlow,",
+    "trailingMarketCap,monthlyMarketCap,quarterlyMarketCap,",
+    "trailingPeRatio,trailingPsRatio,trailingPbRatio"
+);
+
+static FINANCIALS_MEM_CACHE: OnceLock<std::sync::Mutex<Option<HashMap<String, StockFinancials>>>> =
+    OnceLock::new();
+static FINANCIALS_FAIL_CACHE: OnceLock<std::sync::Mutex<HashMap<String, std::time::Instant>>> =
+    OnceLock::new();
+
+fn financials_mem() -> &'static std::sync::Mutex<Option<HashMap<String, StockFinancials>>> {
+    FINANCIALS_MEM_CACHE.get_or_init(|| std::sync::Mutex::new(None))
+}
+
+fn financials_fail() -> &'static std::sync::Mutex<HashMap<String, std::time::Instant>> {
+    FINANCIALS_FAIL_CACHE.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+fn is_non_equity_symbol(symbol: &str) -> bool {
+    let upper = symbol.trim().to_ascii_uppercase();
+    upper.is_empty()
+        || upper.starts_with('^')
+        || upper.contains('=')
+        || upper.ends_with("-USD")
+        || matches!(
+            upper.as_str(),
+            "000001.SS"
+                | "000300.SS"
+                | "000016.SS"
+                | "000905.SS"
+                | "000688.SS"
+                | "399001.SZ"
+                | "399006.SZ"
+        )
+}
+
+pub fn load_financials_cache(db: &Database) -> Result<HashMap<String, StockFinancials>, AppError> {
+    if let Ok(guard) = financials_mem().lock() {
+        if let Some(ref map) = *guard {
+            return Ok(map.clone());
+        }
+    }
+    let loaded: HashMap<String, StockFinancials> = db
+        .get_setting(FINANCIALS_CACHE_KEY)?
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+        .unwrap_or_default();
+    if let Ok(mut guard) = financials_mem().lock() {
+        *guard = Some(loaded.clone());
+    }
+    Ok(loaded)
+}
+
+pub fn save_financials_entry(
+    db: &Database,
+    symbol: &str,
+    entry: StockFinancials,
+) -> Result<(), AppError> {
+    let mut map = load_financials_cache(db)?;
+    let key = symbol.trim().to_ascii_uppercase();
+    map.insert(key, entry);
+    if map.len() > FINANCIALS_MAX_CACHE_ENTRIES {
+        let mut by_age: Vec<(String, i64)> =
+            map.iter().map(|(k, v)| (k.clone(), v.fetched_at)).collect();
+        by_age.sort_by_key(|(_, ts)| *ts);
+        let drop_count = map.len() - FINANCIALS_MAX_CACHE_ENTRIES;
+        for (old_key, _) in by_age.into_iter().take(drop_count) {
+            map.remove(&old_key);
+        }
+    }
+    if let Ok(mut guard) = financials_mem().lock() {
+        *guard = Some(map.clone());
+    }
+    let raw = serde_json::to_string(&map)
+        .map_err(|e| AppError::Message(format!("序列化财报缓存失败: {e}")))?;
+    db.set_setting_quietly(FINANCIALS_CACHE_KEY, &raw)
+}
+
+fn empty_financials(symbol: &str) -> StockFinancials {
+    let market = detect_market(symbol);
+    StockFinancials {
+        symbol: symbol.trim().to_string(),
+        currency: default_currency(market).to_string(),
+        market_cap_currency: None,
+        latest_market_cap: None,
+        latest_market_cap_date: None,
+        peak_market_cap: None,
+        peak_market_cap_date: None,
+        trailing_pe: None,
+        trailing_ps: None,
+        trailing_pb: None,
+        annual: Vec::new(),
+        quarterly: Vec::new(),
+        source: "—".into(),
+        fetched_at: chrono::Utc::now().timestamp(),
+    }
+}
+
+fn parse_yahoo_financials(symbol: &str, bytes: &[u8]) -> Result<StockFinancials, String> {
+    use std::collections::BTreeMap;
+
+    let body: Value =
+        serde_json::from_slice(bytes).map_err(|e| format!("财报 JSON 解析失败: {e}"))?;
+    if !body["timeseries"]["error"].is_null() {
+        return Err(format!(
+            "Yahoo 财报接口返回错误: {}",
+            body["timeseries"]["error"]
+        ));
+    }
+    let results = body["timeseries"]["result"]
+        .as_array()
+        .ok_or_else(|| "Yahoo 财报响应缺少 result".to_string())?;
+
+    let mut annual_map: BTreeMap<String, FinancialPeriod> = BTreeMap::new();
+    let mut quarterly_map: BTreeMap<String, FinancialPeriod> = BTreeMap::new();
+    let mut stmt_currency: Option<String> = None;
+
+    let mut cap_points: Vec<(String, f64, Option<String>)> = Vec::new();
+    let mut trailing_pe: Option<(String, f64)> = None;
+    let mut trailing_ps: Option<(String, f64)> = None;
+    let mut trailing_pb: Option<(String, f64)> = None;
+
+    for series in results {
+        let Some(metric) = series["meta"]["type"]
+            .as_array()
+            .and_then(|arr| arr.first())
+            .and_then(Value::as_str)
+        else {
+            continue;
+        };
+        let Some(entries) = series.get(metric).and_then(Value::as_array) else {
+            continue;
+        };
+
+        for item in entries {
+            if item.is_null() {
+                continue;
+            }
+            let Some(date) = item["asOfDate"]
+                .as_str()
+                .map(str::trim)
+                .filter(|d| d.len() >= 10)
+            else {
+                continue;
+            };
+            let Some(val) = item["reportedValue"]["raw"]
+                .as_f64()
+                .filter(|v| v.is_finite())
+            else {
+                continue;
+            };
+            let cur = item["currencyCode"]
+                .as_str()
+                .map(str::trim)
+                .filter(|c| !c.is_empty())
+                .map(str::to_ascii_uppercase);
+
+            match metric {
+                "trailingMarketCap" | "monthlyMarketCap" | "quarterlyMarketCap" => {
+                    if val > 0.0 {
+                        cap_points.push((date.to_string(), val, cur));
+                    }
+                }
+                "trailingPeRatio" => {
+                    if val > 0.0 && trailing_pe.as_ref().is_none_or(|(d, _)| date >= d.as_str()) {
+                        trailing_pe = Some((date.to_string(), val));
+                    }
+                }
+                "trailingPsRatio" => {
+                    if val > 0.0 && trailing_ps.as_ref().is_none_or(|(d, _)| date >= d.as_str()) {
+                        trailing_ps = Some((date.to_string(), val));
+                    }
+                }
+                "trailingPbRatio" => {
+                    if val > 0.0 && trailing_pb.as_ref().is_none_or(|(d, _)| date >= d.as_str()) {
+                        trailing_pb = Some((date.to_string(), val));
+                    }
+                }
+                _ => {
+                    let (target_map, field) = if let Some(rest) = metric.strip_prefix("annual") {
+                        (&mut annual_map, rest)
+                    } else if let Some(rest) = metric.strip_prefix("quarterly") {
+                        (&mut quarterly_map, rest)
+                    } else {
+                        continue;
+                    };
+                    if let Some(code) = cur {
+                        if stmt_currency.is_none() || field == "TotalRevenue" {
+                            stmt_currency = Some(code);
+                        }
+                    }
+                    let row =
+                        target_map
+                            .entry(date.to_string())
+                            .or_insert_with(|| FinancialPeriod {
+                                as_of_date: date.to_string(),
+                                ..Default::default()
+                            });
+                    match field {
+                        "TotalRevenue" => row.revenue = Some(val),
+                        "GrossProfit" => row.gross_profit = Some(val),
+                        "OperatingIncome" => row.operating_income = Some(val),
+                        "NetIncome" => row.net_income = Some(val),
+                        "DilutedEPS" => row.diluted_eps = Some(val),
+                        "OperatingCashFlow" => row.operating_cash_flow = Some(val),
+                        "FreeCashFlow" => row.free_cash_flow = Some(val),
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+
+    let finalize_periods =
+        |map: BTreeMap<String, FinancialPeriod>, limit: usize| -> Vec<FinancialPeriod> {
+            let mut rows: Vec<FinancialPeriod> =
+                map.into_values().filter(has_any_financial_value).collect();
+            if rows.len() > limit {
+                rows.drain(0..(rows.len() - limit));
+            }
+            rows
+        };
+
+    let market = detect_market(symbol);
+    let default_cur = default_currency(market).to_string();
+
+    // Pick market-cap currency from the latest snapshot that carries one, falling back to trading currency.
+    cap_points.sort_by(|a, b| a.0.cmp(&b.0));
+    let market_cap_currency = cap_points
+        .iter()
+        .rev()
+        .find_map(|(_, _, c)| c.clone())
+        .or_else(|| (!cap_points.is_empty()).then(|| default_cur.clone()));
+
+    let mut latest_market_cap: Option<f64> = None;
+    let mut latest_market_cap_date: Option<String> = None;
+    let mut peak_market_cap: Option<f64> = None;
+    let mut peak_market_cap_date: Option<String> = None;
+    for (date, val, cur) in &cap_points {
+        if let (Some(c), Some(expected)) = (cur.as_deref(), market_cap_currency.as_deref()) {
+            if c != expected {
+                continue;
+            }
+        }
+        if latest_market_cap_date
+            .as_deref()
+            .is_none_or(|d| date.as_str() >= d)
+        {
+            latest_market_cap = Some(*val);
+            latest_market_cap_date = Some(date.clone());
+        }
+        if peak_market_cap.is_none_or(|best| *val > best) {
+            peak_market_cap = Some(*val);
+            peak_market_cap_date = Some(date.clone());
+        }
+    }
+
+    Ok(StockFinancials {
+        symbol: symbol.trim().to_string(),
+        currency: stmt_currency.unwrap_or(default_cur),
+        market_cap_currency,
+        latest_market_cap,
+        latest_market_cap_date,
+        peak_market_cap,
+        peak_market_cap_date,
+        trailing_pe: trailing_pe.map(|(_, v)| v),
+        trailing_ps: trailing_ps.map(|(_, v)| v),
+        trailing_pb: trailing_pb.map(|(_, v)| v),
+        annual: finalize_periods(annual_map, FINANCIALS_MAX_ANNUAL),
+        quarterly: finalize_periods(quarterly_map, FINANCIALS_MAX_QUARTERLY),
+        source: "Yahoo Finance".into(),
+        fetched_at: chrono::Utc::now().timestamp(),
+    })
+}
+
+fn has_any_financial_value(r: &FinancialPeriod) -> bool {
+    r.revenue.is_some()
+        || r.net_income.is_some()
+        || r.operating_income.is_some()
+        || r.diluted_eps.is_some()
+        || r.operating_cash_flow.is_some()
+        || r.free_cash_flow.is_some()
+}
+
+fn trim_periods(mut rows: Vec<FinancialPeriod>, limit: usize) -> Vec<FinancialPeriod> {
+    rows.retain(has_any_financial_value);
+    rows.sort_by(|a, b| a.as_of_date.cmp(&b.as_of_date));
+    if rows.len() > limit {
+        rows.drain(0..(rows.len() - limit));
+    }
+    rows
+}
+
+fn parse_iso_date(s: &str) -> Option<NaiveDate> {
+    let head = s.trim().get(..10)?;
+    NaiveDate::parse_from_str(head, "%Y-%m-%d").ok()
+}
+
+// ---------------------------------------------------------------------------
+// Long-history source 1: SEC EDGAR XBRL CompanyFacts (US & ADRs, up to 20 years)
+// ---------------------------------------------------------------------------
+
+type SecCikMap = HashMap<String, u64>;
+type SecCikCache = tokio::sync::Mutex<Option<(std::time::Instant, SecCikMap)>>;
+
+static SEC_CIK_CACHE: OnceLock<SecCikCache> = OnceLock::new();
+
+fn sec_cik_cache() -> &'static SecCikCache {
+    SEC_CIK_CACHE.get_or_init(|| tokio::sync::Mutex::new(None))
+}
+
+fn parse_sec_tickers(bytes: &[u8]) -> Option<HashMap<String, u64>> {
+    let body: Value = serde_json::from_slice(bytes).ok()?;
+    let obj = body.as_object()?;
+    let mut map = HashMap::with_capacity(obj.len());
+    for entry in obj.values() {
+        let Some(ticker) = entry["ticker"].as_str().map(str::trim) else {
+            continue;
+        };
+        let Some(cik) = entry["cik_str"].as_u64().or_else(|| {
+            entry["cik_str"]
+                .as_str()
+                .and_then(|s| s.parse::<u64>().ok())
+        }) else {
+            continue;
+        };
+        if !ticker.is_empty() && cik > 0 {
+            map.insert(ticker.to_ascii_uppercase(), cik);
+        }
+    }
+    (!map.is_empty()).then_some(map)
+}
+
+async fn lookup_sec_cik(symbol: &str) -> Option<u64> {
+    let key = symbol.trim().to_ascii_uppercase();
+    let alt_key = key.replace('.', "-");
+    let ttl = Duration::from_secs(24 * 3600);
+    {
+        let guard = sec_cik_cache().lock().await;
+        if let Some((at, ref map)) = *guard {
+            if at.elapsed() < ttl {
+                return map.get(&key).or_else(|| map.get(&alt_key)).copied();
+            }
+        }
+    }
+    let bytes = traced_get_bytes_opts(
+        "SEC EDGAR 代码表",
+        "https://www.sec.gov/files/company_tickers.json",
+        None,
+        Some(SEC_USER_AGENT),
+        Some(15),
+    )
+    .await
+    .ok()?;
+    let map = parse_sec_tickers(&bytes)?;
+    let found = map.get(&key).or_else(|| map.get(&alt_key)).copied();
+    let mut guard = sec_cik_cache().lock().await;
+    *guard = Some((std::time::Instant::now(), map));
+    found
+}
+
+#[derive(Clone)]
+struct SecFact {
+    start: String,
+    end: String,
+    days: i64,
+    val: f64,
+    filed: String,
+    priority: usize,
+}
+
+fn collect_sec_metric(
+    taxonomy: &serde_json::Map<String, Value>,
+    tags: &[&str],
+    unit_key: &str,
+) -> (HashMap<String, f64>, HashMap<String, f64>) {
+    // Keyed by (start, end) so restatements/comparatives resolve to latest filed & highest tag priority.
+    let mut best: HashMap<(String, String), SecFact> = HashMap::new();
+    for (priority, tag) in tags.iter().enumerate() {
+        let Some(units) = taxonomy.get(*tag).and_then(|t| t["units"].as_object()) else {
+            continue;
+        };
+        let Some(entries) = units.get(unit_key).and_then(Value::as_array) else {
+            continue;
+        };
+        for item in entries {
+            let Some(form) = item["form"].as_str() else {
+                continue;
+            };
+            if !matches!(
+                form,
+                "10-K" | "10-K/A" | "10-Q" | "10-Q/A" | "20-F" | "20-F/A" | "40-F" | "6-K"
+            ) {
+                continue;
+            }
+            let (Some(start_raw), Some(end_raw)) = (item["start"].as_str(), item["end"].as_str())
+            else {
+                continue;
+            };
+            let (Some(sd), Some(ed)) = (parse_iso_date(start_raw), parse_iso_date(end_raw)) else {
+                continue;
+            };
+            let days = (ed - sd).num_days();
+            if !(65..=395).contains(&days) {
+                continue;
+            }
+            let Some(val) = item["val"].as_f64().filter(|v| v.is_finite()) else {
+                continue;
+            };
+            let start = start_raw[..10].to_string();
+            let end = end_raw[..10].to_string();
+            let filed = item["filed"].as_str().unwrap_or("").to_string();
+            let key = (start.clone(), end.clone());
+            let replace = match best.get(&key) {
+                None => true,
+                Some(prev) => {
+                    priority < prev.priority || (priority == prev.priority && filed >= prev.filed)
+                }
+            };
+            if replace {
+                best.insert(
+                    key,
+                    SecFact {
+                        start,
+                        end,
+                        days,
+                        val,
+                        filed,
+                        priority,
+                    },
+                );
+            }
+        }
+    }
+
+    // Group by start date to classify annual (12M), standalone quarter (3M), and YTD (6M/9M) for Q2/Q3/Q4 derivation.
+    let mut annual_by_end: HashMap<String, (String, f64)> = HashMap::new();
+    let mut quarter_by_end: HashMap<String, (String, f64)> = HashMap::new();
+    let mut by_start: HashMap<String, Vec<SecFact>> = HashMap::new();
+
+    for fact in best.into_values() {
+        if (330..=395).contains(&fact.days) {
+            let take = annual_by_end
+                .get(&fact.end)
+                .is_none_or(|(f, _)| fact.filed >= *f);
+            if take {
+                annual_by_end.insert(fact.end.clone(), (fact.filed.clone(), fact.val));
+            }
+        } else if (70..=115).contains(&fact.days) {
+            let take = quarter_by_end
+                .get(&fact.end)
+                .is_none_or(|(f, _)| fact.filed >= *f);
+            if take {
+                quarter_by_end.insert(fact.end.clone(), (fact.filed.clone(), fact.val));
+            }
+        }
+        by_start.entry(fact.start.clone()).or_default().push(fact);
+    }
+
+    // Derive missing standalone quarters (Q2 = 6M - 3M, Q3 = 9M - 6M, Q4 = 12M - 9M) sharing the same fiscal start date.
+    for facts in by_start.values() {
+        let pick_bucket = |lo: i64, hi: i64| -> Option<&SecFact> {
+            facts
+                .iter()
+                .filter(|f| (lo..=hi).contains(&f.days))
+                .max_by(|a, b| {
+                    b.priority
+                        .cmp(&a.priority)
+                        .then_with(|| a.filed.cmp(&b.filed))
+                })
+        };
+        let q1 = pick_bucket(70, 115);
+        let h1 = pick_bucket(155, 205);
+        let m9 = pick_bucket(245, 295);
+        let fy = pick_bucket(330, 395);
+
+        if let (Some(h1), Some(q1)) = (h1, q1) {
+            quarter_by_end
+                .entry(h1.end.clone())
+                .or_insert_with(|| (h1.filed.clone(), h1.val - q1.val));
+        }
+        if let (Some(m9), Some(h1)) = (m9, h1) {
+            quarter_by_end
+                .entry(m9.end.clone())
+                .or_insert_with(|| (m9.filed.clone(), m9.val - h1.val));
+        }
+        if let (Some(fy), Some(m9)) = (fy, m9) {
+            quarter_by_end
+                .entry(fy.end.clone())
+                .or_insert_with(|| (fy.filed.clone(), fy.val - m9.val));
+        }
+    }
+
+    (
+        annual_by_end
+            .into_iter()
+            .map(|(k, (_, v))| (k, v))
+            .collect(),
+        quarter_by_end
+            .into_iter()
+            .map(|(k, (_, v))| (k, v))
+            .collect(),
+    )
+}
+
+fn parse_sec_companyfacts(symbol: &str, bytes: &[u8]) -> Result<StockFinancials, String> {
+    use std::collections::BTreeMap;
+
+    let body: Value =
+        serde_json::from_slice(bytes).map_err(|e| format!("SEC 财报 JSON 解析失败: {e}"))?;
+    let facts = body["facts"]
+        .as_object()
+        .ok_or_else(|| "SEC 财报缺少 facts".to_string())?;
+
+    let (taxonomy, is_ifrs) = if let Some(us) = facts.get("us-gaap").and_then(Value::as_object) {
+        (us, false)
+    } else if let Some(ifrs) = facts.get("ifrs-full").and_then(Value::as_object) {
+        (ifrs, true)
+    } else {
+        return Err("SEC 财报不含 us-gaap 或 ifrs-full 数据".into());
+    };
+
+    struct SecTagSet {
+        rev: &'static [&'static str],
+        gp: &'static [&'static str],
+        op: &'static [&'static str],
+        ni: &'static [&'static str],
+        eps: &'static [&'static str],
+        ocf: &'static [&'static str],
+        capex: &'static [&'static str],
+    }
+
+    let tags = if is_ifrs {
+        SecTagSet {
+            rev: &["Revenue", "RevenueFromContractsWithCustomers"],
+            gp: &["GrossProfit"],
+            op: &["ProfitLossFromOperatingActivities"],
+            ni: &["ProfitLossAttributableToOwnersOfParent", "ProfitLoss"],
+            eps: &["DilutedEarningsLossPerShare", "BasicEarningsLossPerShare"],
+            ocf: &["CashFlowsFromUsedInOperatingActivities"],
+            capex: &["PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities"],
+        }
+    } else {
+        SecTagSet {
+            rev: &[
+                "RevenueFromContractWithCustomerExcludingAssessedTax",
+                "RevenueFromContractWithCustomerIncludingAssessedTax",
+                "Revenues",
+                "SalesRevenueNet",
+                "SalesRevenueGoodsNet",
+                "SalesRevenueServicesNet",
+                "RevenuesNetOfInterestExpense",
+                "InterestAndDividendIncomeOperating",
+            ],
+            gp: &["GrossProfit"],
+            op: &["OperatingIncomeLoss"],
+            ni: &["NetIncomeLoss", "ProfitLoss"],
+            eps: &["EarningsPerShareDiluted", "EarningsPerShareBasic"],
+            ocf: &[
+                "NetCashProvidedByUsedInOperatingActivities",
+                "NetCashProvidedByUsedInOperatingActivitiesContinuingOperations",
+            ],
+            capex: &[
+                "PaymentsToAcquirePropertyPlantAndEquipment",
+                "PaymentsToAcquireProductiveAssets",
+            ],
+        }
+    };
+
+    // Detect primary monetary unit (prefer USD when reported in USD, else the company's first reporting currency).
+    let currency = tags
+        .rev
+        .iter()
+        .chain(tags.ni.iter())
+        .find_map(|tag| {
+            let units = taxonomy.get(*tag)?.get("units")?.as_object()?;
+            if units.contains_key("USD") {
+                Some("USD".to_string())
+            } else {
+                units
+                    .keys()
+                    .find(|k| k.len() == 3 && k.chars().all(|c| c.is_ascii_uppercase()))
+                    .cloned()
+            }
+        })
+        .unwrap_or_else(|| "USD".to_string());
+    let eps_unit = format!("{currency}/shares");
+
+    let (ann_rev, qtr_rev) = collect_sec_metric(taxonomy, tags.rev, &currency);
+    let (ann_gp, qtr_gp) = collect_sec_metric(taxonomy, tags.gp, &currency);
+    let (ann_op, qtr_op) = collect_sec_metric(taxonomy, tags.op, &currency);
+    let (ann_ni, qtr_ni) = collect_sec_metric(taxonomy, tags.ni, &currency);
+    let (ann_eps, qtr_eps) = collect_sec_metric(taxonomy, tags.eps, &eps_unit);
+    let (ann_ocf, qtr_ocf) = collect_sec_metric(taxonomy, tags.ocf, &currency);
+    let (ann_capex, qtr_capex) = collect_sec_metric(taxonomy, tags.capex, &currency);
+
+    let assemble = |rev: HashMap<String, f64>,
+                    gp: HashMap<String, f64>,
+                    op: HashMap<String, f64>,
+                    ni: HashMap<String, f64>,
+                    eps: HashMap<String, f64>,
+                    ocf: HashMap<String, f64>,
+                    capex: HashMap<String, f64>,
+                    limit: usize|
+     -> Vec<FinancialPeriod> {
+        let mut map: BTreeMap<String, FinancialPeriod> = BTreeMap::new();
+        let mut capex_map: HashMap<String, f64> = HashMap::new();
+        for (d, v) in rev {
+            map.entry(d.clone())
+                .or_insert_with(|| FinancialPeriod {
+                    as_of_date: d,
+                    ..Default::default()
+                })
+                .revenue = Some(v);
+        }
+        for (d, v) in gp {
+            map.entry(d.clone())
+                .or_insert_with(|| FinancialPeriod {
+                    as_of_date: d,
+                    ..Default::default()
+                })
+                .gross_profit = Some(v);
+        }
+        for (d, v) in op {
+            map.entry(d.clone())
+                .or_insert_with(|| FinancialPeriod {
+                    as_of_date: d,
+                    ..Default::default()
+                })
+                .operating_income = Some(v);
+        }
+        for (d, v) in ni {
+            map.entry(d.clone())
+                .or_insert_with(|| FinancialPeriod {
+                    as_of_date: d,
+                    ..Default::default()
+                })
+                .net_income = Some(v);
+        }
+        for (d, v) in eps {
+            map.entry(d.clone())
+                .or_insert_with(|| FinancialPeriod {
+                    as_of_date: d,
+                    ..Default::default()
+                })
+                .diluted_eps = Some(v);
+        }
+        for (d, v) in ocf {
+            map.entry(d.clone())
+                .or_insert_with(|| FinancialPeriod {
+                    as_of_date: d,
+                    ..Default::default()
+                })
+                .operating_cash_flow = Some(v);
+        }
+        for (d, v) in capex {
+            capex_map.insert(d, v);
+        }
+        for (d, row) in &mut map {
+            if let (Some(o), Some(c)) = (row.operating_cash_flow, capex_map.get(d)) {
+                row.free_cash_flow = Some(o - c.abs());
+            }
+        }
+        trim_periods(map.into_values().collect(), limit)
+    };
+
+    Ok(StockFinancials {
+        symbol: symbol.trim().to_string(),
+        currency,
+        market_cap_currency: None,
+        latest_market_cap: None,
+        latest_market_cap_date: None,
+        peak_market_cap: None,
+        peak_market_cap_date: None,
+        trailing_pe: None,
+        trailing_ps: None,
+        trailing_pb: None,
+        annual: assemble(
+            ann_rev,
+            ann_gp,
+            ann_op,
+            ann_ni,
+            ann_eps,
+            ann_ocf,
+            ann_capex,
+            FINANCIALS_MAX_ANNUAL,
+        ),
+        quarterly: assemble(
+            qtr_rev,
+            qtr_gp,
+            qtr_op,
+            qtr_ni,
+            qtr_eps,
+            qtr_ocf,
+            qtr_capex,
+            FINANCIALS_MAX_QUARTERLY,
+        ),
+        source: "SEC EDGAR".into(),
+        fetched_at: chrono::Utc::now().timestamp(),
+    })
+}
+
+async fn fetch_sec_financials(symbol: &str) -> Option<StockFinancials> {
+    let cik = lookup_sec_cik(symbol).await?;
+    let url = format!("https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010}.json");
+    let bytes = traced_get_bytes_opts("SEC EDGAR 财报", &url, None, Some(SEC_USER_AGENT), Some(25))
+        .await
+        .ok()?;
+    let parsed = parse_sec_companyfacts(symbol, &bytes).ok()?;
+    (!parsed.annual.is_empty() || !parsed.quarterly.is_empty()).then_some(parsed)
+}
+
+// ---------------------------------------------------------------------------
+// Long-history source 2: Eastmoney DataCenter (CN A-shares & HK, 15-20 years)
+// ---------------------------------------------------------------------------
+
+fn sub_opt(a: Option<f64>, b: Option<f64>) -> Option<f64> {
+    match (a, b) {
+        (Some(x), Some(y)) => Some(x - y),
+        _ => None,
+    }
+}
+
+fn to_eastmoney_cn_secucode(symbol: &str) -> Option<String> {
+    let upper = symbol.trim().to_ascii_uppercase();
+    if let Some(code) = upper.strip_suffix(".SS") {
+        Some(format!("{code}.SH"))
+    } else if upper.ends_with(".SZ") || upper.ends_with(".BJ") {
+        Some(upper)
+    } else if upper.starts_with("SH") && upper.len() == 8 {
+        Some(format!("{}.SH", &upper[2..]))
+    } else if upper.starts_with("SZ") && upper.len() == 8 {
+        Some(format!("{}.SZ", &upper[2..]))
+    } else {
+        None
+    }
+}
+
+fn to_eastmoney_hk_secucode(symbol: &str) -> Option<String> {
+    let upper = symbol.trim().to_ascii_uppercase();
+    let code = upper.strip_suffix(".HK")?;
+    let digits: String = code.chars().filter(|c| c.is_ascii_digit()).collect();
+    if digits.is_empty() {
+        return None;
+    }
+    Some(format!("{digits:0>5}.HK"))
+}
+
+fn parse_eastmoney_cn_financials(symbol: &str, bytes: &[u8]) -> Result<StockFinancials, String> {
+    use std::collections::BTreeMap;
+
+    let body: Value =
+        serde_json::from_slice(bytes).map_err(|e| format!("东财 A 股财报 JSON 解析失败: {e}"))?;
+    let rows = body["result"]["data"]
+        .as_array()
+        .ok_or_else(|| "东财 A 股财报响应缺少 data".to_string())?;
+
+    let mut annual_map: BTreeMap<String, FinancialPeriod> = BTreeMap::new();
+    // Group YTD rows by calendar year and quarter index (1..=4) to derive exact standalone quarters.
+    let mut ytd_by_year: BTreeMap<String, [Option<FinancialPeriod>; 4]> = BTreeMap::new();
+
+    for item in rows {
+        let Some(date_raw) = item["REPORT_DATE"].as_str() else {
+            continue;
+        };
+        let Some(date) = date_raw.trim().get(..10) else {
+            continue;
+        };
+        let rtype = item["REPORT_TYPE"].as_str().unwrap_or("");
+        let month = date.get(5..7).unwrap_or("");
+        let q_idx: Option<usize> = match (rtype, month) {
+            ("一季报", _) | (_, "03") => Some(0),
+            ("中报", _) | (_, "06") => Some(1),
+            ("三季报", _) | (_, "09") => Some(2),
+            ("年报", _) | (_, "12") => Some(3),
+            _ => None,
+        };
+        let revenue = item["TOTALOPERATEREVE"].as_f64().filter(|v| v.is_finite());
+        let net_income = item["PARENTNETPROFIT"].as_f64().filter(|v| v.is_finite());
+        let gross_margin = item["XSMLL"].as_f64().filter(|v| v.is_finite());
+        let gross_profit = match (revenue, gross_margin) {
+            (Some(r), Some(m)) if r > 0.0 => Some(r * m / 100.0),
+            _ => None,
+        };
+        let diluted_eps = item["EPSXS"]
+            .as_f64()
+            .or_else(|| item["EPSJB"].as_f64())
+            .filter(|v| v.is_finite());
+        let ocf = match (
+            item["MGJYXJJE"].as_f64().filter(|v| v.is_finite()),
+            item["TOTAL_SHARE"]
+                .as_f64()
+                .filter(|v| v.is_finite() && *v > 0.0),
+        ) {
+            (Some(per_share), Some(shares)) => Some(per_share * shares),
+            _ => None,
+        };
+
+        let period = FinancialPeriod {
+            as_of_date: date.to_string(),
+            revenue,
+            gross_profit,
+            operating_income: None,
+            net_income,
+            diluted_eps,
+            operating_cash_flow: ocf,
+            free_cash_flow: None,
+        };
+        if !has_any_financial_value(&period) {
+            continue;
+        }
+        if q_idx == Some(3) {
+            annual_map
+                .entry(date.to_string())
+                .or_insert_with(|| period.clone());
+        }
+        if let Some(idx) = q_idx {
+            let year = date[..4].to_string();
+            let slots = ytd_by_year.entry(year).or_default();
+            if slots[idx].is_none() {
+                slots[idx] = Some(period);
+            }
+        }
+    }
+
+    let mut quarterly_rows: Vec<FinancialPeriod> = Vec::new();
+    for slots in ytd_by_year.values() {
+        if let Some(ref q1) = slots[0] {
+            quarterly_rows.push(q1.clone());
+        }
+        for idx in 1..4 {
+            if let (Some(cur), Some(prev)) = (&slots[idx], &slots[idx - 1]) {
+                quarterly_rows.push(FinancialPeriod {
+                    as_of_date: cur.as_of_date.clone(),
+                    revenue: sub_opt(cur.revenue, prev.revenue),
+                    gross_profit: sub_opt(cur.gross_profit, prev.gross_profit),
+                    operating_income: None,
+                    net_income: sub_opt(cur.net_income, prev.net_income),
+                    diluted_eps: sub_opt(cur.diluted_eps, prev.diluted_eps),
+                    operating_cash_flow: sub_opt(cur.operating_cash_flow, prev.operating_cash_flow),
+                    free_cash_flow: None,
+                });
+            }
+        }
+    }
+
+    Ok(StockFinancials {
+        symbol: symbol.trim().to_string(),
+        currency: "CNY".into(),
+        market_cap_currency: None,
+        latest_market_cap: None,
+        latest_market_cap_date: None,
+        peak_market_cap: None,
+        peak_market_cap_date: None,
+        trailing_pe: None,
+        trailing_ps: None,
+        trailing_pb: None,
+        annual: trim_periods(annual_map.into_values().collect(), FINANCIALS_MAX_ANNUAL),
+        quarterly: trim_periods(quarterly_rows, FINANCIALS_MAX_QUARTERLY),
+        source: "东方财富".into(),
+        fetched_at: chrono::Utc::now().timestamp(),
+    })
+}
+
+async fn fetch_eastmoney_cn_financials(symbol: &str) -> Option<StockFinancials> {
+    let secucode = to_eastmoney_cn_secucode(symbol)?;
+    let filter: String =
+        url::form_urlencoded::byte_serialize(format!("(SECUCODE=\"{secucode}\")").as_bytes())
+            .collect();
+    let url = format!(
+        "https://datacenter.eastmoney.com/securities/api/data/v1/get?reportName=RPT_F10_FINANCE_MAINFINADATA&columns=REPORT_DATE,REPORT_TYPE,TOTALOPERATEREVE,PARENTNETPROFIT,XSMLL,XSJLL,EPSJB,EPSXS,MGJYXJJE,TOTAL_SHARE&filter={filter}&pageNumber=1&pageSize=100&sortColumns=REPORT_DATE&sortTypes=-1"
+    );
+    let bytes = traced_get_bytes(
+        "东方财富 A 股财报",
+        &url,
+        Some("https://emweb.securities.eastmoney.com/"),
+    )
+    .await
+    .ok()?;
+    let parsed = parse_eastmoney_cn_financials(symbol, &bytes).ok()?;
+    (!parsed.annual.is_empty() || !parsed.quarterly.is_empty()).then_some(parsed)
+}
+
+fn parse_eastmoney_hk_financials(symbol: &str, bytes: &[u8]) -> Result<StockFinancials, String> {
+    use std::collections::BTreeMap;
+
+    let body: Value =
+        serde_json::from_slice(bytes).map_err(|e| format!("东财港股财报 JSON 解析失败: {e}"))?;
+    let rows = body["result"]["data"]
+        .as_array()
+        .ok_or_else(|| "东财港股财报响应缺少 data".to_string())?;
+
+    let mut annual_map: BTreeMap<String, FinancialPeriod> = BTreeMap::new();
+    let mut ytd_by_fy: BTreeMap<String, [Option<FinancialPeriod>; 4]> = BTreeMap::new();
+    let mut currency = "HKD".to_string();
+    let mut latest_pe: Option<f64> = None;
+    let mut latest_pb: Option<f64> = None;
+    let mut latest_cap: Option<(String, f64)> = None;
+    let mut peak_cap: Option<(String, f64)> = None;
+
+    for item in rows {
+        let Some(date) = item["REPORT_DATE"]
+            .as_str()
+            .and_then(|s| s.trim().get(..10))
+        else {
+            continue;
+        };
+        if item["IS_CNY_CODE"].as_i64() == Some(1) {
+            currency = "CNY".into();
+        } else if let Some(cur) = item["CURRENCY"]
+            .as_str()
+            .map(str::trim)
+            .filter(|c| c.len() == 3)
+        {
+            if currency == "HKD" {
+                currency = cur.to_ascii_uppercase();
+            }
+        }
+        if latest_pe.is_none() {
+            latest_pe = item["PE_TTM"]
+                .as_f64()
+                .filter(|v| v.is_finite() && *v > 0.0);
+        }
+        if latest_pb.is_none() {
+            latest_pb = item["PB_TTM"]
+                .as_f64()
+                .filter(|v| v.is_finite() && *v > 0.0);
+        }
+        if let Some(mc) = item["TOTAL_MARKET_CAP"]
+            .as_f64()
+            .filter(|v| v.is_finite() && *v > 0.0)
+        {
+            if latest_cap.as_ref().is_none_or(|(d, _)| date >= d.as_str()) {
+                latest_cap = Some((date.to_string(), mc));
+            }
+            if peak_cap.as_ref().is_none_or(|(_, best)| mc > *best) {
+                peak_cap = Some((date.to_string(), mc));
+            }
+        }
+
+        let code = item["DATE_TYPE_CODE"].as_str().unwrap_or("");
+        // 003 = Q1 (3M), 002 = H1 (6M), 004 = 9M, 001 = FY (12M)
+        let q_idx: Option<usize> = match code {
+            "003" => Some(0),
+            "002" => Some(1),
+            "004" => Some(2),
+            "001" => Some(3),
+            _ => None,
+        };
+        let period = FinancialPeriod {
+            as_of_date: date.to_string(),
+            revenue: item["OPERATE_INCOME"].as_f64().filter(|v| v.is_finite()),
+            gross_profit: item["GROSS_PROFIT"].as_f64().filter(|v| v.is_finite()),
+            operating_income: item["OPERATE_PROFIT"].as_f64().filter(|v| v.is_finite()),
+            net_income: item["HOLDER_PROFIT"].as_f64().filter(|v| v.is_finite()),
+            diluted_eps: item["DILUTED_EPS"]
+                .as_f64()
+                .or_else(|| item["BASIC_EPS"].as_f64())
+                .filter(|v| v.is_finite()),
+            operating_cash_flow: item["NETCASH_OPERATE"].as_f64().filter(|v| v.is_finite()),
+            free_cash_flow: None,
+        };
+        if !has_any_financial_value(&period) {
+            continue;
+        }
+        if q_idx == Some(3) {
+            annual_map
+                .entry(date.to_string())
+                .or_insert_with(|| period.clone());
+        }
+        if let Some(idx) = q_idx {
+            let fy_key = item["START_DATE"]
+                .as_str()
+                .and_then(|s| s.trim().get(..10))
+                .map(str::to_string)
+                .or_else(|| {
+                    item["FISCAL_YEAR"]
+                        .as_str()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_string)
+                })
+                .unwrap_or_else(|| date[..4].to_string());
+            let slots = ytd_by_fy.entry(fy_key).or_default();
+            if slots[idx].is_none() {
+                slots[idx] = Some(period);
+            }
+        }
+    }
+
+    let mut quarterly_rows: Vec<FinancialPeriod> = Vec::new();
+    for slots in ytd_by_fy.values() {
+        if let Some(ref q1) = slots[0] {
+            quarterly_rows.push(q1.clone());
+        }
+        for idx in 1..4 {
+            if let (Some(cur), Some(prev)) = (&slots[idx], &slots[idx - 1]) {
+                quarterly_rows.push(FinancialPeriod {
+                    as_of_date: cur.as_of_date.clone(),
+                    revenue: sub_opt(cur.revenue, prev.revenue),
+                    gross_profit: sub_opt(cur.gross_profit, prev.gross_profit),
+                    operating_income: sub_opt(cur.operating_income, prev.operating_income),
+                    net_income: sub_opt(cur.net_income, prev.net_income),
+                    diluted_eps: sub_opt(cur.diluted_eps, prev.diluted_eps),
+                    operating_cash_flow: sub_opt(cur.operating_cash_flow, prev.operating_cash_flow),
+                    free_cash_flow: None,
+                });
+            }
+        }
+    }
+
+    Ok(StockFinancials {
+        symbol: symbol.trim().to_string(),
+        currency,
+        market_cap_currency: latest_cap.as_ref().map(|_| "HKD".to_string()),
+        latest_market_cap: latest_cap.as_ref().map(|(_, v)| *v),
+        latest_market_cap_date: latest_cap.map(|(d, _)| d),
+        peak_market_cap: peak_cap.as_ref().map(|(_, v)| *v),
+        peak_market_cap_date: peak_cap.map(|(d, _)| d),
+        trailing_pe: latest_pe,
+        trailing_ps: None,
+        trailing_pb: latest_pb,
+        annual: trim_periods(annual_map.into_values().collect(), FINANCIALS_MAX_ANNUAL),
+        quarterly: trim_periods(quarterly_rows, FINANCIALS_MAX_QUARTERLY),
+        source: "东方财富".into(),
+        fetched_at: chrono::Utc::now().timestamp(),
+    })
+}
+
+async fn fetch_eastmoney_hk_financials(symbol: &str) -> Option<StockFinancials> {
+    let secucode = to_eastmoney_hk_secucode(symbol)?;
+    let filter: String =
+        url::form_urlencoded::byte_serialize(format!("(SECUCODE=\"{secucode}\")").as_bytes())
+            .collect();
+    let url = format!(
+        "https://datacenter.eastmoney.com/securities/api/data/v1/get?reportName=RPT_HKF10_FN_MAININDICATOR&columns=REPORT_DATE,START_DATE,FISCAL_YEAR,DATE_TYPE_CODE,REPORT_TYPE,CURRENCY,IS_CNY_CODE,OPERATE_INCOME,GROSS_PROFIT,OPERATE_PROFIT,HOLDER_PROFIT,DILUTED_EPS,BASIC_EPS,NETCASH_OPERATE,TOTAL_MARKET_CAP,PE_TTM,PB_TTM&filter={filter}&pageNumber=1&pageSize=80&sortColumns=REPORT_DATE&sortTypes=-1"
+    );
+    let bytes = traced_get_bytes(
+        "东方财富港股财报",
+        &url,
+        Some("https://emweb.securities.eastmoney.com/"),
+    )
+    .await
+    .ok()?;
+    let parsed = parse_eastmoney_hk_financials(symbol, &bytes).ok()?;
+    (!parsed.annual.is_empty() || !parsed.quarterly.is_empty()).then_some(parsed)
+}
+
+// ---------------------------------------------------------------------------
+// Long-history source 3: FinMind Open API (Taiwan stocks, 10+ years)
+// ---------------------------------------------------------------------------
+
+fn parse_finmind_tw_financials(symbol: &str, bytes: &[u8]) -> Result<StockFinancials, String> {
+    use std::collections::BTreeMap;
+
+    let body: Value =
+        serde_json::from_slice(bytes).map_err(|e| format!("FinMind 财报 JSON 解析失败: {e}"))?;
+    if body["status"].as_i64() != Some(200) {
+        return Err(format!("FinMind 财报返回异常状态: {}", body["msg"]));
+    }
+    let rows = body["data"]
+        .as_array()
+        .ok_or_else(|| "FinMind 财报缺少 data".to_string())?;
+
+    let mut q_map: BTreeMap<String, FinancialPeriod> = BTreeMap::new();
+    for item in rows {
+        let Some(date) = item["date"].as_str().and_then(|s| s.trim().get(..10)) else {
+            continue;
+        };
+        let Some(kind) = item["type"].as_str() else {
+            continue;
+        };
+        let Some(val) = item["value"].as_f64().filter(|v| v.is_finite()) else {
+            continue;
+        };
+        let row = q_map
+            .entry(date.to_string())
+            .or_insert_with(|| FinancialPeriod {
+                as_of_date: date.to_string(),
+                ..Default::default()
+            });
+        match kind {
+            "Revenue" => row.revenue = Some(val),
+            "GrossProfit" => row.gross_profit = Some(val),
+            "OperatingIncome" => row.operating_income = Some(val),
+            "IncomeAfterTaxes" => row.net_income = Some(val),
+            "NetIncome" if row.net_income.is_none() => row.net_income = Some(val),
+            "EPS" => row.diluted_eps = Some(val),
+            _ => {}
+        }
+    }
+
+    let quarterly_all: Vec<FinancialPeriod> = q_map
+        .into_values()
+        .filter(has_any_financial_value)
+        .collect();
+
+    // Sum complete 4-quarter calendar years into annual periods.
+    let mut by_year: BTreeMap<String, Vec<&FinancialPeriod>> = BTreeMap::new();
+    for q in &quarterly_all {
+        if let Some(year) = q.as_of_date.get(..4) {
+            by_year.entry(year.to_string()).or_default().push(q);
+        }
+    }
+    let sum_field =
+        |items: &[&FinancialPeriod], f: fn(&FinancialPeriod) -> Option<f64>| -> Option<f64> {
+            let vals: Vec<f64> = items.iter().filter_map(|p| f(p)).collect();
+            (vals.len() == items.len()).then(|| vals.into_iter().sum())
+        };
+    let mut annual_rows = Vec::new();
+    for (year, qs) in by_year {
+        if qs.len() == 4 {
+            annual_rows.push(FinancialPeriod {
+                as_of_date: format!("{year}-12-31"),
+                revenue: sum_field(&qs, |p| p.revenue),
+                gross_profit: sum_field(&qs, |p| p.gross_profit),
+                operating_income: sum_field(&qs, |p| p.operating_income),
+                net_income: sum_field(&qs, |p| p.net_income),
+                diluted_eps: sum_field(&qs, |p| p.diluted_eps),
+                operating_cash_flow: None,
+                free_cash_flow: None,
+            });
+        }
+    }
+
+    Ok(StockFinancials {
+        symbol: symbol.trim().to_string(),
+        currency: "TWD".into(),
+        market_cap_currency: None,
+        latest_market_cap: None,
+        latest_market_cap_date: None,
+        peak_market_cap: None,
+        peak_market_cap_date: None,
+        trailing_pe: None,
+        trailing_ps: None,
+        trailing_pb: None,
+        annual: trim_periods(annual_rows, FINANCIALS_MAX_ANNUAL),
+        quarterly: trim_periods(quarterly_all, FINANCIALS_MAX_QUARTERLY),
+        source: "FinMind".into(),
+        fetched_at: chrono::Utc::now().timestamp(),
+    })
+}
+
+async fn fetch_finmind_tw_financials(symbol: &str) -> Option<StockFinancials> {
+    let upper = symbol.trim().to_ascii_uppercase();
+    let code = upper
+        .strip_suffix(".TW")
+        .or_else(|| upper.strip_suffix(".TWO"))?;
+    if code.is_empty() || !code.chars().all(|c| c.is_ascii_alphanumeric()) {
+        return None;
+    }
+    let url = format!(
+        "https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockFinancialStatements&data_id={code}&start_date=2010-01-01"
+    );
+    let bytes = traced_get_bytes_opts("FinMind 台股财报", &url, None, None, Some(12))
+        .await
+        .ok()?;
+    let parsed = parse_finmind_tw_financials(symbol, &bytes).ok()?;
+    (!parsed.annual.is_empty() || !parsed.quarterly.is_empty()).then_some(parsed)
+}
+
+// ---------------------------------------------------------------------------
+// Cross-source merger (deep history primary + Yahoo valuation/market-cap/recent fill)
+// ---------------------------------------------------------------------------
+
+fn merge_period_lists(
+    mut primary: Vec<FinancialPeriod>,
+    secondary: Vec<FinancialPeriod>,
+    limit: usize,
+) -> Vec<FinancialPeriod> {
+    for sec in secondary {
+        let sec_date = parse_iso_date(&sec.as_of_date);
+        // Match fiscal dates within ±10 days (e.g. Apple's 52-week 2026-09-26 vs Yahoo's 2026-09-30).
+        let matched = primary.iter_mut().find(|p| {
+            if p.as_of_date == sec.as_of_date {
+                return true;
+            }
+            match (parse_iso_date(&p.as_of_date), sec_date) {
+                (Some(a), Some(b)) => (a - b).num_days().abs() <= 10,
+                _ => false,
+            }
+        });
+        if let Some(dst) = matched {
+            if dst.revenue.is_none() {
+                dst.revenue = sec.revenue;
+            }
+            if dst.gross_profit.is_none() {
+                dst.gross_profit = sec.gross_profit;
+            }
+            if dst.operating_income.is_none() {
+                dst.operating_income = sec.operating_income;
+            }
+            if dst.net_income.is_none() {
+                dst.net_income = sec.net_income;
+            }
+            if dst.diluted_eps.is_none() {
+                dst.diluted_eps = sec.diluted_eps;
+            }
+            if dst.operating_cash_flow.is_none() {
+                dst.operating_cash_flow = sec.operating_cash_flow;
+            }
+            if dst.free_cash_flow.is_none() {
+                dst.free_cash_flow = sec.free_cash_flow;
+            }
+        } else {
+            primary.push(sec);
+        }
+    }
+    trim_periods(primary, limit)
+}
+
+fn merge_financials(
+    mut primary: StockFinancials,
+    yahoo: StockFinancials,
+    market: &str,
+) -> StockFinancials {
+    // For HK stocks, Eastmoney's CURRENCY field reflects trading currency (HKD) even when revenue is CNY.
+    // Yahoo carries exact reporting currencyCode on every statement row, so adopt Yahoo's when Yahoo has rows.
+    let yahoo_has_rows = !yahoo.annual.is_empty() || !yahoo.quarterly.is_empty();
+    if market == "HK" && yahoo_has_rows && !yahoo.currency.is_empty() {
+        primary.currency = yahoo.currency.clone();
+    }
+
+    let same_stmt_currency = primary.currency.eq_ignore_ascii_case(&yahoo.currency);
+    if same_stmt_currency {
+        primary.annual = merge_period_lists(primary.annual, yahoo.annual, FINANCIALS_MAX_ANNUAL);
+        primary.quarterly =
+            merge_period_lists(primary.quarterly, yahoo.quarterly, FINANCIALS_MAX_QUARTERLY);
+    }
+
+    // Prefer Yahoo's trading-currency market-cap snapshots & valuation ratios; keep higher peak cap if same currency.
+    if yahoo.latest_market_cap.is_some() {
+        let same_cap_cur = match (
+            primary.market_cap_currency.as_deref(),
+            yahoo.market_cap_currency.as_deref(),
+        ) {
+            (Some(a), Some(b)) => a.eq_ignore_ascii_case(b),
+            _ => true,
+        };
+        let combined_peak = match (same_cap_cur, primary.peak_market_cap, yahoo.peak_market_cap) {
+            (true, Some(p), Some(y)) if p > y => (Some(p), primary.peak_market_cap_date.clone()),
+            (_, _, Some(y)) => (Some(y), yahoo.peak_market_cap_date.clone()),
+            (true, Some(p), None) => (Some(p), primary.peak_market_cap_date.clone()),
+            _ => (None, None),
+        };
+        primary.market_cap_currency = yahoo.market_cap_currency.or(primary.market_cap_currency);
+        primary.latest_market_cap = yahoo.latest_market_cap;
+        primary.latest_market_cap_date = yahoo.latest_market_cap_date;
+        primary.peak_market_cap = combined_peak.0;
+        primary.peak_market_cap_date = combined_peak.1;
+    }
+    if yahoo.trailing_pe.is_some() {
+        primary.trailing_pe = yahoo.trailing_pe;
+    }
+    if yahoo.trailing_ps.is_some() {
+        primary.trailing_ps = yahoo.trailing_ps;
+    }
+    if yahoo.trailing_pb.is_some() {
+        primary.trailing_pb = yahoo.trailing_pb;
+    }
+    if yahoo_has_rows || yahoo.latest_market_cap.is_some() || yahoo.trailing_pe.is_some() {
+        primary.source = format!("{} + Yahoo", primary.source);
+    }
+    primary.fetched_at = chrono::Utc::now().timestamp();
+    primary
+}
+
+async fn fetch_yahoo_financials(sym: &str, now: i64) -> Result<StockFinancials, String> {
+    let encoded_sym: String = url::form_urlencoded::byte_serialize(sym.as_bytes()).collect();
+    let period2 = now + 86_400;
+    let url = format!(
+        "https://query1.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/{encoded_sym}?type={YAHOO_FINANCIAL_TYPES}&period1=1262304000&period2={period2}"
+    );
+    let bytes = traced_get_bytes("Yahoo 财报", &url, None).await?;
+    parse_yahoo_financials(sym, &bytes)
+}
+
+/// Fetch long-history company financials & historical market-cap snapshots (24 h persistent cache).
+///
+/// Queries the market-specific deep-history source (SEC EDGAR for US, Eastmoney for CN/HK,
+/// FinMind for TW) concurrently with Yahoo Finance (for PE/PS/PB, market-cap snapshots, and
+/// universal fallback).
+pub async fn fetch_financials(
+    cached: HashMap<String, StockFinancials>,
+    symbol: &str,
+) -> Result<(Option<StockFinancials>, StockFinancials), AppError> {
+    let sym = symbol.trim();
+    if sym.is_empty() {
+        return Err(AppError::InvalidInput("symbol is required".into()));
+    }
+    let key = sym.to_ascii_uppercase();
+    if is_non_equity_symbol(&key) {
+        return Ok((None, empty_financials(sym)));
+    }
+
+    let now = chrono::Utc::now().timestamp();
+    let market = detect_market(sym);
+    let has_deep_source = matches!(market, "US" | "CN" | "HK" | "TW");
+    let stale = cached.get(&key).cloned();
+    if let Some(ref hit) = stale {
+        let ttl = if has_deep_source && hit.source == "Yahoo Finance" {
+            FINANCIALS_FALLBACK_TTL_SECS
+        } else {
+            FINANCIALS_TTL_SECS
+        };
+        if now - hit.fetched_at < ttl {
+            return Ok((None, hit.clone()));
+        }
+    }
+
+    let fail_ttl = Duration::from_secs(300);
+    let recently_failed = financials_fail()
+        .lock()
+        .ok()
+        .and_then(|m| m.get(&key).copied())
+        .is_some_and(|at| at.elapsed() < fail_ttl);
+    if recently_failed {
+        if let Some(hit) = stale {
+            return Ok((None, hit));
+        }
+        return Err(AppError::Message("财报数据暂不可用，请稍后重试".into()));
+    }
+
+    let primary_fut = async {
+        match market {
+            "CN" => fetch_eastmoney_cn_financials(sym).await,
+            "HK" => fetch_eastmoney_hk_financials(sym).await,
+            "TW" => fetch_finmind_tw_financials(sym).await,
+            "US" => fetch_sec_financials(sym).await,
+            _ => None,
+        }
+    };
+    let (primary_res, yahoo_res) = tokio::join!(primary_fut, fetch_yahoo_financials(sym, now));
+
+    let combined = match (primary_res, yahoo_res) {
+        (Some(primary), Ok(yahoo)) => Ok(merge_financials(primary, yahoo, market)),
+        (Some(primary), Err(_)) => Ok(primary),
+        (None, Ok(yahoo)) => Ok(yahoo),
+        (None, Err(err)) => Err(err),
+    };
+
+    match combined {
+        Ok(parsed) => {
+            if let Ok(mut fail_map) = financials_fail().lock() {
+                fail_map.remove(&key);
+            }
+            Ok((Some(parsed.clone()), parsed))
+        }
+        Err(err) => {
+            if let Ok(mut fail_map) = financials_fail().lock() {
+                fail_map.insert(key, std::time::Instant::now());
+            }
+            if let Some(hit) = stale {
+                Ok((None, hit))
+            } else {
+                Err(AppError::Message(err))
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Intraday points for list-view trend charts (pools over 24 stocks fetch batch
 // quotes, which carry none). Loaded a few at a time for the rows on screen.
 // ---------------------------------------------------------------------------
@@ -2880,5 +4323,213 @@ mod tests {
             parse_tencent_monthly_extremes(tencent_json, "sh600519").expect("tencent monthly");
         assert_eq!(t_ext.ath, 2608.59);
         assert_eq!(t_ext.atl, 95.5);
+    }
+
+    #[test]
+    fn parses_yahoo_financials_preserving_separate_statement_and_market_cap_currencies() {
+        let sample = serde_json::json!({
+            "timeseries": {
+                "result": [
+                    {
+                        "meta": {"symbol": ["0700.HK"], "type": ["annualTotalRevenue"]},
+                        "annualTotalRevenue": [
+                            null,
+                            {"asOfDate": "2024-12-31", "currencyCode": "CNY", "reportedValue": {"raw": 6.60e11}},
+                            {"asOfDate": "2025-12-31", "currencyCode": "CNY", "reportedValue": {"raw": 7.40e11}}
+                        ]
+                    },
+                    {
+                        "meta": {"symbol": ["0700.HK"], "type": ["annualNetIncome"]},
+                        "annualNetIncome": [
+                            {"asOfDate": "2024-12-31", "currencyCode": "CNY", "reportedValue": {"raw": 1.94e11}},
+                            {"asOfDate": "2025-12-31", "currencyCode": "CNY", "reportedValue": {"raw": 2.25e11}}
+                        ]
+                    },
+                    {
+                        "meta": {"symbol": ["0700.HK"], "type": ["annualFreeCashFlow"]},
+                        "annualFreeCashFlow": [
+                            {"asOfDate": "2024-12-31", "currencyCode": "CNY", "reportedValue": {"raw": -1.2e10}},
+                            {"asOfDate": "2025-12-31", "currencyCode": "CNY", "reportedValue": {"raw": 1.8e11}}
+                        ]
+                    },
+                    {
+                        "meta": {"symbol": ["0700.HK"], "type": ["quarterlyTotalRevenue"]},
+                        "quarterlyTotalRevenue": [
+                            {"asOfDate": "2025-09-30", "currencyCode": "CNY", "reportedValue": {"raw": 1.85e11}},
+                            {"asOfDate": "2025-12-31", "currencyCode": "CNY", "reportedValue": {"raw": 1.95e11}}
+                        ]
+                    },
+                    {
+                        "meta": {"symbol": ["0700.HK"], "type": ["quarterlyMarketCap"]},
+                        "quarterlyMarketCap": [
+                            {"asOfDate": "2025-09-30", "currencyCode": "HKD", "reportedValue": {"raw": 6.01e12}},
+                            {"asOfDate": "2025-12-31", "currencyCode": "HKD", "reportedValue": {"raw": 5.41e12}}
+                        ]
+                    },
+                    {
+                        "meta": {"symbol": ["0700.HK"], "type": ["trailingPeRatio"]},
+                        "trailingPeRatio": [
+                            {"asOfDate": "2025-09-30", "reportedValue": {"raw": 22.5}},
+                            {"asOfDate": "2025-12-31", "reportedValue": {"raw": 19.8}}
+                        ]
+                    }
+                ],
+                "error": null
+            }
+        });
+        let bytes = serde_json::to_vec(&sample).unwrap();
+        let fin = parse_yahoo_financials("0700.HK", &bytes).expect("parse financials");
+        assert_eq!(fin.currency, "CNY");
+        assert_eq!(fin.market_cap_currency.as_deref(), Some("HKD"));
+        assert_eq!(fin.latest_market_cap, Some(5.41e12));
+        assert_eq!(fin.latest_market_cap_date.as_deref(), Some("2025-12-31"));
+        assert_eq!(fin.peak_market_cap, Some(6.01e12));
+        assert_eq!(fin.peak_market_cap_date.as_deref(), Some("2025-09-30"));
+        assert_eq!(fin.trailing_pe, Some(19.8));
+        assert_eq!(fin.annual.len(), 2);
+        assert_eq!(fin.annual[0].free_cash_flow, Some(-1.2e10));
+        assert_eq!(fin.annual[1].revenue, Some(7.40e11));
+        assert_eq!(fin.quarterly.len(), 2);
+
+        assert!(is_non_equity_symbol("^GSPC"));
+        assert!(is_non_equity_symbol("000300.SS"));
+        assert!(is_non_equity_symbol("BTC-USD"));
+        assert!(!is_non_equity_symbol("NVDA"));
+        assert!(!is_non_equity_symbol("2330.TW"));
+        assert!(!is_non_equity_symbol("0700.HK"));
+    }
+
+    #[test]
+    fn parses_sec_edgar_multi_tag_history_q4_derivation_and_fuzzy_yahoo_merge() {
+        let sec = serde_json::json!({
+            "facts": {
+                "us-gaap": {
+                    "SalesRevenueNet": {
+                        "units": {
+                            "USD": [
+                                {"start": "2015-09-27", "end": "2016-09-24", "val": 215.6e9, "form": "10-K", "filed": "2016-10-26"}
+                            ]
+                        }
+                    },
+                    "RevenueFromContractWithCustomerExcludingAssessedTax": {
+                        "units": {
+                            "USD": [
+                                {"start": "2025-09-28", "end": "2025-12-27", "val": 140.0e9, "form": "10-Q", "filed": "2026-01-30"},
+                                {"start": "2025-09-28", "end": "2026-03-28", "val": 250.0e9, "form": "10-Q", "filed": "2026-05-01"},
+                                {"start": "2025-12-28", "end": "2026-03-28", "val": 110.0e9, "form": "10-Q", "filed": "2026-05-01"},
+                                {"start": "2025-09-28", "end": "2026-06-27", "val": 360.0e9, "form": "10-Q", "filed": "2026-07-31"},
+                                {"start": "2026-03-29", "end": "2026-06-27", "val": 110.0e9, "form": "10-Q", "filed": "2026-07-31"},
+                                {"start": "2025-09-28", "end": "2026-09-26", "val": 475.0e9, "form": "10-K", "filed": "2026-11-03"}
+                            ]
+                        }
+                    },
+                    "NetCashProvidedByUsedInOperatingActivities": {
+                        "units": {
+                            "USD": [
+                                {"start": "2025-09-28", "end": "2025-12-27", "val": 40.0e9, "form": "10-Q", "filed": "2026-01-30"},
+                                {"start": "2025-09-28", "end": "2026-03-28", "val": 70.0e9, "form": "10-Q", "filed": "2026-05-01"},
+                                {"start": "2025-09-28", "end": "2026-06-27", "val": 95.0e9, "form": "10-Q", "filed": "2026-07-31"},
+                                {"start": "2025-09-28", "end": "2026-09-26", "val": 130.0e9, "form": "10-K", "filed": "2026-11-03"}
+                            ]
+                        }
+                    },
+                    "PaymentsToAcquirePropertyPlantAndEquipment": {
+                        "units": {
+                            "USD": [
+                                {"start": "2025-09-28", "end": "2026-09-26", "val": 10.0e9, "form": "10-K", "filed": "2026-11-03"}
+                            ]
+                        }
+                    }
+                }
+            }
+        });
+        let parsed =
+            parse_sec_companyfacts("AAPL", &serde_json::to_vec(&sec).unwrap()).expect("sec parse");
+        assert_eq!(parsed.currency, "USD");
+        assert_eq!(parsed.annual.len(), 2);
+        assert_eq!(parsed.annual[0].as_of_date, "2016-09-24");
+        assert_eq!(parsed.annual[0].revenue, Some(215.6e9));
+        assert_eq!(parsed.annual[1].as_of_date, "2026-09-26");
+        assert_eq!(parsed.annual[1].free_cash_flow, Some(120.0e9));
+        // Q1, Q2, Q3, and derived Q4 (475B - 360B = 115B) plus derived quarterly OCF (35B in Q4)
+        assert_eq!(parsed.quarterly.len(), 4);
+        assert_eq!(parsed.quarterly[3].as_of_date, "2026-09-26");
+        assert_eq!(parsed.quarterly[3].revenue, Some(115.0e9));
+        assert_eq!(parsed.quarterly[1].operating_cash_flow, Some(30.0e9));
+        assert_eq!(parsed.quarterly[3].operating_cash_flow, Some(35.0e9));
+
+        // Merging Yahoo's normalized 2026-09-30 into SEC's 2026-09-26 must not duplicate bars.
+        let yahoo = StockFinancials {
+            symbol: "AAPL".into(),
+            currency: "USD".into(),
+            market_cap_currency: Some("USD".into()),
+            latest_market_cap: Some(3.8e12),
+            latest_market_cap_date: Some("2026-11-23".into()),
+            peak_market_cap: Some(4.1e12),
+            peak_market_cap_date: Some("2026-10-15".into()),
+            trailing_pe: Some(33.2),
+            trailing_ps: Some(8.4),
+            trailing_pb: None,
+            annual: vec![FinancialPeriod {
+                as_of_date: "2026-09-30".into(),
+                revenue: Some(475.0e9),
+                gross_profit: Some(220.0e9),
+                ..Default::default()
+            }],
+            quarterly: vec![],
+            source: "Yahoo Finance".into(),
+            fetched_at: 1_795_000_000,
+        };
+        let merged = merge_financials(parsed, yahoo, "US");
+        assert_eq!(merged.annual.len(), 2, "±10 day fiscal match deduplicates");
+        assert_eq!(merged.annual[1].gross_profit, Some(220.0e9));
+        assert_eq!(merged.peak_market_cap, Some(4.1e12));
+        assert_eq!(merged.trailing_pe, Some(33.2));
+        assert_eq!(merged.source, "SEC EDGAR + Yahoo");
+    }
+
+    #[test]
+    fn parses_eastmoney_cn_hk_and_finmind_tw_financials() {
+        let cn = serde_json::json!({
+            "result": {
+                "data": [
+                    {"REPORT_DATE": "2025-12-31 00:00:00", "REPORT_TYPE": "年报", "TOTALOPERATEREVE": 170.0e9, "PARENTNETPROFIT": 82.0e9, "XSMLL": 90.0, "EPSXS": 65.0, "MGJYXJJE": 50.0, "TOTAL_SHARE": 1.25e9},
+                    {"REPORT_DATE": "2025-09-30 00:00:00", "REPORT_TYPE": "三季报", "TOTALOPERATEREVE": 130.0e9, "PARENTNETPROFIT": 64.0e9, "XSMLL": 90.0, "EPSXS": 51.0, "MGJYXJJE": 30.0, "TOTAL_SHARE": 1.25e9},
+                    {"REPORT_DATE": "2025-06-30 00:00:00", "REPORT_TYPE": "中报", "TOTALOPERATEREVE": 90.0e9, "PARENTNETPROFIT": 45.0e9, "XSMLL": 90.0, "EPSXS": 36.0, "MGJYXJJE": 10.0, "TOTAL_SHARE": 1.25e9},
+                    {"REPORT_DATE": "2025-03-31 00:00:00", "REPORT_TYPE": "一季报", "TOTALOPERATEREVE": 50.0e9, "PARENTNETPROFIT": 25.0e9, "XSMLL": 90.0, "EPSXS": 20.0, "MGJYXJJE": 8.0, "TOTAL_SHARE": 1.25e9}
+                ]
+            }
+        });
+        let cn_fin = parse_eastmoney_cn_financials("600519.SS", &serde_json::to_vec(&cn).unwrap())
+            .expect("cn parse");
+        assert_eq!(cn_fin.annual.len(), 1);
+        assert_eq!(cn_fin.annual[0].revenue, Some(170.0e9));
+        assert_eq!(cn_fin.quarterly.len(), 4);
+        assert_eq!(cn_fin.quarterly[0].revenue, Some(50.0e9));
+        assert_eq!(cn_fin.quarterly[1].revenue, Some(40.0e9));
+        assert_eq!(cn_fin.quarterly[2].revenue, Some(40.0e9));
+        assert_eq!(cn_fin.quarterly[3].revenue, Some(40.0e9));
+        assert_eq!(cn_fin.quarterly[3].net_income, Some(18.0e9));
+
+        let tw = serde_json::json!({
+            "status": 200,
+            "data": [
+                {"date": "2025-03-31", "type": "Revenue", "value": 800.0e9},
+                {"date": "2025-03-31", "type": "IncomeAfterTaxes", "value": 360.0e9},
+                {"date": "2025-06-30", "type": "Revenue", "value": 900.0e9},
+                {"date": "2025-06-30", "type": "IncomeAfterTaxes", "value": 400.0e9},
+                {"date": "2025-09-30", "type": "Revenue", "value": 1000.0e9},
+                {"date": "2025-09-30", "type": "IncomeAfterTaxes", "value": 450.0e9},
+                {"date": "2025-12-31", "type": "Revenue", "value": 1100.0e9},
+                {"date": "2025-12-31", "type": "IncomeAfterTaxes", "value": 500.0e9}
+            ]
+        });
+        let tw_fin = parse_finmind_tw_financials("2330.TW", &serde_json::to_vec(&tw).unwrap())
+            .expect("tw parse");
+        assert_eq!(tw_fin.quarterly.len(), 4);
+        assert_eq!(tw_fin.annual.len(), 1);
+        assert_eq!(tw_fin.annual[0].as_of_date, "2025-12-31");
+        assert_eq!(tw_fin.annual[0].revenue, Some(3800.0e9));
+        assert_eq!(tw_fin.annual[0].net_income, Some(1710.0e9));
     }
 }

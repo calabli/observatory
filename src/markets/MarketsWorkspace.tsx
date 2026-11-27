@@ -21,19 +21,24 @@ import {
   fmtYearMonth,
   formatPoolLabel,
   type HeatmapMetricMode,
+  isEquitySymbol,
   isStale,
   type LiveExtremes,
   MARKET_META,
+  marketCapUsdBillions,
   type MarketFilter,
   type MarketsConfig,
   POOL_ID_KEY,
   type PriceExtremes,
   removeCompanyFromPoolEdit,
+  resolveAthMarketCap,
+  resolveCurrentMarketCap,
   type ResolvedPool,
   resolveLiveExtremes,
   type SearchHit,
   STALE_HINT,
   type StockChartDetail,
+  type StockFinancials,
   type StockQuote,
   toneColor,
   type TreemapSizeMode,
@@ -66,6 +71,7 @@ import {
   X,
 } from "lucide-react";
 import { InteractivePriceChart, MiniSparkline } from "./MarketCharts";
+import { MarketFinancialsChart } from "./MarketFinancialsChart";
 import { useLazySparklines } from "./useLazySparklines";
 import { MarketHeatmap } from "./MarketHeatmap";
 import { PoolEditorModal } from "./PoolEditorModal";
@@ -109,7 +115,13 @@ export function MarketsWorkspace() {
   const [sizeMode, setSizeMode] = useState<TreemapSizeMode>("cap");
   const [metricMode, setMetricMode] = useState<HeatmapMetricMode>("change");
   const [listSort, setListSort] = useState<{
-    col: "none" | "price" | "changePercent" | "fromAth" | "fromAtl";
+    col:
+      | "none"
+      | "price"
+      | "changePercent"
+      | "marketCap"
+      | "fromAth"
+      | "fromAtl";
     dir: "asc" | "desc";
   }>({ col: "none", dir: "desc" });
   const [extremesMap, setExtremesMap] = useState<Record<string, PriceExtremes>>(
@@ -117,6 +129,7 @@ export function MarketsWorkspace() {
   );
   const [extremesRemaining, setExtremesRemaining] = useState<number>(0);
   const [selectedSymbol, setSelectedSymbol] = useState<string>("NVDA");
+  const [detailTab, setDetailTab] = useState<"chart" | "financials">("chart");
   const [chartRange, setChartRange] = useState<ChartRange>("1y");
   const [showBenchmark, setShowBenchmark] = useState<boolean>(false);
   const [chartModalOpen, setChartModalOpen] = useState<boolean>(false);
@@ -495,6 +508,22 @@ export function MarketsWorkspace() {
     retry: false,
   });
 
+  const activeIsEquity = isEquitySymbol(activeSymbol);
+  const effectiveDetailTab: "chart" | "financials" = activeIsEquity
+    ? detailTab
+    : "chart";
+
+  const financialsQuery = useQuery({
+    queryKey: ["markets", "financials", activeSymbol],
+    queryFn: () =>
+      usageCall<StockFinancials>("markets_financials", {
+        symbol: activeSymbol,
+      }),
+    enabled: !!activeSymbol && activeIsEquity,
+    staleTime: 30 * 60_000,
+    retry: false,
+  });
+
   const activeMarketForBench =
     quoteBySymbol.get(activeSymbol)?.market ??
     knownItems.find((i) => i.symbol === activeSymbol)?.market ??
@@ -647,6 +676,8 @@ export function MarketsWorkspace() {
           return q?.price ?? null;
         case "changePercent":
           return q?.changePercent ?? null;
+        case "marketCap":
+          return marketCapUsdBillions(w, q, fx);
         case "fromAth":
           return ext?.fromAthPct ?? null;
         case "fromAtl":
@@ -665,7 +696,7 @@ export function MarketsWorkspace() {
       if (va !== vb) return (va - vb) * mult;
       return a.symbol.localeCompare(b.symbol);
     });
-  }, [filteredWatchlist, listSort, quoteBySymbol, liveExtremesBySymbol]);
+  }, [filteredWatchlist, listSort, quoteBySymbol, liveExtremesBySymbol, fx]);
 
   // Rows whose quote has no intraday points (batch quotes for pools over 24) load
   // their trend chart lazily, a few on-screen rows at a time.
@@ -688,7 +719,7 @@ export function MarketsWorkspace() {
   );
 
   const toggleListSort = (
-    col: "price" | "changePercent" | "fromAth" | "fromAtl",
+    col: "price" | "changePercent" | "marketCap" | "fromAth" | "fromAtl",
   ) => {
     setListSort((cur) => {
       if (cur.col !== col) {
@@ -702,7 +733,7 @@ export function MarketsWorkspace() {
   };
 
   const renderSortGlyph = (
-    col: "price" | "changePercent" | "fromAth" | "fromAtl",
+    col: "price" | "changePercent" | "marketCap" | "fromAth" | "fromAtl",
   ) => {
     if (listSort.col !== col) return <ArrowUpDown size={11} opacity={0.45} />;
     return listSort.dir === "desc" ? (
@@ -1340,6 +1371,13 @@ export function MarketsWorkspace() {
                     </th>
                     <th
                       className="num sortable"
+                      onClick={() => toggleListSort("marketCap")}
+                      title="当前总市值（跨币种按美元折算排序），下方附历史最高市值"
+                    >
+                      <span>总市值 / 峰值 {renderSortGlyph("marketCap")}</span>
+                    </th>
+                    <th
+                      className="num sortable"
                       onClick={() => toggleListSort("fromAth")}
                       title="当前价相对历史最高点（ATH）的回撤幅度，点击排序"
                     >
@@ -1417,6 +1455,38 @@ export function MarketsWorkspace() {
                           <div className="markets-chg-sub" style={{ color }}>
                             {fmtSigned(q?.change)}
                           </div>
+                        </td>
+                        <td className="num">
+                          {(() => {
+                            const rowFin =
+                              active &&
+                              financialsQuery.data?.symbol === w.symbol
+                                ? financialsQuery.data
+                                : null;
+                            const curCap = resolveCurrentMarketCap(q, rowFin);
+                            const athCap = resolveAthMarketCap(q, ext, rowFin);
+                            if (!curCap && !athCap) {
+                              return <span className="markets-muted">—</span>;
+                            }
+                            return (
+                              <div
+                                className="markets-cap-cell"
+                                title={athCap?.note}
+                              >
+                                <span className="markets-cap-main">
+                                  {curCap
+                                    ? `${curCap.estimated ? "≈" : ""}${fmtMarketCap(curCap.value, q?.currency)}`
+                                    : "—"}
+                                </span>
+                                {athCap && (
+                                  <small>
+                                    峰值 {athCap.estimated ? "≈" : ""}
+                                    {fmtMarketCap(athCap.value, q?.currency)}
+                                  </small>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </td>
                         <td className="num">
                           {ext ? (
@@ -1574,7 +1644,7 @@ export function MarketsWorkspace() {
                   })}
                   {sortedWatchlist.length === 0 && (
                     <tr>
-                      <td colSpan={8} className="markets-empty-cell">
+                      <td colSpan={9} className="markets-empty-cell">
                         当前分类暂无自选股，可在右上角搜索代码添加
                       </td>
                     </tr>
@@ -1688,18 +1758,46 @@ export function MarketsWorkspace() {
                   </div>
                 </div>
                 <div className="markets-detail-head-right">
-                  <div className="markets-pill-group markets-range-pills">
-                    {CHART_RANGES.map(([r, label]) => (
+                  {activeIsEquity && (
+                    <div
+                      className="markets-pill-group"
+                      role="tablist"
+                      aria-label="个股视图切换"
+                    >
                       <button
-                        key={r}
                         type="button"
-                        className={`markets-pill-btn${chartRange === r ? " active" : ""}`}
-                        onClick={() => setChartRange(r)}
+                        role="tab"
+                        aria-selected={effectiveDetailTab === "chart"}
+                        className={`markets-pill-btn${effectiveDetailTab === "chart" ? " active" : ""}`}
+                        onClick={() => setDetailTab("chart")}
                       >
-                        {label}
+                        行情走势
                       </button>
-                    ))}
-                  </div>
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={effectiveDetailTab === "financials"}
+                        className={`markets-pill-btn${effectiveDetailTab === "financials" ? " active" : ""}`}
+                        onClick={() => setDetailTab("financials")}
+                      >
+                        财报图
+                      </button>
+                    </div>
+                  )}
+                  {effectiveDetailTab === "chart" && (
+                    <div className="markets-pill-group markets-range-pills">
+                      {CHART_RANGES.map(([r, label]) => (
+                        <button
+                          key={r}
+                          type="button"
+                          className={`markets-pill-btn${chartRange === r ? " active" : ""}`}
+                          onClick={() => setChartRange(r)}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1775,113 +1873,194 @@ export function MarketsWorkspace() {
                     {fmtTurnover(selectedQuote)}
                   </strong>
                 </div>
-                {selectedQuote?.marketCap != null &&
-                  selectedQuote.marketCap > 0 && (
-                    <div>
-                      <span>总市值</span>
-                      <strong>
-                        {fmtMarketCap(
-                          selectedQuote.marketCap,
-                          selectedQuote.currency,
-                        )}
-                      </strong>
-                    </div>
-                  )}
                 {(() => {
                   const ext = liveExtremesBySymbol.get(
                     activeSymbol.trim().toUpperCase(),
                   );
-                  if (!ext) return null;
+                  const activeFin =
+                    financialsQuery.data?.symbol?.trim().toUpperCase() ===
+                    activeSymbol.trim().toUpperCase()
+                      ? financialsQuery.data
+                      : null;
+                  const curCap = resolveCurrentMarketCap(
+                    selectedQuote,
+                    activeFin,
+                  );
+                  const athCap = resolveAthMarketCap(
+                    selectedQuote,
+                    ext,
+                    activeFin,
+                  );
+                  const capCurrency =
+                    selectedQuote?.currency ??
+                    activeFin?.marketCapCurrency ??
+                    "USD";
                   return (
                     <>
-                      <div>
-                        <span>
-                          历史最高
-                          {fmtYearMonth(ext.athTs)
-                            ? ` (${fmtYearMonth(ext.athTs)})`
-                            : ""}
-                        </span>
-                        <strong>
-                          {fmtPrice(ext.ath, selectedQuote?.currency)}{" "}
-                          <em
-                            className="markets-ohlc-pct"
-                            style={{
-                              color: toneColor(
-                                trendTone(ext.fromAthPct, colorScheme),
-                              ),
-                            }}
+                      {curCap && (
+                        <div>
+                          <span>总市值</span>
+                          <strong
+                            title={
+                              curCap.estimated
+                                ? `取自 Yahoo 财报最新市值快照${curCap.asOfDate ? `（${curCap.asOfDate}）` : ""}`
+                                : undefined
+                            }
                           >
-                            {fmtExtremePct(ext.fromAthPct)}
-                          </em>
-                        </strong>
-                      </div>
-                      <div>
-                        <span>
-                          历史最低
-                          {fmtYearMonth(ext.atlTs)
-                            ? ` (${fmtYearMonth(ext.atlTs)})`
-                            : ""}
-                        </span>
-                        <strong>
-                          {fmtPrice(ext.atl, selectedQuote?.currency)}{" "}
-                          <em
-                            className="markets-ohlc-pct"
-                            style={{
-                              color: toneColor(
-                                trendTone(ext.fromAtlPct, colorScheme),
-                              ),
-                            }}
-                          >
-                            {fmtExtremePct(ext.fromAtlPct)}
-                          </em>
-                        </strong>
-                      </div>
+                            {curCap.estimated ? "≈" : ""}
+                            {fmtMarketCap(curCap.value, capCurrency)}
+                          </strong>
+                        </div>
+                      )}
+                      {athCap && (
+                        <div>
+                          <span>
+                            历史最高市值
+                            {athCap.dateLabel ? ` (${athCap.dateLabel})` : ""}
+                          </span>
+                          <strong title={athCap.note}>
+                            {athCap.estimated ? "≈" : ""}
+                            {fmtMarketCap(athCap.value, capCurrency)}{" "}
+                            {athCap.fromAthCapPct != null && (
+                              <em
+                                className="markets-ohlc-pct"
+                                style={{
+                                  color: toneColor(
+                                    trendTone(
+                                      athCap.fromAthCapPct,
+                                      colorScheme,
+                                    ),
+                                  ),
+                                }}
+                              >
+                                {fmtExtremePct(athCap.fromAthCapPct)}
+                              </em>
+                            )}
+                          </strong>
+                        </div>
+                      )}
+                      {ext && (
+                        <>
+                          <div>
+                            <span>
+                              历史最高
+                              {fmtYearMonth(ext.athTs)
+                                ? ` (${fmtYearMonth(ext.athTs)})`
+                                : ""}
+                            </span>
+                            <strong>
+                              {fmtPrice(ext.ath, selectedQuote?.currency)}{" "}
+                              <em
+                                className="markets-ohlc-pct"
+                                style={{
+                                  color: toneColor(
+                                    trendTone(ext.fromAthPct, colorScheme),
+                                  ),
+                                }}
+                              >
+                                {fmtExtremePct(ext.fromAthPct)}
+                              </em>
+                            </strong>
+                          </div>
+                          <div>
+                            <span>
+                              历史最低
+                              {fmtYearMonth(ext.atlTs)
+                                ? ` (${fmtYearMonth(ext.atlTs)})`
+                                : ""}
+                            </span>
+                            <strong>
+                              {fmtPrice(ext.atl, selectedQuote?.currency)}{" "}
+                              <em
+                                className="markets-ohlc-pct"
+                                style={{
+                                  color: toneColor(
+                                    trendTone(ext.fromAtlPct, colorScheme),
+                                  ),
+                                }}
+                              >
+                                {fmtExtremePct(ext.fromAtlPct)}
+                              </em>
+                            </strong>
+                          </div>
+                        </>
+                      )}
                     </>
                   );
                 })()}
               </div>
 
-              <InteractivePriceChart
-                symbol={activeSymbol}
-                points={
-                  chartQuery.data?.points?.length
-                    ? chartQuery.data.points
-                    : (selectedQuote?.sparkline ?? [])
-                }
-                prevClose={
-                  chartQuery.data?.prevClose ?? selectedQuote?.prevClose ?? null
-                }
-                currency={
-                  chartQuery.data?.currency ?? selectedQuote?.currency ?? "USD"
-                }
-                range={chartRange}
-                color={toneColor(trendTone(selectedQuote?.change, colorScheme))}
-                colorScheme={colorScheme}
-                loading={
-                  chartQuery.isPending && !selectedQuote?.sparkline?.length
-                }
-                error={
-                  chartQuery.isError
-                    ? String(chartQuery.error)
-                    : (selectedQuote?.error ?? null)
-                }
-                extremes={
-                  liveExtremesBySymbol.get(activeSymbol.trim().toUpperCase()) ??
-                  null
-                }
-                fiftyTwoWeekHigh={chartQuery.data?.fiftyTwoWeekHigh ?? null}
-                fiftyTwoWeekLow={chartQuery.data?.fiftyTwoWeekLow ?? null}
-                benchmarkName={canOverlayBench ? benchmarkInfo.name : undefined}
-                benchmarkPoints={benchChartQuery.data?.points}
-                benchmarkLoading={showBenchmark && benchChartQuery.isFetching}
-                showBenchmark={showBenchmark && canOverlayBench}
-                onToggleBenchmark={
-                  canOverlayBench
-                    ? () => setShowBenchmark((v) => !v)
-                    : undefined
-                }
-                onExpand={() => setChartModalOpen(true)}
-              />
+              {effectiveDetailTab === "financials" ? (
+                <MarketFinancialsChart
+                  symbol={activeSymbol}
+                  financials={
+                    financialsQuery.data?.symbol?.trim().toUpperCase() ===
+                    activeSymbol.trim().toUpperCase()
+                      ? financialsQuery.data
+                      : null
+                  }
+                  loading={financialsQuery.isPending}
+                  error={
+                    financialsQuery.isError
+                      ? String(financialsQuery.error)
+                      : null
+                  }
+                  colorScheme={colorScheme}
+                  onExpand={() => setChartModalOpen(true)}
+                  onRetry={() => void financialsQuery.refetch()}
+                />
+              ) : (
+                <InteractivePriceChart
+                  symbol={activeSymbol}
+                  points={
+                    chartQuery.data?.points?.length
+                      ? chartQuery.data.points
+                      : (selectedQuote?.sparkline ?? [])
+                  }
+                  prevClose={
+                    chartQuery.data?.prevClose ??
+                    selectedQuote?.prevClose ??
+                    null
+                  }
+                  currency={
+                    chartQuery.data?.currency ??
+                    selectedQuote?.currency ??
+                    "USD"
+                  }
+                  range={chartRange}
+                  color={toneColor(
+                    trendTone(selectedQuote?.change, colorScheme),
+                  )}
+                  colorScheme={colorScheme}
+                  loading={
+                    chartQuery.isPending && !selectedQuote?.sparkline?.length
+                  }
+                  error={
+                    chartQuery.isError
+                      ? String(chartQuery.error)
+                      : (selectedQuote?.error ?? null)
+                  }
+                  extremes={
+                    liveExtremesBySymbol.get(
+                      activeSymbol.trim().toUpperCase(),
+                    ) ?? null
+                  }
+                  fiftyTwoWeekHigh={chartQuery.data?.fiftyTwoWeekHigh ?? null}
+                  fiftyTwoWeekLow={chartQuery.data?.fiftyTwoWeekLow ?? null}
+                  benchmarkName={
+                    canOverlayBench ? benchmarkInfo.name : undefined
+                  }
+                  benchmarkPoints={benchChartQuery.data?.points}
+                  benchmarkLoading={showBenchmark && benchChartQuery.isFetching}
+                  showBenchmark={showBenchmark && canOverlayBench}
+                  onToggleBenchmark={
+                    canOverlayBench
+                      ? () => setShowBenchmark((v) => !v)
+                      : undefined
+                  }
+                  onExpand={() => setChartModalOpen(true)}
+                />
+              )}
             </>
           ) : (
             <div className="markets-empty-cell">请选择任意标的查看分时走势</div>
@@ -1922,20 +2101,90 @@ export function MarketsWorkspace() {
                   {fmtSigned(selectedQuote?.change)} (
                   {fmtSigned(selectedQuote?.changePercent, "%")})
                 </span>
+                {(() => {
+                  const ext = liveExtremesBySymbol.get(
+                    activeSymbol.trim().toUpperCase(),
+                  );
+                  const activeFin =
+                    financialsQuery.data?.symbol?.trim().toUpperCase() ===
+                    activeSymbol.trim().toUpperCase()
+                      ? financialsQuery.data
+                      : null;
+                  const curCap = resolveCurrentMarketCap(
+                    selectedQuote,
+                    activeFin,
+                  );
+                  const athCap = resolveAthMarketCap(
+                    selectedQuote,
+                    ext,
+                    activeFin,
+                  );
+                  if (!curCap && !athCap) return null;
+                  const capCur =
+                    selectedQuote?.currency ??
+                    activeFin?.marketCapCurrency ??
+                    "USD";
+                  return (
+                    <span
+                      className="markets-modal-cap-badge"
+                      title={athCap?.note}
+                    >
+                      {curCap && (
+                        <>
+                          市值{" "}
+                          <b>
+                            {curCap.estimated ? "≈" : ""}
+                            {fmtMarketCap(curCap.value, capCur)}
+                          </b>
+                        </>
+                      )}
+                      {curCap && athCap && <span>·</span>}
+                      {athCap && (
+                        <>
+                          历史最高市值{" "}
+                          <b>
+                            {athCap.estimated ? "≈" : ""}
+                            {fmtMarketCap(athCap.value, capCur)}
+                          </b>
+                        </>
+                      )}
+                    </span>
+                  );
+                })()}
               </div>
               <div className="markets-kline-modal-actions">
-                <div className="markets-pill-group">
-                  {CHART_RANGES.map(([r, label]) => (
+                {activeIsEquity && (
+                  <div className="markets-pill-group">
                     <button
-                      key={r}
                       type="button"
-                      className={`markets-pill-btn${chartRange === r ? " active" : ""}`}
-                      onClick={() => setChartRange(r)}
+                      className={`markets-pill-btn${effectiveDetailTab === "chart" ? " active" : ""}`}
+                      onClick={() => setDetailTab("chart")}
                     >
-                      {label}
+                      行情走势
                     </button>
-                  ))}
-                </div>
+                    <button
+                      type="button"
+                      className={`markets-pill-btn${effectiveDetailTab === "financials" ? " active" : ""}`}
+                      onClick={() => setDetailTab("financials")}
+                    >
+                      财报图
+                    </button>
+                  </div>
+                )}
+                {effectiveDetailTab === "chart" && (
+                  <div className="markets-pill-group">
+                    {CHART_RANGES.map(([r, label]) => (
+                      <button
+                        key={r}
+                        type="button"
+                        className={`markets-pill-btn${chartRange === r ? " active" : ""}`}
+                        onClick={() => setChartRange(r)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <button
                   type="button"
                   className="markets-drawer-close labeled"
@@ -1947,45 +2196,66 @@ export function MarketsWorkspace() {
               </div>
             </div>
 
-            <InteractivePriceChart
-              symbol={activeSymbol}
-              points={
-                chartQuery.data?.points?.length
-                  ? chartQuery.data.points
-                  : (selectedQuote?.sparkline ?? [])
-              }
-              prevClose={
-                chartQuery.data?.prevClose ?? selectedQuote?.prevClose ?? null
-              }
-              currency={
-                chartQuery.data?.currency ?? selectedQuote?.currency ?? "USD"
-              }
-              range={chartRange}
-              color={toneColor(trendTone(selectedQuote?.change, colorScheme))}
-              colorScheme={colorScheme}
-              loading={
-                chartQuery.isPending && !selectedQuote?.sparkline?.length
-              }
-              error={
-                chartQuery.isError
-                  ? String(chartQuery.error)
-                  : (selectedQuote?.error ?? null)
-              }
-              extremes={
-                liveExtremesBySymbol.get(activeSymbol.trim().toUpperCase()) ??
-                null
-              }
-              fiftyTwoWeekHigh={chartQuery.data?.fiftyTwoWeekHigh ?? null}
-              fiftyTwoWeekLow={chartQuery.data?.fiftyTwoWeekLow ?? null}
-              benchmarkName={canOverlayBench ? benchmarkInfo.name : undefined}
-              benchmarkPoints={benchChartQuery.data?.points}
-              benchmarkLoading={showBenchmark && benchChartQuery.isFetching}
-              showBenchmark={showBenchmark && canOverlayBench}
-              onToggleBenchmark={
-                canOverlayBench ? () => setShowBenchmark((v) => !v) : undefined
-              }
-              expanded
-            />
+            {effectiveDetailTab === "financials" ? (
+              <MarketFinancialsChart
+                symbol={activeSymbol}
+                financials={
+                  financialsQuery.data?.symbol?.trim().toUpperCase() ===
+                  activeSymbol.trim().toUpperCase()
+                    ? financialsQuery.data
+                    : null
+                }
+                loading={financialsQuery.isPending}
+                error={
+                  financialsQuery.isError ? String(financialsQuery.error) : null
+                }
+                colorScheme={colorScheme}
+                expanded
+                onRetry={() => void financialsQuery.refetch()}
+              />
+            ) : (
+              <InteractivePriceChart
+                symbol={activeSymbol}
+                points={
+                  chartQuery.data?.points?.length
+                    ? chartQuery.data.points
+                    : (selectedQuote?.sparkline ?? [])
+                }
+                prevClose={
+                  chartQuery.data?.prevClose ?? selectedQuote?.prevClose ?? null
+                }
+                currency={
+                  chartQuery.data?.currency ?? selectedQuote?.currency ?? "USD"
+                }
+                range={chartRange}
+                color={toneColor(trendTone(selectedQuote?.change, colorScheme))}
+                colorScheme={colorScheme}
+                loading={
+                  chartQuery.isPending && !selectedQuote?.sparkline?.length
+                }
+                error={
+                  chartQuery.isError
+                    ? String(chartQuery.error)
+                    : (selectedQuote?.error ?? null)
+                }
+                extremes={
+                  liveExtremesBySymbol.get(activeSymbol.trim().toUpperCase()) ??
+                  null
+                }
+                fiftyTwoWeekHigh={chartQuery.data?.fiftyTwoWeekHigh ?? null}
+                fiftyTwoWeekLow={chartQuery.data?.fiftyTwoWeekLow ?? null}
+                benchmarkName={canOverlayBench ? benchmarkInfo.name : undefined}
+                benchmarkPoints={benchChartQuery.data?.points}
+                benchmarkLoading={showBenchmark && benchChartQuery.isFetching}
+                showBenchmark={showBenchmark && canOverlayBench}
+                onToggleBenchmark={
+                  canOverlayBench
+                    ? () => setShowBenchmark((v) => !v)
+                    : undefined
+                }
+                expanded
+              />
+            )}
           </div>
         </div>
       )}

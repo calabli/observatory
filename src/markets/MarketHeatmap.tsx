@@ -16,6 +16,7 @@ import {
   MARKET_META,
   MARKET_ORDER,
   type MarketFilter,
+  resolveAthMarketCap,
   type ResolvedPool,
   STALE_HINT,
   type StockQuote,
@@ -795,11 +796,25 @@ export function MarketHeatmap({
               </div>
             );
           })()}
-          {tip.quote?.marketCap != null && tip.quote.marketCap > 0 && (
-            <div className="markets-hm-tip-row">
-              总市值 {fmtMarketCap(tip.quote.marketCap, tip.quote.currency)}
-            </div>
-          )}
+          {tip.quote?.marketCap != null &&
+            tip.quote.marketCap > 0 &&
+            (() => {
+              const ext = extremesBySymbol.get(
+                tip.item.symbol.trim().toUpperCase(),
+              );
+              const athCap = resolveAthMarketCap(tip.quote, ext);
+              return (
+                <div className="markets-hm-tip-row">
+                  总市值 {fmtMarketCap(tip.quote.marketCap, tip.quote.currency)}
+                  {athCap && (
+                    <>
+                      {" · "}历史最高市值 {athCap.estimated ? "≈" : ""}
+                      {fmtMarketCap(athCap.value, tip.quote.currency)}
+                    </>
+                  )}
+                </div>
+              );
+            })()}
           <div className="markets-hm-tip-foot">
             <span>
               {tip.quote?.source ?? "—"} · {fmtClock(tip.quote?.quoteTime)}

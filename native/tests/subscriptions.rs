@@ -3,7 +3,7 @@ use observatory_usage_core::{
     api::UsageBackend,
     database::Database,
     lan_usage::identity,
-    subscriptions::{weekly_cycle, Subscription, WeeklyRule},
+    subscriptions::{weekly_cycle, Subscription, WeeklyRule, SUPPORTED_CURRENCIES},
 };
 use serde_json::json;
 use std::sync::Arc;
@@ -365,4 +365,71 @@ async fn legacy_subscription_records_still_load() {
     let stored = backend.call("subscriptions_get", json!({})).await.unwrap();
     assert_eq!(stored[0]["name"], "Claude Max");
     assert!(stored[0]["customIntervalDays"].is_null());
+}
+
+/// All major market currencies (including TWD, JPY, HKD, GBP, etc.) must be
+/// accepted and round-trip cleanly, while unknown or malformed codes are rejected.
+#[tokio::test]
+async fn major_market_currencies_are_validated_and_round_trip() {
+    let db = Arc::new(Database::memory().unwrap());
+    let backend = UsageBackend::with_database(db);
+
+    assert!(SUPPORTED_CURRENCIES.contains(&"TWD"));
+    assert!(SUPPORTED_CURRENCIES.contains(&"JPY"));
+    assert!(SUPPORTED_CURRENCIES.contains(&"HKD"));
+    assert!(SUPPORTED_CURRENCIES.contains(&"GBP"));
+
+    let items: Vec<serde_json::Value> = SUPPORTED_CURRENCIES
+        .iter()
+        .enumerate()
+        .map(|(i, code)| {
+            json!({
+                "id": format!("10cc9853-04ff-4e68-9fee-{i:012}"),
+                "name": format!("Plan {code}"),
+                "appType": "claude",
+                "price": 1000.0,
+                "currency": code,
+                "billing": "月",
+                "startDate": "2026-01-01",
+                "endDate": "2027-01-01",
+                "enabled": true,
+                "rule": {"startDay": 4, "startTime": "19:00:00", "endDay": 4, "endTime": "19:00:00"}
+            })
+        })
+        .collect();
+
+    backend
+        .call("subscriptions_save", json!({"subscriptions": items}))
+        .await
+        .unwrap();
+    let stored = backend.call("subscriptions_get", json!({})).await.unwrap();
+    let saved_codes: Vec<&str> = stored
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| row["currency"].as_str().unwrap())
+        .collect();
+    assert_eq!(saved_codes, SUPPORTED_CURRENCIES);
+
+    for bad in ["", "twd", "jpy", "XXX", "US"] {
+        let invalid = json!({
+            "id": "10cc9853-04ff-4e68-9fee-ae617e516c23",
+            "name": "Bad Currency",
+            "appType": "claude",
+            "price": 10.0,
+            "currency": bad,
+            "billing": "月",
+            "startDate": "2026-01-01",
+            "endDate": "2027-01-01",
+            "enabled": true,
+            "rule": {"startDay": 4, "startTime": "19:00:00", "endDay": 4, "endTime": "19:00:00"}
+        });
+        assert!(
+            backend
+                .call("subscriptions_save", json!({"subscriptions": [invalid]}))
+                .await
+                .is_err(),
+            "currency {bad:?} should be rejected"
+        );
+    }
 }
