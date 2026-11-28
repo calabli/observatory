@@ -1,4 +1,5 @@
 use serde_json::{json, Value};
+#[cfg(not(target_os = "android"))]
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -65,11 +66,13 @@ pub fn parse_ipv4_response(body: &Value) -> Result<std::net::Ipv4Addr, crate::er
         .ok_or_else(|| crate::error::AppError::Message("ipify 未返回有效的 IPv4 地址".into()))
 }
 
+#[cfg(not(target_os = "android"))]
 struct Cache {
     refreshed: Instant,
     interfaces: Vec<netdev::Interface>,
 }
 /// Cache configuration briefly; refresh counters without repeatedly enumerating routes.
+#[cfg(not(target_os = "android"))]
 pub fn snapshot(force: bool) -> Value {
     static CACHE: OnceLock<Mutex<Option<Cache>>> = OnceLock::new();
     let mut cache = CACHE
@@ -125,4 +128,9 @@ pub fn snapshot(force: bool) -> Value {
         })
         .collect();
     json!({"interfaces": rows})
+}
+
+#[cfg(target_os = "android")]
+pub fn snapshot(_force: bool) -> Value {
+    json!({"interfaces": []})
 }

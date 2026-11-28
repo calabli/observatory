@@ -1,0 +1,7 @@
+{
+  "identifier": "mobile",
+  "description": "Observatory mobile window (Android / iOS)",
+  "platforms": ["android", "iOS"],
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

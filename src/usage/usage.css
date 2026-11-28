@@ -1281,3 +1281,345 @@
   color: light-dark(#b4342a, #f29a94);
   border-color: light-dark(#e7b5b0, #5a3435);
 }
+
+/* ---------- Simplified Device Connection Manager (.dm-*) ---------- */
+#observatory-root .dm-root {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+#observatory-root .dm-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+#observatory-root .dialog .dm-card {
+  background: var(--soft);
+  border-color: transparent;
+}
+
+#observatory-root .dm-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+#observatory-root .dm-card-head h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+#observatory-root .dm-card-head p {
+  margin: 3px 0 0;
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+#observatory-root .dm-compact-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+#observatory-root .dm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#observatory-root .dm-item {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#observatory-root .dm-item-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+#observatory-root .dm-item-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--soft);
+  color: var(--text-secondary);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+#observatory-root .dm-item-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  gap: 2px;
+}
+
+#observatory-root .dm-item-info strong {
+  font-size: 13.5px;
+  font-weight: 650;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#observatory-root .dm-item-info small {
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+#observatory-root .dm-item-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+#observatory-root .dm-icon-danger {
+  padding: 6px 8px;
+  color: var(--muted);
+}
+
+#observatory-root .dm-icon-danger:hover {
+  color: var(--danger, #e5484d);
+}
+
+#observatory-root .dm-badge-connected {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--good-soft);
+  color: var(--good);
+  font-size: 11.5px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+#observatory-root .dm-status-ok {
+  color: var(--good);
+}
+
+#observatory-root .dm-status-err {
+  color: var(--danger, #e5484d);
+}
+
+#observatory-root .dm-pair-inline {
+  padding-top: 10px;
+  border-top: 1px dashed var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#observatory-root .dm-pair-tip {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+#observatory-root .dm-pair-inputs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#observatory-root .dm-code-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 16px !important;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+#observatory-root .dm-empty-inline {
+  margin: 0;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+#observatory-root .dm-manual-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#observatory-root .dm-manual-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  font-size: 12px;
+  padding: 2px 0;
+}
+
+#observatory-root .dm-manual-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+#observatory-root .dm-manual-form input {
+  width: 100%;
+}
+
+#observatory-root .dm-pair-code-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+#observatory-root .dm-pair-code-value {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+#observatory-root .dm-pair-code-value strong {
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  line-height: 1.15;
+}
+
+#observatory-root .dm-pair-code-value small {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+#observatory-root .dm-advanced {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+#observatory-root .dialog .dm-advanced {
+  background: var(--soft);
+  border-color: transparent;
+}
+
+#observatory-root .dm-advanced-summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+#observatory-root .dm-advanced-summary::-webkit-details-marker {
+  display: none;
+}
+
+#observatory-root .dm-advanced[open] .dm-advanced-chevron {
+  transform: rotate(180deg);
+}
+
+#observatory-root .dm-advanced-chevron {
+  transition: transform 0.16s ease;
+}
+
+#observatory-root .dm-advanced-body {
+  padding: 0 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+#observatory-root .dm-adv-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+#observatory-root .dm-adv-row strong {
+  display: block;
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+#observatory-root .dm-adv-row small {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+#observatory-root .dm-adv-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+#observatory-root .dm-adv-block h3 {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+#observatory-root .dm-apikey-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+#observatory-root .dm-code-sample {
+  font-size: 11px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+  background: var(--surface);
+  padding: 8px 10px;
+  border-radius: 8px;
+}

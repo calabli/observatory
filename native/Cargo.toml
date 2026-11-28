@@ -1,6 +1,6 @@
 [package]
 name = "observatory-usage-core"
-version = "0.1.21"
+version = "0.1.22"
 edition = "2021"
 license = "MIT"
 
@@ -35,6 +35,8 @@ tempfile = "3"
 log = "0.4"
 url = "2"
 fs2 = "0.4"
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
 netdev = "0.46.2"
 
 [target.'cfg(windows)'.dependencies]

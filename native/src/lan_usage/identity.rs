@@ -38,7 +38,14 @@ fn hostname() -> String {
             }
         }
     }
-    "Observatory".to_string()
+    #[cfg(target_os = "android")]
+    {
+        "Android".to_string()
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        "Observatory".to_string()
+    }
 }
 
 /// The name the user gave this machine (shown on the LAN). The host name is used when it is not set.

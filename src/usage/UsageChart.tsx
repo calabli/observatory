@@ -242,7 +242,22 @@ export function UsageChart({
         </div>
         <div
           className="plot"
-          style={{ height: 170 }}
+          style={{ height: 170, touchAction: "pan-y" }}
+          onPointerDown={(e) => {
+            if (!data.length) return;
+            const r = e.currentTarget.getBoundingClientRect();
+            const at = (e.clientX - r.left) / r.width;
+            const next = Math.max(
+              0,
+              Math.min(
+                data.length - 1,
+                chartType === "bar"
+                  ? Math.floor(at * data.length)
+                  : Math.round(at * (data.length - 1)),
+              ),
+            );
+            setHover(next);
+          }}
           onPointerMove={(e) => {
             const r = e.currentTarget.getBoundingClientRect();
             const at = (e.clientX - r.left) / r.width;

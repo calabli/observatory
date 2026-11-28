@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { createPortal } from "react-dom";
+import { IS_ANDROID } from "./mobile";
 
 export function UpdateControl({
   target,
@@ -17,7 +18,7 @@ export function UpdateControl({
   const running = useRef(false);
   const installing = useRef(false);
   const inspect = async (manual: boolean) => {
-    if (!window.__TAURI_INTERNALS__ || installing.current) return;
+    if (!window.__TAURI_INTERNALS__ || IS_ANDROID || installing.current) return;
     if (running.current) {
       if (manual) setMessage("正在检查更新，请稍候…");
       return;
@@ -61,6 +62,21 @@ export function UpdateControl({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   if (!window.__TAURI_INTERNALS__ || !target) return null;
+  if (IS_ANDROID) {
+    return createPortal(
+      <div className="update-control">
+        <a
+          className="button"
+          href="https://github.com/calabli/observatory/releases/latest"
+          target="_blank"
+          rel="noreferrer"
+        >
+          查看最新 Android 安装包
+        </a>
+      </div>,
+      target,
+    );
+  }
   return createPortal(
     <div className="update-control">
       {!confirming && (

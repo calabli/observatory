@@ -73,6 +73,7 @@ import { AppGlyph } from "./AppGlyph";
 import { PricingManager } from "./PricingManager";
 import { DeviceManager } from "./DeviceManager";
 import { RequestDetail, SourcesDialog } from "./UsageDialogs";
+import { isMobilePlatform } from "../mobile";
 
 let activeMultiScan = false;
 
@@ -121,9 +122,10 @@ function UsageWorkspaceImpl({
 }: Props) {
   const saved = useMemo(loadView, []);
   const qc = useQueryClient();
-  const [scope, setScope] = useState<UsageScope>(
-    saved.scope === "multi" ? "multi" : "local",
-  );
+  const [scope, setScope] = useState<UsageScope>(() => {
+    if (saved.scope === "multi" || saved.scope === "local") return saved.scope;
+    return isMobilePlatform() ? "multi" : "local";
+  });
   const [selectedDevices, setSelectedDevices] = useState<string[] | null>(null);
   const [range, setRange] = useState<Range>(() =>
     saved.range === "all" || saved.range === "custom" || saved.range === "cycle"
@@ -764,9 +766,84 @@ function UsageWorkspaceImpl({
           管理设备
         </button>
       </div>
+      <div className="usage-android-banner">
+        <div className="usage-android-banner-info">
+          <strong>
+            {lan.data?.devices.filter((d) => d.enabled && d.paired).length
+              ? `已连接 ${lan.data.devices.filter((d) => d.enabled && d.paired).length} 台局域网电脑`
+              : "局域网伴侣 · 未配对电脑"}
+          </strong>
+          <small>支持按时间范围、平台/应用、供应商与模型查询</small>
+        </div>
+        <div className="usage-android-banner-actions">
+          <button
+            type="button"
+            className="button"
+            onClick={() => setModal("devices")}
+          >
+            配对
+          </button>
+          <button
+            type="button"
+            className="button primary"
+            disabled={
+              scanBusy || !status.data || (scope === "multi" && !lan.data)
+            }
+            onClick={() =>
+              void (scope === "multi" ? refreshMulti() : refresh()).catch(
+                () => {},
+              )
+            }
+          >
+            <RefreshCw size={12} />
+            {scanBusy ? "同步中" : "同步"}
+          </button>
+        </div>
+      </div>
+      <div
+        className="usage-mobile-range-bar"
+        role="tablist"
+        aria-label="快捷时间范围"
+      >
+        {(
+          [
+            ...USAGE_RANGES.map(
+              (key) => [key, RANGE_PRESETS[key].label] as const,
+            ),
+            ["all", "全部"] as const,
+            ["cycle", "按周期"] as const,
+            ["custom", "自定义"] as const,
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            className={`usage-mobile-range-pill${range === key ? " active" : ""}`}
+            aria-pressed={range === key}
+            onClick={() => {
+              change(() => {
+                setRange(key);
+                if (key === "cycle") {
+                  setCycleOffset(0);
+                  setCycleNow(Date.now());
+                  setManualAppOverride(false);
+                  if (activeCyclePlan.appType && !app) {
+                    setApp(activeCyclePlan.appType);
+                    setProvider("");
+                    setModel("");
+                  }
+                }
+              });
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
       <div className="filter-row">
         <div className="filters">
           <select
+            className="usage-range-desktop-select"
             aria-label="统计时间"
             value={range}
             onChange={(e) => {
@@ -884,7 +961,7 @@ function UsageWorkspaceImpl({
             ))}
           </select>
         </div>
-        <div className="filters">
+        <div className="filters usage-desktop-actions">
           <button className="button" onClick={() => setModal("pricing")}>
             <Tags size={13} />
             价格管理
@@ -1482,7 +1559,7 @@ function UsageWorkspaceImpl({
         />
       )}
       {modal === "devices" && (
-        <UsageDialog title="多设备用量同步" close={() => setModal(null)} wide>
+        <UsageDialog title="设备连接" close={() => setModal(null)} wide>
           <DeviceManager />
         </UsageDialog>
       )}

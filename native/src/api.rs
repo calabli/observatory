@@ -207,81 +207,89 @@ impl UsageBackend {
     }
     pub fn start_background(&self) {
         lan_usage::start_background(self.db.clone(), self.scan_lock.clone());
-        let db = self.db.clone();
-        let lock = self.scan_lock.clone();
-        tokio::spawn(async move {
-            let mut ticker = tokio::time::interval(std::time::Duration::from_secs(5));
-            let mut last_maintenance = std::time::Instant::now();
-            // Cache (data_epoch, refresh_interval, import_failed) so the 5s ticker
-            // does zero SQLite reads or spawn_blocking work while settings are unchanged.
-            let mut cached_prefs: Option<(u64, String, bool)> = None;
-            ticker.tick().await;
-            loop {
+        #[cfg(not(target_os = "android"))]
+        {
+            let db = self.db.clone();
+            let lock = self.scan_lock.clone();
+            tokio::spawn(async move {
+                let mut ticker = tokio::time::interval(std::time::Duration::from_secs(5));
+                let mut last_maintenance = std::time::Instant::now();
+                // Cache (data_epoch, refresh_interval, import_failed) so the 5s ticker
+                // does zero SQLite reads or spawn_blocking work while settings are unchanged.
+                let mut cached_prefs: Option<(u64, String, bool)> = None;
                 ticker.tick().await;
-                let epoch = db.data_epoch();
-                let (interval, import_failed) = match &cached_prefs {
-                    Some((e, interval, failed)) if *e == epoch => (interval.clone(), *failed),
-                    _ => {
-                        let source = db.clone();
-                        let Ok((interval, import_failed)) =
-                            tokio::task::spawn_blocking(move || {
-                                let interval = source
-                                    .get_setting("usage_refresh_interval")
-                                    .ok()
-                                    .flatten()
-                                    .unwrap_or_else(|| "30".into());
-                                let import_failed = source
-                                    .get_setting("usage_initial_import_error")
-                                    .ok()
-                                    .flatten()
-                                    .is_some();
-                                (interval, import_failed)
-                            })
-                            .await
-                        else {
-                            continue;
-                        };
-                        cached_prefs = Some((epoch, interval.clone(), import_failed));
-                        (interval, import_failed)
+                loop {
+                    ticker.tick().await;
+                    let epoch = db.data_epoch();
+                    let (interval, import_failed) = match &cached_prefs {
+                        Some((e, interval, failed)) if *e == epoch => (interval.clone(), *failed),
+                        _ => {
+                            let source = db.clone();
+                            let Ok((interval, import_failed)) =
+                                tokio::task::spawn_blocking(move || {
+                                    let interval = source
+                                        .get_setting("usage_refresh_interval")
+                                        .ok()
+                                        .flatten()
+                                        .unwrap_or_else(|| "30".into());
+                                    let import_failed = source
+                                        .get_setting("usage_initial_import_error")
+                                        .ok()
+                                        .flatten()
+                                        .is_some();
+                                    (interval, import_failed)
+                                })
+                                .await
+                            else {
+                                continue;
+                            };
+                            cached_prefs = Some((epoch, interval.clone(), import_failed));
+                            (interval, import_failed)
+                        }
+                    };
+                    if interval == "manual" || import_failed {
+                        continue;
                     }
-                };
-                if interval == "manual" || import_failed {
-                    continue;
-                }
-                let seconds = interval.parse::<i64>().unwrap_or(30).max(10);
-                let elapsed = chrono::Utc::now().timestamp_millis()
-                    - session_usage::last_sync_completed_at().unwrap_or(0);
-                if elapsed < seconds * 1000 {
-                    continue;
-                }
-                let Ok(_guard) = lock.clone().try_lock_owned() else {
-                    continue;
-                };
-                let elapsed = chrono::Utc::now().timestamp_millis()
-                    - session_usage::last_sync_completed_at().unwrap_or(0);
-                if elapsed < seconds * 1000 {
-                    continue;
-                }
-                let source = db.clone();
-                if let Err(e) = tokio::task::spawn_blocking(move || {
-                    if let Ok(enabled) = read_enabled_sources(&source) {
-                        scan_database(&source, &enabled, crate::activity::ScanTrigger::Background);
+                    let seconds = interval.parse::<i64>().unwrap_or(30).max(10);
+                    let elapsed = chrono::Utc::now().timestamp_millis()
+                        - session_usage::last_sync_completed_at().unwrap_or(0);
+                    if elapsed < seconds * 1000 {
+                        continue;
                     }
-                })
-                .await
-                {
-                    log::warn!("Background usage scan failed: {e}");
-                }
-                // Low-frequency maintenance: move the WAL reclamation and the statistics update into the gap right
-                // after a scan finishes, so the checkpoint stall after a large transaction does not land on the query peak.
-                if last_maintenance.elapsed() >= std::time::Duration::from_secs(3600) {
+                    let Ok(_guard) = lock.clone().try_lock_owned() else {
+                        continue;
+                    };
+                    let elapsed = chrono::Utc::now().timestamp_millis()
+                        - session_usage::last_sync_completed_at().unwrap_or(0);
+                    if elapsed < seconds * 1000 {
+                        continue;
+                    }
                     let source = db.clone();
-                    let _ =
-                        tokio::task::spawn_blocking(move || source.maintenance_checkpoint()).await;
-                    last_maintenance = std::time::Instant::now();
+                    if let Err(e) = tokio::task::spawn_blocking(move || {
+                        if let Ok(enabled) = read_enabled_sources(&source) {
+                            scan_database(
+                                &source,
+                                &enabled,
+                                crate::activity::ScanTrigger::Background,
+                            );
+                        }
+                    })
+                    .await
+                    {
+                        log::warn!("Background usage scan failed: {e}");
+                    }
+                    // Low-frequency maintenance: move the WAL reclamation and the statistics update into the gap right
+                    // after a scan finishes, so the checkpoint stall after a large transaction does not land on the query peak.
+                    if last_maintenance.elapsed() >= std::time::Duration::from_secs(3600) {
+                        let source = db.clone();
+                        let _ =
+                            tokio::task::spawn_blocking(move || source.maintenance_checkpoint())
+                                .await;
+                        last_maintenance = std::time::Instant::now();
+                    }
                 }
-            }
-        });
+            });
+        }
     }
     pub fn cc_switch_path() -> PathBuf {
         std::env::var_os("CC_SWITCH_DB")
@@ -289,6 +297,7 @@ impl UsageBackend {
             .map(Into::into)
             .unwrap_or_else(|| crate::config::get_home_dir().join(".cc-switch/cc-switch.db"))
     }
+    #[cfg(not(target_os = "android"))]
     fn enabled_sources(&self) -> Result<Vec<String>, AppError> {
         read_enabled_sources(&self.db)
     }
@@ -298,22 +307,30 @@ impl UsageBackend {
         &self,
         automatic: bool,
     ) -> Result<session_usage::SessionSyncResult, AppError> {
-        let _guard = self.scan_lock.lock().await;
-        let recent = session_usage::last_sync_completed_at()
-            .is_some_and(|at| chrono::Utc::now().timestamp_millis() - at < 5000);
-        if automatic && recent {
-            return Ok(session_usage::SessionSyncResult::default());
+        #[cfg(target_os = "android")]
+        {
+            let _ = automatic;
+            Ok(session_usage::SessionSyncResult::default())
         }
-        let enabled = self.enabled_sources()?;
-        let db = self.db.clone();
-        let trigger = if automatic {
-            crate::activity::ScanTrigger::Auto
-        } else {
-            crate::activity::ScanTrigger::Manual
-        };
-        tokio::task::spawn_blocking(move || scan_database(&db, &enabled, trigger))
-            .await
-            .map_err(|e| AppError::Message(e.to_string()))
+        #[cfg(not(target_os = "android"))]
+        {
+            let _guard = self.scan_lock.lock().await;
+            let recent = session_usage::last_sync_completed_at()
+                .is_some_and(|at| chrono::Utc::now().timestamp_millis() - at < 5000);
+            if automatic && recent {
+                return Ok(session_usage::SessionSyncResult::default());
+            }
+            let enabled = self.enabled_sources()?;
+            let db = self.db.clone();
+            let trigger = if automatic {
+                crate::activity::ScanTrigger::Auto
+            } else {
+                crate::activity::ScanTrigger::Manual
+            };
+            tokio::task::spawn_blocking(move || scan_database(&db, &enabled, trigger))
+                .await
+                .map_err(|e| AppError::Message(e.to_string()))
+        }
     }
     /// The actual computation of `status`, split into an associated function so it can run in spawn_blocking.
     ///
@@ -1225,10 +1242,15 @@ impl UsageBackend {
                 .await
             }
             "lan_pair_code" => {
+                let mut settings = self.call_blocking(|db| Ok(identity::share_settings(db))).await?;
+                if !settings.enabled {
+                    settings.enabled = true;
+                    let saved = settings.clone();
+                    self.call_blocking(move |db| identity::save_share_settings(db, &saved))
+                        .await?;
+                }
+                lan_usage::ensure_server(self.db.clone(), self.scan_lock.clone()).await?;
                 self.call_blocking(|db| {
-                    if !identity::share_settings(db).enabled {
-                        return Err(AppError::Message("请先开启局域网共享".into()));
-                    }
                     let (code, expires_at) = lan_usage::pairing::generate(db)?;
                     Ok(json!({"code":code,"expiresAt":expires_at}))
                 })
@@ -1297,9 +1319,6 @@ impl UsageBackend {
                 // Alternate database steps and network requests: every database read or write goes through
                 // call_blocking on its own, so waiting on the network holds no blocking thread and never
                 // grabs the connection lock from async.
-                let settings = self.call_blocking(|db| Ok(identity::share_settings(db))).await?;
-                if !settings.enabled { return Err(AppError::Message("双向配对需要先开启本机局域网共享".into())); }
-                lan_usage::ensure_server(self.db.clone(), self.scan_lock.clone()).await?;
                 let host = args
                     .get("host")
                     .and_then(Value::as_str)
@@ -1325,6 +1344,14 @@ impl UsageBackend {
                     .or(url.port())
                     .unwrap_or(17891);
                 let info = lan_usage::client::fetch_info(host, port).await?;
+                let mut settings = self.call_blocking(|db| Ok(identity::share_settings(db))).await?;
+                if !settings.enabled {
+                    settings.enabled = true;
+                    let saved = settings.clone();
+                    self.call_blocking(move |db| identity::save_share_settings(db, &saved))
+                        .await?;
+                }
+                lan_usage::ensure_server(self.db.clone(), self.scan_lock.clone()).await?;
                 let code = string_arg(&args, "code")?;
                 let reverse_token = lan_usage::pairing::new_token();
                 // Self-connection check plus writing the reverse authorization up front, done in a single blocking call.

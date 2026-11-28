@@ -927,6 +927,103 @@ export function BenchmarksWorkspace() {
             </div>
 
             <div className="bm-table-scroll">
+              <div className="bm-mobile-cards">
+                {filteredFamilies.length === 0 ? (
+                  <div className="bm-table-empty">
+                    没有符合当前筛选条件的模型。
+                  </div>
+                ) : (
+                  filteredFamilies.slice(0, 80).map((f) => {
+                    const rep =
+                      (tierFilter !== "all"
+                        ? f.variants.find(
+                            (v) => v.parsed.tierKey === tierFilter,
+                          )
+                        : null) ?? f.primary;
+                    const rank = familyRankMap.get(f.familyKey);
+                    const score =
+                      tierFilter !== "all" ? rep.score : f.bestScore;
+                    const tps = effectiveTps(rep.model);
+                    const pct =
+                      score != null
+                        ? Math.max(
+                            4,
+                            Math.min(100, (score / maxDimScore) * 100),
+                          )
+                        : 0;
+                    const isFamilySelected = f.variants.some(
+                      (v) => v.model.id === selectedId,
+                    );
+                    return (
+                      <div
+                        key={`mb-${f.familyKey}`}
+                        className={`bm-mobile-card${isFamilySelected ? " selected" : ""}`}
+                        onClick={() =>
+                          setSelectedId((cur) =>
+                            cur === rep.model.id ? null : rep.model.id,
+                          )
+                        }
+                      >
+                        <div className="bm-mobile-card-head">
+                          <div className="bm-mobile-card-title">
+                            {rank != null && (
+                              <span
+                                className={`bm-rank-num ${rank <= 3 ? `top-${rank}` : ""}`}
+                              >
+                                {rank}
+                              </span>
+                            )}
+                            <div className="bm-mobile-card-name">
+                              <strong>{f.familyName}</strong>
+                              <small>
+                                <i
+                                  className="bm-creator-dot"
+                                  style={{
+                                    background: creatorColor(f.creatorName),
+                                  }}
+                                />
+                                {f.creatorName}
+                                {f.variants.length > 1
+                                  ? ` · ${f.variants.length} 档`
+                                  : ""}
+                              </small>
+                            </div>
+                          </div>
+                          <div className="bm-mobile-card-score">
+                            <strong
+                              style={{ color: creatorColor(f.creatorName) }}
+                            >
+                              {formatScore(score)}
+                            </strong>
+                            <small>{activeDimDef.shortLabel}</small>
+                          </div>
+                        </div>
+                        {score != null && (
+                          <div className="bm-bar-track">
+                            <div
+                              className="bm-bar-fill"
+                              style={{
+                                width: `${pct}%`,
+                                background: creatorColor(f.creatorName),
+                              }}
+                            />
+                          </div>
+                        )}
+                        <div className="bm-mobile-card-meta">
+                          <span>速度 {formatTps(tps)}</span>
+                          <span>
+                            价格{" "}
+                            {rep.model.priceInput1m != null ||
+                            rep.model.priceOutput1m != null
+                              ? `${formatPrice1m(rep.model.priceInput1m)}/${formatPrice1m(rep.model.priceOutput1m)}`
+                              : "—"}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
               {viewMode === "grouped" ? (
                 <table className="bm-table bm-table-grouped">
                   <thead>

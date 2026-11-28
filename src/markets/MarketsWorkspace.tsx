@@ -55,6 +55,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { usageCall } from "../native/usageClient";
 import {
   ArrowDown,
+  ArrowLeft,
   ArrowUp,
   ArrowUpDown,
   Check,
@@ -70,6 +71,7 @@ import {
   TrendingUp,
   X,
 } from "lucide-react";
+import { isMobilePlatform, useIsMobile } from "../mobile";
 import { InteractivePriceChart, MiniSparkline } from "./MarketCharts";
 import { MarketFinancialsChart } from "./MarketFinancialsChart";
 import { useLazySparklines } from "./useLazySparklines";
@@ -105,12 +107,12 @@ export function MarketsWorkspace() {
   const [poolQuery, setPoolQuery] = useState<string>("");
   const [viewMode, setViewMode] = useState<WatchViewMode>(() => {
     try {
-      return localStorage.getItem(VIEW_MODE_KEY) === "list"
-        ? "list"
-        : "heatmap";
+      const saved = localStorage.getItem(VIEW_MODE_KEY);
+      if (saved === "list" || saved === "heatmap") return saved;
     } catch {
-      return "heatmap";
+      // ignore storage errors
     }
+    return isMobilePlatform() ? "list" : "heatmap";
   });
   const [sizeMode, setSizeMode] = useState<TreemapSizeMode>("cap");
   const [metricMode, setMetricMode] = useState<HeatmapMetricMode>("change");
@@ -128,7 +130,9 @@ export function MarketsWorkspace() {
     {},
   );
   const [extremesRemaining, setExtremesRemaining] = useState<number>(0);
+  const isMobile = useIsMobile();
   const [selectedSymbol, setSelectedSymbol] = useState<string>("NVDA");
+  const [mobileDetailOpen, setMobileDetailOpen] = useState<boolean>(false);
   const [detailTab, setDetailTab] = useState<"chart" | "financials">("chart");
   const [chartRange, setChartRange] = useState<ChartRange>("1y");
   const [showBenchmark, setShowBenchmark] = useState<boolean>(false);
@@ -239,6 +243,7 @@ export function MarketsWorkspace() {
     setSectorFilter("ALL");
     setPoolQuery("");
     setFsDrawerOpen(false);
+    setMobileDetailOpen(false);
     try {
       localStorage.setItem(POOL_ID_KEY, nextPoolId);
     } catch {
@@ -981,7 +986,7 @@ export function MarketsWorkspace() {
               绿涨红跌
             </button>
           </div>
-          <div className="markets-pill-group">
+          <div className="markets-pill-group markets-refresh-intervals-desktop">
             {(
               [
                 [5, "5s"],
@@ -1027,7 +1032,10 @@ export function MarketsWorkspace() {
               key={idxItem.symbol}
               type="button"
               className={`markets-index-card${isSelected ? " active" : ""}`}
-              onClick={() => setSelectedSymbol(idxItem.symbol)}
+              onClick={() => {
+                setSelectedSymbol(idxItem.symbol);
+                if (isMobile) setMobileDetailOpen(true);
+              }}
             >
               <div className="markets-index-top">
                 <span className="markets-mkt-tag">{idxItem.market}</span>
@@ -1116,7 +1124,7 @@ export function MarketsWorkspace() {
 
       {/* Main Split: Full-width Heatmap + Detail below, OR side-by-side List + Detail */}
       <div
-        className={`markets-split${viewMode === "heatmap" ? " heatmap-wide" : ""}`}
+        className={`markets-split${viewMode === "heatmap" ? " heatmap-wide" : ""}${isMobile && mobileDetailOpen ? " mobile-detail-open" : ""}`}
       >
         <section className="markets-card markets-watchlist-card">
           <div className="markets-card-head">
@@ -1229,11 +1237,14 @@ export function MarketsWorkspace() {
                           className="markets-search-item"
                           onClick={() =>
                             isCustomWatchlist
-                              ? addSymbol(hit)
+                              ? (addSymbol(hit),
+                                isMobile && setMobileDetailOpen(true))
                               : exists
                                 ? (setSelectedSymbol(hit.symbol),
-                                  setSearchOpen(false))
-                                : addCompanyToActivePool(hit)
+                                  setSearchOpen(false),
+                                  isMobile && setMobileDetailOpen(true))
+                                : (addCompanyToActivePool(hit),
+                                  isMobile && setMobileDetailOpen(true))
                           }
                         >
                           <span className="markets-mkt-tag">{hit.market}</span>
@@ -1321,6 +1332,7 @@ export function MarketsWorkspace() {
                   setFsDrawerOpen(true);
                 } else {
                   setSelectedSymbol(sym);
+                  if (isMobile) setMobileDetailOpen(true);
                 }
               }}
               isFullscreen={isFullscreen}
@@ -1651,6 +1663,88 @@ export function MarketsWorkspace() {
                   )}
                 </tbody>
               </table>
+
+              <div className="markets-mobile-cards">
+                {sortedWatchlist.map((w) => {
+                  const q = quoteBySymbol.get(w.symbol);
+                  const ext = liveExtremesBySymbol.get(
+                    w.symbol.trim().toUpperCase(),
+                  );
+                  const tone = trendTone(q?.change, colorScheme);
+                  const color = toneColor(tone);
+                  const active = activeSymbol === w.symbol;
+                  const rowFin =
+                    active && financialsQuery.data?.symbol === w.symbol
+                      ? financialsQuery.data
+                      : null;
+                  const athCap = resolveAthMarketCap(q, ext, rowFin);
+                  const athTone = trendTone(ext?.fromAthPct, colorScheme);
+                  return (
+                    <button
+                      key={`m-${w.symbol}`}
+                      type="button"
+                      className={`markets-mobile-card${active ? " active" : ""}`}
+                      onClick={() => {
+                        setSelectedSymbol(w.symbol);
+                        setMobileDetailOpen(true);
+                      }}
+                    >
+                      <div className="markets-mobile-card-left">
+                        <div className="markets-mobile-card-title">
+                          <strong>{q?.name || w.name || w.symbol}</strong>
+                          <span className="markets-mkt-tag">
+                            {MARKET_META[w.market]?.short ?? w.market}
+                          </span>
+                        </div>
+                        <div className="markets-mobile-card-sub">
+                          <span>{w.symbol}</span>
+                          {athCap && (
+                            <>
+                              <span>·</span>
+                              <span>
+                                峰值 {athCap.estimated ? "≈" : ""}
+                                {fmtMarketCap(athCap.value, q?.currency)}
+                              </span>
+                            </>
+                          )}
+                          {ext && (
+                            <span style={{ color: toneColor(athTone) }}>
+                              {fmtExtremePct(ext.fromAthPct)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <MiniSparkline
+                        points={
+                          (q?.sparkline?.length ?? 0) >= 2
+                            ? q!.sparkline
+                            : (lazySparks[w.symbol] ?? [])
+                        }
+                        prevClose={q?.prevClose ?? null}
+                        color={color}
+                        width={54}
+                        height={22}
+                      />
+                      <div className="markets-mobile-card-right">
+                        <span className="markets-price-main">
+                          {fmtPrice(q?.price, q?.currency)}
+                        </span>
+                        <span
+                          className={`markets-chg-pill ${tone}`}
+                          style={{ color }}
+                        >
+                          {fmtSigned(q?.changePercent, "%")}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+                {sortedWatchlist.length === 0 && (
+                  <div className="markets-empty-cell">
+                    当前分类暂无标的，可在上方搜索代码添加
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </section>
@@ -1663,6 +1757,36 @@ export function MarketsWorkspace() {
         >
           {activeSymbol ? (
             <>
+              {isMobile && mobileDetailOpen && (
+                <div className="markets-mobile-detail-bar">
+                  <button
+                    type="button"
+                    className="mobile-back-btn"
+                    onClick={() => setMobileDetailOpen(false)}
+                  >
+                    <ArrowLeft size={14} />
+                    <span>返回行情</span>
+                  </button>
+                  {activeIsEquity && (
+                    <div className="markets-pill-group">
+                      <button
+                        type="button"
+                        className={`markets-pill-btn${effectiveDetailTab === "chart" ? " active" : ""}`}
+                        onClick={() => setDetailTab("chart")}
+                      >
+                        走势
+                      </button>
+                      <button
+                        type="button"
+                        className={`markets-pill-btn${effectiveDetailTab === "financials" ? " active" : ""}`}
+                        onClick={() => setDetailTab("financials")}
+                      >
+                        财报
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
               {isFullscreen && (
                 <button
                   type="button"
@@ -1760,7 +1884,7 @@ export function MarketsWorkspace() {
                 <div className="markets-detail-head-right">
                   {activeIsEquity && (
                     <div
-                      className="markets-pill-group"
+                      className="markets-pill-group markets-detail-tab-desktop"
                       role="tablist"
                       aria-label="个股视图切换"
                     >

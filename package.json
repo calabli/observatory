@@ -1,7 +1,7 @@
 {
   "name": "observatory-desktop",
   "private": true,
-  "version": "0.1.21",
+  "version": "0.1.22",
   "type": "module",
   "scripts": {
     "tauri": "tauri",
@@ -15,6 +15,7 @@
     "desktop:build": "tauri build --debug --no-bundle",
     "desktop:release": "tauri build --no-bundle",
     "mac:install": "node scripts/mac-install.mjs",
+    "android:build": "node scripts/android-build.mjs",
     "version:bump": "node scripts/bump-version.mjs",
     "universes:refresh": "node scripts/refresh-universes.mjs",
     "test": "node --test tests/*.test.mjs",

@@ -1,0 +1,1028 @@
+/* Mobile & Android adaptive layout (loaded last after widget.css).
+   Desktop viewports (> 768px on non-Android) remain completely unaffected. */
+
+#observatory-root .mobile-bottom-nav,
+#observatory-root .mobile-top-bar,
+#observatory-root .mobile-subpage-bar,
+#observatory-root .mobile-more-page,
+#observatory-root .markets-mobile-cards,
+#observatory-root .bm-mobile-cards,
+#observatory-root .usage-mobile-range-bar,
+#observatory-root .usage-android-banner {
+  display: none;
+}
+
+/* ---------- App Shell ---------- */
+#observatory-root .obs-shell.mobile-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  overflow-x: clip;
+}
+
+#observatory-root .obs-shell.mobile-shell .app-sidebar,
+#observatory-root .obs-shell.mobile-shell .app-footer {
+  display: none !important;
+}
+
+#observatory-root .obs-shell.mobile-shell main {
+  width: 100%;
+  max-width: 100%;
+  padding: 10px 12px 76px !important;
+  min-width: 0;
+  overflow-x: clip;
+}
+
+#observatory-root .obs-shell.mobile-shell .context-bar {
+  display: none;
+}
+
+/* ---------- Compact Mobile Top Bar ---------- */
+#observatory-root .obs-shell.mobile-shell .mobile-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--bg) 94%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  border-bottom: 1px solid var(--line);
+}
+
+#observatory-root .mobile-top-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+#observatory-root .mobile-top-mark {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(145deg, #f7893f, #e2560c);
+  flex-shrink: 0;
+}
+
+#observatory-root .mobile-top-mark img {
+  width: 16px;
+  height: 16px;
+}
+
+#observatory-root .mobile-top-title {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+#observatory-root .mobile-top-title strong {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#observatory-root .mobile-top-title small {
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+#observatory-root .mobile-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+#observatory-root .mobile-icon-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+/* ---------- Mobile Secondary Back Strip ---------- */
+#observatory-root .obs-shell.mobile-shell .mobile-subpage-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+#observatory-root .mobile-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* ---------- Material 3 Bottom Navigation Bar ---------- */
+#observatory-root .obs-shell.mobile-shell .mobile-bottom-nav {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-around;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 60;
+  padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0px));
+  background: color-mix(in srgb, var(--surface) 95%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-top: 1px solid var(--line);
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.16);
+}
+
+#observatory-root .mobile-nav-btn {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 2px 2px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+#observatory-root .mobile-nav-pill {
+  width: 48px;
+  height: 28px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease;
+}
+
+#observatory-root .mobile-nav-btn.active {
+  color: var(--accent, #f0782f);
+  font-weight: 650;
+}
+
+#observatory-root .mobile-nav-btn.active .mobile-nav-pill {
+  background: var(--accent-soft, rgba(240, 120, 47, 0.14));
+}
+
+/* ---------- Mobile "更多" Hub Screen ---------- */
+#observatory-root .obs-shell.mobile-shell .mobile-more-page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+#observatory-root .mobile-more-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+#observatory-root .mobile-more-row {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  padding: 13px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+#observatory-root .mobile-more-row:last-child {
+  border-bottom: none;
+}
+
+#observatory-root .mobile-more-row:active {
+  background: var(--soft);
+}
+
+#observatory-root .mobile-more-row-left {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+
+#observatory-root .mobile-more-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--soft);
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+#observatory-root .mobile-more-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+#observatory-root .mobile-more-text strong {
+  font-size: 13.5px;
+  font-weight: 650;
+}
+
+#observatory-root .mobile-more-text small {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+/* ==========================================================================
+   1. MARKETS — Native Mobile Card List, Compact Bars & Touch Charts
+   ========================================================================== */
+#observatory-root .obs-shell.mobile-shell .markets-page {
+  gap: 10px;
+}
+
+/* Strip desktop title block & 5s/15s/30s buttons: keep compact 1-row controls */
+#observatory-root .obs-shell.mobile-shell .markets-toolbar {
+  gap: 6px;
+}
+
+#observatory-root .obs-shell.mobile-shell .markets-title-block,
+#observatory-root .obs-shell.mobile-shell .markets-refresh-intervals-desktop,
+#observatory-root .obs-shell.mobile-shell .markets-pool-actions,
+#observatory-root .obs-shell.mobile-shell .markets-pool-desc {
+  display: none !important;
+}
+
+#observatory-root .obs-shell.mobile-shell .markets-controls {
+  width: 100%;
+  justify-content: space-between;
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+
+/* Horizontal scrollable Indices Strip */
+#observatory-root .obs-shell.mobile-shell .markets-indices-grid {
+  display: flex;
+  overflow-x: auto;
+  gap: 8px;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+
+#observatory-root
+  .obs-shell.mobile-shell
+  .markets-indices-grid::-webkit-scrollbar {
+  display: none;
+}
+
+#observatory-root .obs-shell.mobile-shell .markets-index-card {
+  flex: 0 0 auto;
+  min-width: 112px;
+  padding: 9px 11px;
+  border-radius: 14px;
+  gap: 3px;
+}
+
+#observatory-root .obs-shell.mobile-shell .markets-index-price {
+  font-size: 14.5px;
+}
+
+/* Single-row horizontal scrollable Pool Bar & Sector Bar */
+#observatory-root .obs-shell.mobile-shell .markets-pool-bar {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+  gap: 6px;
+}
+
+#observatory-root .obs-shell.mobile-shell .markets-pool-bar::-webkit-scrollbar {
+  display: none;
+}
+
+#observatory-root .obs-shell.mobile-shell .markets-card {
+  padding: 11px;
+  border-radius: 18px;
+  gap: 10px;
+}
+
+#observatory-root .obs-shell.mobile-shell .markets-card-head {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+#observatory-root .obs-shell.mobile-shell .markets-head-left {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  gap: 6px;
+  padding-bottom: 1px;
+}
+
+#observatory-root .obs-shell.mobile-shell .markets-head-left::-webkit-scrollbar,
+#observatory-root
+  .obs-shell.mobile-shell
+  .markets-sector-pills::-webkit-scrollbar {
+  display: none;
+}
+
+#observatory-root .obs-shell.mobile-shell .markets-sector-pills {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex-shrink: 0;
+}
+
+#observatory-root .obs-shell.mobile-shell .markets-search-wrap,
+#observatory-root .obs-shell.mobile-shell .markets-search-box {
+  width: 100%;
+}
+
+#observatory-root .obs-shell.mobile-shell .markets-search-box input {
+  width: 100%;
+  flex: 1;
+}
+
+#observatory-root .obs-shell.mobile-shell .markets-search-dropdown {
+  left: 0;
+  right: 0;
+  width: 100%;
+}
+
+/* List <-> Detail two-level mobile navigation */
+#observatory-root .obs-shell.mobile-shell .markets-split {
+  grid-template-columns: 1fr;
+}
+
+#observatory-root
+  .obs-shell.mobile-shell
+  .markets-split.mobile-detail-open
+  > section:first-child {
+  display: none;
+}
+
+#observatory-root
+  .obs-shell.mobile-shell
+  .markets-split:not(.mobile-detail-open)
+  > .markets-detail-card {
+  display: none;
+}
+
+#observatory-root .obs-shell.mobile-shell .markets-detail-card {
+  position: static;
+}
+
+/* Hide 8-col desktop table, show compact mobile stock cards */
+#observatory-root .obs-shell.mobile-shell .markets-table-wrap .markets-table {
+  display: none;
+}
+
+#observatory-root .obs-shell.mobile-shell .markets-mobile-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#observatory-root .markets-mobile-card {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: var(--soft);
+  border-radius: 14px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  text-align: left;
+  cursor: pointer;
+}
+
+#observatory-root .markets-mobile-card.active {
+  border-color: var(--accent, #f0782f);
+}
+
+#observatory-root .markets-mobile-card-left {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+#observatory-root .markets-mobile-card-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+#observatory-root .markets-mobile-card-title strong {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#observatory-root .markets-mobile-card-sub {
+  font-size: 11px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  font-variant-numeric: tabular-nums;
+}
+
+#observatory-root .markets-mobile-card-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Heatmap mobile cleanup */
+#observatory-root .obs-shell.mobile-shell .markets-hm-bar {
+  gap: 6px;
+}
+
+#observatory-root .obs-shell.mobile-shell .markets-hm-bar-left {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  max-width: 100%;
+}
+
+#observatory-root
+  .obs-shell.mobile-shell
+  .markets-hm-bar-left::-webkit-scrollbar {
+  display: none;
+}
+
+#observatory-root .obs-shell.mobile-shell .markets-hm-legend,
+#observatory-root .obs-shell.mobile-shell .markets-hm-fs-btn {
+  display: none;
+}
+
+#observatory-root .obs-shell.mobile-shell .markets-hm-canvas,
+#observatory-root
+  .obs-shell.mobile-shell
+  .markets-split.heatmap-wide
+  .markets-hm-canvas,
+#observatory-root
+  .obs-shell.mobile-shell
+  .markets-split.heatmap-wide
+  .markets-hm-canvas.large,
+#observatory-root
+  .obs-shell.mobile-shell
+  .markets-split.heatmap-wide
+  .markets-hm-canvas.mega {
+  height: 440px;
+}
+
+/* Stock Detail Mobile Polish */
+#observatory-root .markets-mobile-detail-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+#observatory-root .obs-shell.mobile-shell .markets-detail-tab-desktop {
+  display: none;
+}
+
+#observatory-root .obs-shell.mobile-shell .markets-detail-head {
+  gap: 8px;
+}
+
+#observatory-root .obs-shell.mobile-shell .markets-detail-head-right {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+#observatory-root .obs-shell.mobile-shell .markets-detail-price {
+  font-size: 24px;
+}
+
+#observatory-root .obs-shell.mobile-shell .markets-ohlc-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 8px 10px;
+}
+
+#observatory-root .obs-shell.mobile-shell .markets-kline-toolbar {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+}
+
+#observatory-root
+  .obs-shell.mobile-shell
+  .markets-kline-toolbar::-webkit-scrollbar,
+#observatory-root
+  .obs-shell.mobile-shell
+  .markets-fin-kpi-strip::-webkit-scrollbar {
+  display: none;
+}
+
+#observatory-root .obs-shell.mobile-shell .markets-kline-toolbar-left,
+#observatory-root .obs-shell.mobile-shell .markets-kline-toolbar-right {
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+}
+
+#observatory-root .obs-shell.mobile-shell .markets-fin-kpi-strip {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 7px 9px;
+}
+
+#observatory-root .obs-shell.mobile-shell .markets-fin-kpi {
+  flex-shrink: 0;
+  min-width: 78px;
+}
+
+#observatory-root .obs-shell.mobile-shell .markets-range-strip,
+#observatory-root .obs-shell.mobile-shell .markets-kline-hud {
+  font-size: 10.5px;
+  gap: 6px;
+}
+
+#observatory-root .obs-shell.mobile-shell .markets-chart-wrap {
+  touch-action: pan-y;
+}
+
+#observatory-root .obs-shell.mobile-shell .markets-chart-tip {
+  min-width: 150px;
+  max-width: 204px;
+  padding: 7px 9px;
+  font-size: 10.5px;
+}
+
+/* ==========================================================================
+   2. AI USAGE — LAN Companion, Full Time Ranges & Platform/Provider/Model
+   ========================================================================== */
+#observatory-root .obs-shell.android-platform .usage-scope-bar,
+#observatory-root .obs-shell.android-platform .usage-meta,
+#observatory-root .obs-shell.mobile-shell .usage-desktop-actions,
+#observatory-root .obs-shell.mobile-shell .usage-range-desktop-select {
+  display: none !important;
+}
+
+#observatory-root .obs-shell.mobile-shell .usage-android-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  border-radius: 16px;
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--good, #22c55e) 35%, var(--line));
+}
+
+#observatory-root .usage-android-banner-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+#observatory-root .usage-android-banner-info strong {
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+#observatory-root .usage-android-banner-info small {
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+#observatory-root .usage-android-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+#observatory-root .usage-android-banner-actions .button {
+  padding: 6px 10px;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+#observatory-root .obs-shell.mobile-shell .usage-mobile-range-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 2px 0 8px;
+}
+
+#observatory-root
+  .obs-shell.mobile-shell
+  .usage-mobile-range-bar::-webkit-scrollbar {
+  display: none;
+}
+
+#observatory-root .usage-mobile-range-pill {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text-secondary);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+#observatory-root .usage-mobile-range-pill.active {
+  background: var(--accent, #f0782f);
+  border-color: var(--accent, #f0782f);
+  color: #ffffff;
+  font-weight: 650;
+}
+
+#observatory-root .obs-shell.mobile-shell .filter-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+#observatory-root .obs-shell.mobile-shell .filter-row .filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  width: 100%;
+}
+
+#observatory-root .obs-shell.mobile-shell .native-usage .filters select,
+#observatory-root
+  .obs-shell.mobile-shell
+  .filter-row
+  .filters
+  > .app-select-trigger,
+#observatory-root
+  .obs-shell.mobile-shell
+  .filter-row
+  .filters
+  > .usage-device-select {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+}
+
+#observatory-root .obs-shell.mobile-shell .usage-date-range {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+#observatory-root .obs-shell.mobile-shell .stats-grid,
+#observatory-root .obs-shell.mobile-shell .usage-metric-strip {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+}
+
+#observatory-root .obs-shell.mobile-shell .stat {
+  padding: 12px !important;
+  border-radius: 16px !important;
+}
+
+#observatory-root .obs-shell.mobile-shell .stat-value {
+  font-size: 20px !important;
+  line-height: 1.2 !important;
+}
+
+#observatory-root .obs-shell.mobile-shell .stat-detail {
+  font-size: 10.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#observatory-root .obs-shell.mobile-shell .overview-grid {
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+#observatory-root .obs-shell.mobile-shell .panel {
+  padding: 12px 13px !important;
+  border-radius: 18px !important;
+}
+
+#observatory-root .obs-shell.mobile-shell .panel-head {
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+#observatory-root .obs-shell.mobile-shell .usage-table-wrap,
+#observatory-root .obs-shell.mobile-shell .table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ==========================================================================
+   3. SUBSCRIPTIONS (.sp-*) — Mobile Stacking & Scrollable Tabs/Agents
+   ========================================================================== */
+#observatory-root .obs-shell.mobile-shell .sp-tabs {
+  gap: 14px;
+  margin-bottom: 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+#observatory-root .obs-shell.mobile-shell .sp-tabs::-webkit-scrollbar,
+#observatory-root .obs-shell.mobile-shell .sp-agents::-webkit-scrollbar {
+  display: none;
+}
+
+#observatory-root .obs-shell.mobile-shell .sp-layout {
+  grid-template-columns: 1fr !important;
+  gap: 12px;
+}
+
+#observatory-root .obs-shell.mobile-shell .sp-layout aside {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#observatory-root .obs-shell.mobile-shell .sp-agents {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+#observatory-root .obs-shell.mobile-shell .sp-agent {
+  flex: 0 0 auto;
+  min-width: 158px;
+  padding: 9px 11px;
+  border-radius: 12px;
+}
+
+#observatory-root .obs-shell.mobile-shell .sp-metrics {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  border-radius: 14px;
+}
+
+#observatory-root .obs-shell.mobile-shell .sp-metrics > div {
+  padding: 11px 12px;
+}
+
+#observatory-root .obs-shell.mobile-shell .sp-metrics > div:nth-child(3) {
+  border-left: 0;
+}
+
+#observatory-root .obs-shell.mobile-shell .sp-metrics > div:nth-child(n + 3) {
+  border-top: 1px solid var(--line);
+}
+
+#observatory-root .obs-shell.mobile-shell .sp-metrics strong {
+  font-size: 18px;
+  margin: 5px 0;
+}
+
+#observatory-root .obs-shell.mobile-shell .sp-controls input[type="search"] {
+  width: 100%;
+  flex: 1 1 100%;
+}
+
+#observatory-root .obs-shell.mobile-shell .sp-form {
+  grid-template-columns: 1fr !important;
+}
+
+/* ==========================================================================
+   4. BENCHMARKS (.bm-*) — Native Mobile Cards & Single-Row Scroll Pills
+   ========================================================================== */
+#observatory-root .obs-shell.mobile-shell .bm-page {
+  gap: 10px;
+}
+
+#observatory-root .obs-shell.mobile-shell .bm-topbar {
+  gap: 8px;
+}
+
+#observatory-root .obs-shell.mobile-shell .bm-key-hint,
+#observatory-root .obs-shell.mobile-shell .bm-table-hint {
+  display: none;
+}
+
+#observatory-root .obs-shell.mobile-shell .bm-kpi-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 8px;
+}
+
+#observatory-root .obs-shell.mobile-shell .bm-kpi-card {
+  padding: 10px 12px;
+  border-radius: 14px;
+}
+
+#observatory-root .obs-shell.mobile-shell .bm-kpi-value {
+  font-size: 17px;
+}
+
+#observatory-root .obs-shell.mobile-shell .bm-filter-row {
+  gap: 8px;
+}
+
+#observatory-root .obs-shell.mobile-shell .bm-creator-row {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+}
+
+#observatory-root .obs-shell.mobile-shell .bm-creator-row::-webkit-scrollbar,
+#observatory-root .obs-shell.mobile-shell .bm-dim-pills::-webkit-scrollbar {
+  display: none;
+}
+
+#observatory-root .obs-shell.mobile-shell .bm-creator-pill {
+  flex-shrink: 0;
+}
+
+#observatory-root .obs-shell.mobile-shell .bm-search-box {
+  width: 100%;
+}
+
+#observatory-root .obs-shell.mobile-shell .bm-search-box input {
+  width: 100%;
+  flex: 1;
+}
+
+#observatory-root .obs-shell.mobile-shell .bm-charts-grid {
+  grid-template-columns: 1fr !important;
+}
+
+#observatory-root .obs-shell.mobile-shell .bm-table-scroll .bm-table {
+  display: none;
+}
+
+#observatory-root .obs-shell.mobile-shell .bm-mobile-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#observatory-root .bm-mobile-card {
+  border: 1px solid var(--line);
+  background: var(--soft);
+  border-radius: 14px;
+  padding: 11px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  cursor: pointer;
+}
+
+#observatory-root .bm-mobile-card.selected {
+  border-color: var(--accent, #f0782f);
+}
+
+#observatory-root .bm-mobile-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+#observatory-root .bm-mobile-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+#observatory-root .bm-mobile-card-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+#observatory-root .bm-mobile-card-name strong {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#observatory-root .bm-mobile-card-name small {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+#observatory-root .bm-mobile-card-score {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex-shrink: 0;
+}
+
+#observatory-root .bm-mobile-card-score strong {
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+#observatory-root .bm-mobile-card-score small {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+#observatory-root .bm-mobile-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ==========================================================================
+   5. MODALS & DIALOGS — Mobile Width Fit
+   ========================================================================== */
+#observatory-root .obs-shell.mobile-shell .dialog {
+  width: min(94vw, 520px);
+  max-width: 94vw;
+  max-height: 86dvh;
+  border-radius: 18px;
+}
+
+#observatory-root .obs-shell.mobile-shell .markets-kline-modal {
+  width: 96vw;
+  padding: 12px;
+}
+
+#observatory-root .obs-shell.mobile-shell .dm-card {
+  padding: 12px;
+  border-radius: 14px;
+}
+
+#observatory-root .obs-shell.mobile-shell .dm-card-head {
+  flex-wrap: wrap;
+}
+
+#observatory-root .obs-shell.mobile-shell .dm-pair-code-value strong {
+  font-size: 20px;
+}

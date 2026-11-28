@@ -252,12 +252,12 @@ export function InteractivePriceChart({
   }
 
   const visCount = visiblePoints.length;
-  const W = Math.max(320, measuredW);
-  const mainH = expanded ? 300 : 210;
+  const W = Math.max(300, measuredW);
+  const mainH = expanded ? 300 : W < 440 ? 196 : 210;
   const subGap = subMode === "none" ? 0 : 18;
-  const subH = subMode === "none" ? 0 : expanded ? 116 : 82;
-  const padL = 62;
-  const padR = 16;
+  const subH = subMode === "none" ? 0 : expanded ? 116 : W < 440 ? 72 : 82;
+  const padL = W < 440 ? 48 : 62;
+  const padR = W < 440 ? 10 : 16;
   const padT = 14;
   const padB = 22;
   const H = padT + mainH + subGap + subH + padB;
@@ -410,8 +410,39 @@ export function InteractivePriceChart({
     setWindowSlice({ start: nextStart, end: nextStart + nextSpan - 1 });
   };
 
-  // Drag Pan handlers
+  const updateHoverFromPointer = (
+    e: React.PointerEvent<HTMLDivElement>,
+    rect: DOMRect,
+  ) => {
+    const relX = ((e.clientX - rect.left) / Math.max(1, rect.width)) * W;
+    if (relX < padL - 8 || relX > W - padR + 8) {
+      setHover(null);
+      return;
+    }
+    const ratio = Math.max(0, Math.min(1, (relX - padL) / plotW));
+    const idx = Math.round(ratio * (visCount - 1));
+    const y = e.clientY - rect.top;
+    const tipW = tipRef.current?.offsetWidth || 216;
+    const tipH = tipRef.current?.offsetHeight || 148;
+    setHover((prev) =>
+      prev &&
+      prev.idx === idx &&
+      Math.abs(prev.y - y) < 2 &&
+      Math.abs(prev.wrapW - rect.width) < 1 &&
+      Math.abs(prev.wrapH - rect.height) < 1 &&
+      prev.tipW === tipW &&
+      prev.tipH === tipH
+        ? prev
+        : { idx, y, wrapW: rect.width, wrapH: rect.height, tipW, tipH },
+    );
+  };
+
+  // Drag Pan / Touch Scrub handlers
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === "touch" && !isZoomed) {
+      updateHoverFromPointer(e, e.currentTarget.getBoundingClientRect());
+      return;
+    }
     if (e.button !== 0 || !isZoomed) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     setHover(null);
@@ -435,27 +466,7 @@ export function InteractivePriceChart({
       setWindowSlice({ start: nextStart, end: nextStart + span - 1 });
       return;
     }
-    const relX = ((e.clientX - rect.left) / Math.max(1, rect.width)) * W;
-    if (relX < padL - 8 || relX > W - padR + 8) {
-      setHover(null);
-      return;
-    }
-    const ratio = Math.max(0, Math.min(1, (relX - padL) / plotW));
-    const idx = Math.round(ratio * (visCount - 1));
-    const y = e.clientY - rect.top;
-    const tipW = tipRef.current?.offsetWidth || 216;
-    const tipH = tipRef.current?.offsetHeight || 148;
-    setHover((prev) =>
-      prev &&
-      prev.idx === idx &&
-      Math.abs(prev.y - y) < 2 &&
-      Math.abs(prev.wrapW - rect.width) < 1 &&
-      Math.abs(prev.wrapH - rect.height) < 1 &&
-      prev.tipW === tipW &&
-      prev.tipH === tipH
-        ? prev
-        : { idx, y, wrapW: rect.width, wrapH: rect.height, tipW, tipH },
-    );
+    updateHoverFromPointer(e, rect);
   };
 
   const handlePointerUp = () => {

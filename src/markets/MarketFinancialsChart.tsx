@@ -192,10 +192,10 @@ export function MarketFinancialsChart({
     periods.some((p) => p.grossMarginPct != null || p.netMarginPct != null);
 
   // Dimensions
-  const W = Math.max(320, measuredW);
-  const H = expanded ? 320 : 230;
-  const padL = 66;
-  const padR = hasMargins ? 46 : 18;
+  const W = Math.max(300, measuredW);
+  const H = expanded ? 320 : W < 440 ? 210 : 230;
+  const padL = W < 440 ? 50 : 66;
+  const padR = hasMargins ? (W < 440 ? 34 : 46) : 14;
   const padT = 18;
   const padB = 28;
   const plotW = Math.max(120, W - padL - padR);
@@ -597,6 +597,7 @@ export function MarketFinancialsChart({
       <div
         className="markets-chart-wrap"
         ref={wrapRef}
+        onPointerDown={handlePointerMove}
         onPointerMove={handlePointerMove}
         onPointerLeave={() => setHover(null)}
       >

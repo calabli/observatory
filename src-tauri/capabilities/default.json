@@ -1,6 +1,7 @@
 {
   "identifier": "main",
-  "description": "Observatory main window",
+  "description": "Observatory main window (desktop)",
+  "platforms": ["macOS", "windows", "linux"],
   "windows": ["main", "tray-panel"],
   "permissions": [
     "core:default",

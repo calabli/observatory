@@ -6,6 +6,12 @@ rename it to the new version (`## [x.y.z] - YYYY-MM-DD`) before tagging.
 
 ## Unreleased
 
+## [0.1.22] - 2026-11-28
+
+- Android: added Tauri 2 Android (`arm64-v8a`) support and build script (`npm run android:build`), embedding the native Rust `observatory-usage-core` engine with platform-safe data storage, native Android `WindowInsets` edge-to-edge safe-area handling, and LAN cleartext support for companion sync.
+- Mobile UI: added an adaptive mobile shell with 5-tab bottom navigation (`行情 / 用量 / 订阅 / 榜单 / 更多`), compact mobile-first Markets list & detail view with touch-scrubbed price and financial charts, full AI Usage time-range (`今天 / 昨天 / 近3天 / 近7天 / 近30天 / 全部 / 按周期 / 自定义`) & device/app/provider/model filters, and mobile card layouts for Subscriptions and Model Benchmarks.
+- Multi-device sync: refactored device connection (`DeviceManager`) into a streamlined discovery-first workflow that auto-scans the LAN on open, supports inline 6-digit pairing right on discovered devices, auto-enables the local LAN listener during `lan_connect` and `lan_pair_code`, and tucks port/app-sharing/HTTP API controls into a collapsed Advanced Settings panel (hiding desktop-only options on Android).
+
 ## [0.1.21] - 2026-11-28
 
 - Subscriptions & Quota: expanded supported currencies from 2 to 30 major ISO 4217 market currencies (USD, CNY, TWD, HKD, JPY, EUR, GBP, KRW, SGD, AUD, CAD, CHF, and more) with locale-aware `Intl.NumberFormat` formatting, zero-decimal integer display for JPY/KRW/VND/IDR, and frontend/backend currency-list sync tests.

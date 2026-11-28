@@ -10,13 +10,16 @@ import React, {
 import { createRoot } from "react-dom/client";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
+  ArrowLeft,
   ArrowRight,
   ArrowUpRight,
   Boxes,
   Check,
+  ChevronRight,
   Clock3,
   Info,
   Laptop,
+  Menu,
   Monitor,
   Moon,
   Network,
@@ -35,6 +38,7 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
+import { IS_ANDROID, isMobilePlatform, useIsMobile } from "./mobile";
 const IS_WINDOWS = /Windows/i.test(navigator.userAgent);
 import codex from "./assets/codex.svg";
 import observatoryMark from "./assets/observatory-mark.svg";
@@ -70,6 +74,7 @@ import { waveColor } from "./theme/wave";
 import { formatTokens } from "./usage/ui";
 // Loaded last so it overrides every page stylesheet imported above.
 import "./theme/widget.css";
+import "./theme/mobile.css";
 import type { NativeStatus, Dashboard, LanStatus } from "./usage/types";
 
 // Pages other than the overview load on first visit, keeping their code out of the
@@ -120,7 +125,8 @@ type Page =
   | "markets"
   | "network"
   | "devices"
-  | "activity";
+  | "activity"
+  | "more";
 
 const brandIcons: Record<string, string> = {
   codex,
@@ -192,6 +198,7 @@ const titles: Record<Page, [string, string]> = {
   ],
   network: ["网络诊断", "从地址、DNS 到连接，逐层查看网络状态。"],
   devices: ["多设备", "选择观测设备，管理用量与指标的共享范围。"],
+  more: ["更多与设置", "多设备配对、洞察分析、活动日志与外观设置。"],
 };
 const money = (n: number) => "$" + n.toFixed(2);
 function BrandIcon({ id }: { id: string }) {
@@ -351,10 +358,13 @@ function Dialog({
 }
 
 function App() {
+  const isMobile = useIsMobile();
   const [aboutOpen, setAboutOpen] = useState(false);
   const [updateTarget, setUpdateTarget] = useState<HTMLDivElement | null>(null);
   const [updateAvailable, setUpdateAvailable] = useState(false);
-  const [page, setPage] = useState<Page>("overview");
+  const [page, setPage] = useState<Page>(() =>
+    isMobilePlatform() ? "markets" : "overview",
+  );
   const [dark, setDark] = useState(
     () => window.matchMedia("(prefers-color-scheme:dark)").matches,
   );
@@ -380,7 +390,7 @@ function App() {
       // In private mode or with storage disabled the theme is simply not
       // remembered, which does not affect usage.
     }
-    if (window.__TAURI_INTERNALS__) {
+    if (window.__TAURI_INTERNALS__ && !IS_ANDROID) {
       void getCurrentWindow()
         .setTheme(theme)
         .catch((error) => {
@@ -789,12 +799,159 @@ function App() {
     />
   );
   const devices = <DeviceManager />;
+  const mobilePrimaryTabs: NavItem[] = [
+    { id: "markets", label: "行情", icon: TrendingUp },
+    { id: "usage", label: "用量", icon: Boxes },
+    { id: "subscriptions", label: "订阅", icon: Clock3 },
+    { id: "benchmarks", label: "榜单", icon: Trophy },
+    { id: "more", label: "更多", icon: Menu },
+  ];
+  const isMobileSubpage =
+    isMobile &&
+    (page === "devices" ||
+      page === "insights" ||
+      page === "activity" ||
+      page === "overview" ||
+      page === "network");
+  const mobileMore = (
+    <div className="mobile-more-page">
+      <div className="mobile-more-card">
+        <button
+          type="button"
+          className="mobile-more-row"
+          onClick={() => go("devices")}
+        >
+          <span className="mobile-more-row-left">
+            <span className="mobile-more-icon">
+              <Monitor size={16} />
+            </span>
+            <span className="mobile-more-text">
+              <strong>多设备 · 局域网配对</strong>
+              <small>配对电脑同步 AI 用量与周期配额</small>
+            </span>
+          </span>
+          <ChevronRight size={16} />
+        </button>
+        <button
+          type="button"
+          className="mobile-more-row"
+          onClick={() => go("insights")}
+        >
+          <span className="mobile-more-row-left">
+            <span className="mobile-more-icon">
+              <Sparkles size={16} />
+            </span>
+            <span className="mobile-more-text">
+              <strong>深度洞察</strong>
+              <small>缓存省钱、30 天预测与节律分析</small>
+            </span>
+          </span>
+          <ChevronRight size={16} />
+        </button>
+        <button
+          type="button"
+          className="mobile-more-row"
+          onClick={() => go("overview")}
+        >
+          <span className="mobile-more-row-left">
+            <span className="mobile-more-icon">
+              <Radar size={16} />
+            </span>
+            <span className="mobile-more-text">
+              <strong>运行总览</strong>
+              <small>汇总查看今日用量与设备同步状态</small>
+            </span>
+          </span>
+          <ChevronRight size={16} />
+        </button>
+        <button
+          type="button"
+          className="mobile-more-row"
+          onClick={() => go("activity")}
+        >
+          <span className="mobile-more-row-left">
+            <span className="mobile-more-icon">
+              <ScrollText size={16} />
+            </span>
+            <span className="mobile-more-text">
+              <strong>活动日志</strong>
+              <small>行情、财报与设备同步请求记录</small>
+            </span>
+          </span>
+          <ChevronRight size={16} />
+        </button>
+      </div>
+      <div className="mobile-more-card">
+        <button
+          type="button"
+          className="mobile-more-row"
+          onClick={() => setDark(!dark)}
+        >
+          <span className="mobile-more-row-left">
+            <span className="mobile-more-icon">
+              {dark ? <Sun size={16} /> : <Moon size={16} />}
+            </span>
+            <span className="mobile-more-text">
+              <strong>外观主题</strong>
+              <small>当前：{dark ? "深色模式" : "浅色模式"}</small>
+            </span>
+          </span>
+          <ChevronRight size={16} />
+        </button>
+        <button
+          type="button"
+          className="mobile-more-row"
+          onClick={() => setAboutOpen(true)}
+        >
+          <span className="mobile-more-row-left">
+            <span className="mobile-more-icon">
+              <Info size={16} />
+            </span>
+            <span className="mobile-more-text">
+              <strong>关于观测台</strong>
+              <small>v{packageInfo.version} · Tauri 2</small>
+            </span>
+          </span>
+          <ChevronRight size={16} />
+        </button>
+      </div>
+    </div>
+  );
   return (
     <div
-      className={`obs-shell${IS_WINDOWS ? " windows-polish" : ""}`}
+      className={`obs-shell${IS_WINDOWS ? " windows-polish" : ""}${isMobile ? " mobile-shell" : ""}${isMobilePlatform() ? " android-platform" : ""}`}
       data-sidebar={sidebarCollapsed ? "collapsed" : "expanded"}
       style={{ colorScheme: dark ? "dark" : "light" }}
     >
+      <header className="mobile-top-bar">
+        <div className="mobile-top-brand">
+          <span className="mobile-top-mark">
+            <img src={observatoryMark} alt="" />
+          </span>
+          <span className="mobile-top-title">
+            <strong>{titles[page][0]}</strong>
+            <small>Observatory · v{packageInfo.version}</small>
+          </span>
+        </div>
+        <div className="mobile-top-actions">
+          <button
+            type="button"
+            className="mobile-icon-btn"
+            aria-label="切换明暗外观"
+            onClick={() => setDark(!dark)}
+          >
+            {dark ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
+          <button
+            type="button"
+            className="mobile-icon-btn"
+            aria-label="关于观测台"
+            onClick={() => setAboutOpen(true)}
+          >
+            <Info size={16} />
+          </button>
+        </div>
+      </header>
       <aside className="app-sidebar">
         <button
           className="brand"
@@ -897,43 +1054,59 @@ function App() {
       )}
       <UpdateControl target={updateTarget} onAvailable={setUpdateAvailable} />
       <main>
-        <div className="page-heading">
-          <div>
-            <div className="eyebrow">
-              {page === "overview"
-                ? "WORKSPACE OVERVIEW"
-                : page === "insights"
-                  ? "DEEP INSIGHTS"
-                  : page === "benchmarks"
-                    ? "MODEL BENCHMARKS"
-                    : page === "network"
-                      ? "NETWORK OBSERVABILITY"
-                      : page === "activity"
-                        ? "ACTIVITY LOG"
-                        : "OBSERVATORY"}
+        {isMobileSubpage && (
+          <div className="mobile-subpage-bar">
+            <button
+              type="button"
+              className="mobile-back-btn"
+              onClick={() => go("more")}
+            >
+              <ArrowLeft size={14} />
+              <span>返回更多</span>
+            </button>
+          </div>
+        )}
+        {!isMobile && (
+          <div className="page-heading">
+            <div>
+              <div className="eyebrow">
+                {page === "overview"
+                  ? "WORKSPACE OVERVIEW"
+                  : page === "insights"
+                    ? "DEEP INSIGHTS"
+                    : page === "benchmarks"
+                      ? "MODEL BENCHMARKS"
+                      : page === "network"
+                        ? "NETWORK OBSERVABILITY"
+                        : page === "activity"
+                          ? "ACTIVITY LOG"
+                          : "OBSERVATORY"}
+              </div>
+              <h1>{titles[page][0]}</h1>
+              <p>{titles[page][1]}</p>
             </div>
-            <h1>{titles[page][0]}</h1>
-            <p>{titles[page][1]}</p>
+            <div className="page-controls">
+              {page === "overview" && (
+                <button
+                  className="icon-button"
+                  aria-label="刷新当前指标"
+                  onClick={refreshOverview}
+                  disabled={busy}
+                >
+                  <RefreshCw size={15} className={busy ? "refreshing" : ""} />
+                </button>
+              )}
+            </div>
           </div>
-          <div className="page-controls">
-            {page === "overview" && (
-              <button
-                className="icon-button"
-                aria-label="刷新当前指标"
-                onClick={refreshOverview}
-                disabled={busy}
-              >
-                <RefreshCw size={15} className={busy ? "refreshing" : ""} />
-              </button>
-            )}
-          </div>
-        </div>
-        {page !== "network" &&
+        )}
+        {!isMobile &&
+          page !== "network" &&
           page !== "subscriptions" &&
           page !== "insights" &&
           page !== "benchmarks" &&
           page !== "markets" &&
-          page !== "activity" && (
+          page !== "activity" &&
+          page !== "more" && (
             <div className="context-bar">
               {page === "usage" || page === "devices" ? (
                 <div className="inline">
@@ -1023,6 +1196,8 @@ function App() {
             <NetworkOverview />
           ) : page === "activity" ? (
             <ActivityLog />
+          ) : page === "more" ? (
+            mobileMore
           ) : (
             devices
           )}
@@ -1035,6 +1210,25 @@ function App() {
           <span>数据只保存在本机 · 局域网共享默认关闭</span>
         </footer>
       </main>
+      <nav className="mobile-bottom-nav" aria-label="移动端主导航">
+        {mobilePrimaryTabs.map((n) => {
+          const active = page === n.id || (n.id === "more" && isMobileSubpage);
+          return (
+            <button
+              key={n.id}
+              type="button"
+              className={`mobile-nav-btn${active ? " active" : ""}`}
+              aria-current={active ? "page" : undefined}
+              onClick={() => go(n.id)}
+            >
+              <span className="mobile-nav-pill">
+                <n.icon size={18} />
+              </span>
+              <span>{n.label}</span>
+            </button>
+          );
+        })}
+      </nav>
       {notice && (
         <div className="toast" role="status">
           <Check size={15} />

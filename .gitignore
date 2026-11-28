@@ -23,6 +23,17 @@ desktop-dist/
 
 # Local build artifacts and verification screenshots
 Observatory-*-Windows-x64-portable.exe
+Observatory-*-Android-*.apk
+Observatory-*-Android-*.apk.idsig
 .ui-shots/
 test-results/
 playwright-report/
+
+# Android generated Gradle caches & compiled binaries
+src-tauri/gen/android/.gradle/
+src-tauri/gen/android/build/
+src-tauri/gen/android/app/build/
+src-tauri/gen/android/app/src/main/jniLibs/
+src-tauri/gen/android/app/src/main/assets/
+src-tauri/gen/android/local.properties
+src-tauri/gen/schemas/macOS-schema.json

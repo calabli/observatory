@@ -1,6 +1,15 @@
 use crate::error::AppError;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
+
+/// Platform-provided writable app data directory (e.g. Android `app_data_dir()`),
+/// registered once at startup before `UsageBackend::open()`.
+static APP_DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+pub fn set_app_config_dir(dir: PathBuf) {
+    let _ = APP_DATA_DIR.set(dir);
+}
 
 pub fn get_home_dir() -> PathBuf {
     if let Some(home) = std::env::var_os("OBSERVATORY_TEST_HOME") {
@@ -13,12 +22,14 @@ pub fn get_home_dir() -> PathBuf {
     }
     #[cfg(not(test))]
     {
-        dirs::home_dir().expect("home directory unavailable")
+        dirs::home_dir()
+            .or_else(|| APP_DATA_DIR.get().cloned())
+            .unwrap_or_else(std::env::temp_dir)
     }
 }
 #[cfg(test)]
 fn test_home_dir() -> PathBuf {
-    static HOME: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+    static HOME: OnceLock<tempfile::TempDir> = OnceLock::new();
     HOME.get_or_init(|| tempfile::tempdir().expect("test home tempdir"))
         .path()
         .to_path_buf()
@@ -27,6 +38,7 @@ pub fn get_app_config_dir() -> PathBuf {
     std::env::var_os("OBSERVATORY_HOME")
         .filter(|v| !v.is_empty())
         .map(PathBuf::from)
+        .or_else(|| APP_DATA_DIR.get().cloned())
         .unwrap_or_else(|| get_home_dir().join(".observatory"))
 }
 pub fn get_claude_config_dir() -> PathBuf {
